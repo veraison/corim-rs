@@ -1,0 +1,25 @@
+[package]
+name = "corim-rs"
+version = "0.1.0"
+authors = ["Larry Dewey <larrydewey@proton.me>"]
+homepage = "https://github.com/larrydewey/corim-rs"
+repository = "https://github.com/larrydewey/corim-rs"
+edition = "2021"
+description = "Rust implementation of CORIM (Concise Reference Integrity Manifest)"
+keywords = ["corim", "rim", "ietf", "cbor", "cose"]
+categories = [
+    "os",
+    "os::linux-apis",
+    "parsing",
+    "network-programming",
+    "hardware-support",
+]
+exclude = [".gitignore", ".github/*"]
+rust-version = "1.85.0"
+license = "MIT"
+
+[dependencies]
+serde_arrays = { version = "0.1.0" }
+serde = { version = "^1", features = ["derive"] }
+
+[dev-dependencies]
