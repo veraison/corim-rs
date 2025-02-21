@@ -2,8 +2,8 @@
 
 //! Module for handling Concise Software Identity (CoSWID) tags.
 //!
-//! This module implements the CoSWID specification, providing structures and types for
-//! describing software identity and inventory information in a concise format.
+//! This module implements the CoSWID specification (RFC 9393), providing structures and types for
+//! describing software identity and inventory information in a concise format using CBOR encoding.
 //!
 //! # Key Components
 //!
@@ -12,18 +12,25 @@
 //! - [`EntityEntry`]: Information about entities involved with the software
 //! - [`LinkEntry`]: References to related resources
 //!
+//! # Tag Types
+//!
+//! CoSWID tags can be one of several types:
+//! - **Corpus**: Describes the intended state of a software product
+//! - **Patch**: Describes a software update or patch
+//! - **Supplemental**: Provides additional information about software
+//!
 //! # Evidence and Payload Support
 //!
 //! CoSWID tags can contain either:
-//! - Payload data: Describes intended software state
-//! - Evidence data: Describes observed software state
+//! - **Payload data**: Describes intended software state
+//! - **Evidence data**: Describes observed software state
 //!
 //! # Resource Types
 //!
 //! Supported resource descriptions include:
-//! - Files and directories
-//! - Running processes
-//! - Generic resources
+//! - Files and directories with cryptographic hashes
+//! - Running processes with PIDs
+//! - Generic resources with extensible attributes
 //! - Integrity measurements
 //!
 //! # Example
@@ -33,9 +40,9 @@
 //!
 //! // Create a basic CoSWID tag
 //! let tag = ConciseSwidTag {
-//!     tag_id: "example-software".into(),
+//!     tag_id: "example-software".to_string().into(),
 //!     tag_version: 1,
-//!     software_name: "Example Software".into(),
+//!     software_name: "Example Software".to_string().into(),
 //!     entity: vec![].into(),  // Add entities here
 //!     corpus: None,
 //!     patch: None,
@@ -50,16 +57,37 @@
 //!     global_attributes: Default::default(),
 //! };
 //! ```
+//!
+//! # CBOR Tags
+//!
+//! This implementation uses CBOR tag 505 for CoSWID tags.
+//!
+//! # Specification Compliance
+//!
+//! This implementation adheres to RFC 9393 (CoSWID) and supports all mandatory
+//! and optional fields defined in the standard.
 
 use crate::{
     AnyUri, ExtensionMap, GlobalAttributes, HashEntry, Int, Integer, IntegerTime, Label, OneOrMore,
     Role, Text, TextOrBytes, TextOrBytesSized, Uint, Uri, VersionScheme,
 };
+use ciborium::tag::Accepted;
+use derive_more::{Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
 
-/// A Concise Software Identity (CoSWID) tag structure tagged with CBOR tag 505
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "505")]
+#[derive(Serialize, Deserialize, From, Constructor)]
+/// Represents a CoSWID tag wrapped with CBOR tag 505
+pub struct TaggedConciseSwidTag {
+    /// The actual CoSWID tag content
+    #[serde(flatten)]
+    pub field: Accepted<ConciseSwidTag, 505>,
+}
+
+/// A Concise Software Identity (CoSWID) tag structure as defined in RFC 9393
+///
+/// CoSWID tags provide a standardized way to identify and describe software
+/// components, including their metadata, contents, and relationships.
+#[derive(Serialize, Deserialize, From)]
 #[repr(C)]
 pub struct ConciseSwidTag {
     /// Unique identifier for the tag
@@ -113,9 +141,13 @@ pub struct ConciseSwidTag {
     pub global_attributes: GlobalAttributes,
 }
 
-/// Additional metadata about software described in a CoSWID tag
+/// Additional metadata about the software component
+///
+/// This structure contains supplementary information about software that may be
+/// useful for identification, deployment, or management purposes. All fields
+/// are optional except for global attributes.
 #[repr(C)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From)]
 pub struct SoftwareMetaEntry {
     /// Current activation status of the software (e.g., "trial", "full", "deleted")
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -198,7 +230,7 @@ pub struct SoftwareMetaEntry {
 
 /// Information about an entity involved in software development or distribution
 #[repr(C)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 pub struct EntityEntry {
     /// Name of the entity
     #[serde(rename = "entity-name")]
@@ -223,7 +255,7 @@ pub struct EntityEntry {
 
 /// Link to external resources related to the software
 #[repr(C)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From)]
 pub struct LinkEntry {
     /// Optional identifier for the linked artifact
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -254,7 +286,7 @@ pub struct LinkEntry {
 }
 
 /// Ownership status enumeration for linked resources
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(u8)]
 pub enum Ownership {
     /// Resource is no longer maintained
@@ -268,7 +300,7 @@ pub enum Ownership {
 }
 
 /// Relationship types between resources in CoSWID tags
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(u8)]
 pub enum Rel {
     /// Previous version of the software
@@ -297,8 +329,13 @@ pub enum Rel {
     IntOrText(Label),
 }
 
-/// Contains either payload data or evidence data about the software
-#[derive(Serialize, Deserialize)]
+/// Describes either intended (Payload) or observed (Evidence) software state
+///
+/// This enum represents the two main types of software state information that
+/// can be included in a CoSWID tag:
+/// - Payload: The intended or expected state of the software
+/// - Evidence: The actual observed state of the software
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum PayloadOrEvidence {
     /// Describes the intended state of the software
@@ -308,7 +345,7 @@ pub enum PayloadOrEvidence {
 }
 
 /// Container for payload information
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct Payload {
     /// The payload entry containing resource information
@@ -316,7 +353,7 @@ pub struct Payload {
 }
 
 /// Detailed payload information about software resources
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct PayloadEntry {
     /// Collection of resources in the software
@@ -332,8 +369,12 @@ pub struct PayloadEntry {
     pub global_attributes: GlobalAttributes,
 }
 
-/// Collection of resources that make up the software
-#[derive(Serialize, Deserialize)]
+/// Collection of resources that make up the software component
+///
+/// This structure groups together all the resources that are part of the
+/// software, including files, directories, processes, and other resource types.
+/// It forms the core content description of what comprises the software.
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ResourceCollection {
     /// Group of filesystem path elements
@@ -353,7 +394,7 @@ pub struct ResourceCollection {
 }
 
 /// Group of filesystem path elements in a resource collection
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct PathElementsGroup {
     /// Optional list of directory entries
@@ -365,7 +406,7 @@ pub struct PathElementsGroup {
 }
 
 /// Information about a directory in the filesystem
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct DirectoryEntry {
     /// Basic filesystem item information
@@ -392,7 +433,7 @@ pub struct DirectoryEntry {
 }
 
 /// Basic information about a filesystem item (file or directory)
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct FileSystemItem {
     /// Indicates if this is a key/critical filesystem item
@@ -410,7 +451,7 @@ pub struct FileSystemItem {
 }
 
 /// Information about a file in the filesystem
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct FileEntry {
     /// Basic filesystem item information
@@ -437,7 +478,7 @@ pub struct FileEntry {
 }
 
 /// Information about a running process
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ProcessEntry {
     /// Name of the process
@@ -456,7 +497,7 @@ pub struct ProcessEntry {
 }
 
 /// Information about a general resource
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ResourceEntry {
     /// Type identifier for the resource
@@ -471,7 +512,7 @@ pub struct ResourceEntry {
 }
 
 /// Container for evidence information about observed software state
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct Evidence {
     /// The evidence entry containing observed resource information
@@ -479,7 +520,7 @@ pub struct Evidence {
 }
 
 /// Detailed evidence information about observed software state
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct EvidenceEntry {
     /// Collection of observed resources
@@ -506,7 +547,7 @@ pub struct EvidenceEntry {
 }
 
 /// Usage requirement levels for resources
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(u8)]
 pub enum Use {
     /// Resource is optional

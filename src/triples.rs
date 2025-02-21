@@ -17,18 +17,49 @@
 //! - CoSWID triples ([`CoswidTripleRecord`]): Link to software identification tags
 //! - Conditional endorsement triples ([`ConditionalEndorsementTripleRecord`]): Complex verification
 //!
-//! # Environment Description
+//! # Key Types
 //!
-//! The [`EnvironmentMap`] structure is central to all triple records and can include:
-//! - Classification information
-//! - Instance identifiers
-//! - Group identifiers
-//! - Measurement values
+//! The module supports various cryptographic key and certificate formats through [`CryptoKeyTypeChoice`]:
+//! - PKIX certificates (base64 encoded)
+//! - PKIX certificate paths
+//! - COSE keys
+//! - Cryptographic thumbprints
+//! - ASN.1 DER encoded certificates
+//!
+//! # Networking Support
+//!
+//! Network identification is handled through:
+//! - [`MacAddrTypeChoice`]: Supports both EUI-48 and EUI-64 MAC addresses
+//! - [`IpAddrTypeChoice`]: Supports both IPv4 and IPv6 addresses
+//!
+//! # Measurement Values
+//!
+//! The [`MeasurementValuesMap`] structure contains comprehensive measurement data including:
+//! - Version information
+//! - Security version numbers (SVN)
+//! - Cryptographic digests
 //! - Security state flags
 //! - Network addressing
-//! - Integrity registers
+//! - Serial numbers
+//! - UUIDs and UEIDs
+//! - Cryptographic keys
+//! - Integrity register values
 //!
-//! # Example
+//! # Status Flags
+//!
+//! The [`FlagsMap`] structure provides detailed security and configuration state including:
+//! - Configuration state
+//! - Security state
+//! - Recovery mode
+//! - Debug status
+//! - Replay protection
+//! - Integrity protection
+//! - Runtime measurement status
+//! - Immutability
+//! - TCB inclusion
+//! - Confidentiality protection
+//!
+//! # Example Usage
 //!
 //! ```rust
 //! use corim_rs::triples::{ReferenceTripleRecord, EnvironmentMap, MeasurementMap};
@@ -49,17 +80,28 @@
 //!     ].into(),
 //! };
 //! ```
+//!
+//! # Conditional Endorsements
+//!
+//! The module supports complex conditional endorsement scenarios through:
+//! - [`ConditionalEndorsementTripleRecord`]: For single condition endorsements
+//! - [`ConditionalEndorsementSeriesTripleRecord`]: For series-based conditional changes
+//! - [`StatefulEnvironmentRecord`]: For tracking environment state
+//! - [`ConditionalSeriesRecord`]: For defining measurement changes
+
+use std::ops::{Deref, DerefMut};
 
 use crate::{
-    Bytes, CertPathThumbprintType, CertThumprintType, ConciseSwidTagId, CoseKeyType, Digest,
-    ExtensionMap, MinSvnType, OidType, OneOrMore, PkixAsn1DerCertType, PkixBase64CertType,
-    PkixBase64KeyType, RawValueType, SvnType, Text, ThumbprintType, Tstr, UeidType, Uint, Ulabel,
-    UuidType, VersionScheme,
+    core::PkixBase64CertPathType, Bytes, CertPathThumbprintType, CertThumprintType,
+    ConciseSwidTagId, CoseKeyType, Digest, ExtensionMap, MinSvnType, OidType, OneOrMore,
+    PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, SvnType, Text,
+    ThumbprintType, Tstr, UeidType, Uint, Ulabel, UuidType, VersionScheme,
 };
+use derive_more::{Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
 
 /// A reference triple record containing environment and measurement claims
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ReferenceTripleRecord {
     /// The environment being referenced
@@ -69,7 +111,7 @@ pub struct ReferenceTripleRecord {
 }
 
 /// Map describing an environment's characteristics
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct EnvironmentMap {
     /// Optional classification information
@@ -84,7 +126,7 @@ pub struct EnvironmentMap {
 }
 
 /// Classification information for an environment
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ClassMap {
     /// Optional class identifier
@@ -105,7 +147,7 @@ pub struct ClassMap {
 }
 
 /// Possible types for class identifiers
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum ClassIdTypeChoice {
     /// Object Identifier (OID)
@@ -117,7 +159,7 @@ pub enum ClassIdTypeChoice {
 }
 
 /// Possible types for instance identifiers
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum InstanceIdTypeChoice {
     /// Unique Entity Identifier
@@ -131,7 +173,63 @@ pub enum InstanceIdTypeChoice {
 }
 
 /// Types of cryptographic keys and certificates
-#[derive(Serialize, Deserialize)]
+///
+/// This enum supports all key and certificate formats defined in the CoRIM specification:
+///
+/// - PKIX formats use base64 encoding for certificates and keys
+/// - COSE keys follow the COSE_Key structure from RFC 8152
+/// - Thumbprints provide cryptographic hashes of keys/certificates
+/// - ASN.1 DER supports raw certificate encoding
+///
+/// # Variants
+///
+/// * `PkixBase64Key` - Base64-encoded PKIX key
+/// * `PkixBase64Cert` - Base64-encoded PKIX certificate
+/// * `PkixBase64CertPath` - Base64-encoded PKIX certificate path
+/// * `CoseKey` - COSE key structure (RFC 8152)
+/// * `Thumbprint` - Generic cryptographic thumbprint
+/// * `CertThumbprint` - Certificate thumbprint
+/// * `CertPathThumbprint` - Certificate path thumbprint  
+/// * `PkixAsn1DerCert` - ASN.1 DER encoded PKIX certificate
+/// * `Bytes` - Raw bytes
+///
+/// # Example
+///
+/// # Example
+///
+/// ```rust
+/// use corim_rs::triples::CryptoKeyTypeChoice;
+/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, AlgLabel, Label, CoseAlgorithm, OneOrMore};
+///
+/// // Base64 encoded certificate
+/// let cert = CryptoKeyTypeChoice::PkixBase64Cert(
+///     PkixBase64CertType::new("MIIBIjANBgkq...".into())
+/// );
+///
+/// // COSE key structure
+/// let cose = CryptoKeyTypeChoice::CoseKey(
+///     CoseKeyType::new(CoseKeySetOrKey::Key(CoseKey {
+///         kty: Label::Int(1),  // EC2 key type
+///         kid: TaggedBytes::new(vec![1, 2, 3]),  // Key ID
+///         alg: AlgLabel::Int(CoseAlgorithm::ES256),  // ES256 algorithm
+///         key_ops: OneOrMore::Many(vec![
+///             Label::Int(1),  // sign
+///             Label::Int(2),  // verify
+///         ]),
+///         base_iv: TaggedBytes::new(vec![4, 5, 6]),  // Initialization vector
+///         extension: None,  // No extensions
+///     }))
+/// );
+///
+/// // Raw key bytes
+/// let raw = CryptoKeyTypeChoice::Bytes(
+///     Bytes::from(vec![0x01, 0x02, 0x03])
+/// );
+/// ```
+///
+/// Each variant provides appropriate constructors and implements common traits
+/// like `From`, `TryFrom`, `Serialize`, and `Deserialize`.
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum CryptoKeyTypeChoice {
     /// Base64-encoded PKIX key
@@ -139,7 +237,7 @@ pub enum CryptoKeyTypeChoice {
     /// Base64-encoded PKIX certificate
     PkixBase64Cert(PkixBase64CertType),
     /// Base64-encoded PKIX certificate path
-    PkixBase64CertPath(PkixBase64CertType),
+    PkixBase64CertPath(PkixBase64CertPathType),
     /// COSE key structure
     CoseKey(CoseKeyType),
     /// Generic cryptographic thumbprint
@@ -155,7 +253,7 @@ pub enum CryptoKeyTypeChoice {
 }
 
 /// Types of group identifiers
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum GroupIdTypeChoice {
     /// UUID identifier
@@ -165,7 +263,7 @@ pub enum GroupIdTypeChoice {
 }
 
 /// Map containing measurement values and metadata
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct MeasurementMap {
     /// Optional measurement key identifier
@@ -179,7 +277,7 @@ pub struct MeasurementMap {
 }
 
 /// Types of measured element identifiers
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum MeasuredElementTypeChoice {
     /// Object Identifier (OID)
@@ -193,7 +291,7 @@ pub enum MeasuredElementTypeChoice {
 }
 
 /// Collection of measurement values and attributes
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, From)]
 #[repr(C)]
 pub struct MeasurementValuesMap {
     /// Optional version information
@@ -243,7 +341,7 @@ pub struct MeasurementValuesMap {
 }
 
 /// Version information with optional versioning scheme
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct VersionMap {
     /// Version identifier string
@@ -254,7 +352,7 @@ pub struct VersionMap {
 }
 
 /// Security version number types
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum SvnTypeChoice {
     /// Regular SVN as an unsigned integer
@@ -269,7 +367,7 @@ pub enum SvnTypeChoice {
 pub type DigestType = OneOrMore<Digest>;
 
 /// Status flags indicating various security and configuration states
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From)]
 #[repr(C)]
 pub struct FlagsMap {
     /// Whether the environment is configured
@@ -308,7 +406,13 @@ pub struct FlagsMap {
     pub extensions: Option<ExtensionMap>,
 }
 
-/// Types of MAC addresses
+/// Types of MAC addresses supporting both EUI-48 and EUI-64 formats
+///
+/// Implements standard traits for byte access:
+/// - `AsRef<[u8]>`/`AsMut<[u8]>` for buffer access
+/// - `Deref`/`DerefMut` for direct byte manipulation
+/// - `From` for construction from byte arrays
+/// - `TryFrom` for fallible construction from slices
 #[derive(Serialize, Deserialize)]
 #[repr(C)]
 pub enum MacAddrTypeChoice {
@@ -318,12 +422,77 @@ pub enum MacAddrTypeChoice {
     Eui64Addr(Eui64AddrType),
 }
 
+impl From<Eui48AddrType> for MacAddrTypeChoice {
+    fn from(value: Eui48AddrType) -> Self {
+        Self::Eui48Addr(value)
+    }
+}
+
+impl From<Eui64AddrType> for MacAddrTypeChoice {
+    fn from(value: Eui64AddrType) -> Self {
+        Self::Eui64Addr(value)
+    }
+}
+
+impl TryFrom<&[u8]> for MacAddrTypeChoice {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        match value.len() {
+            6 => Ok(Self::Eui48Addr(value.try_into().unwrap())),
+            8 => Ok(Self::Eui64Addr(value.try_into().unwrap())),
+            _ => Err(<[u8; 0]>::try_from(&[][..]).unwrap_err()),
+        }
+    }
+}
+
+impl AsRef<[u8]> for MacAddrTypeChoice {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            Self::Eui48Addr(addr) => addr,
+            Self::Eui64Addr(addr) => addr,
+        }
+    }
+}
+
+impl AsMut<[u8]> for MacAddrTypeChoice {
+    fn as_mut(&mut self) -> &mut [u8] {
+        match self {
+            Self::Eui48Addr(addr) => addr,
+            Self::Eui64Addr(addr) => addr,
+        }
+    }
+}
+
+impl Deref for MacAddrTypeChoice {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Eui48Addr(addr) => addr,
+            Self::Eui64Addr(addr) => addr,
+        }
+    }
+}
+
+impl DerefMut for MacAddrTypeChoice {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Eui48Addr(addr) => addr,
+            Self::Eui64Addr(addr) => addr,
+        }
+    }
+}
+
 /// 48-bit MAC address type
 pub type Eui48AddrType = [u8; 6];
 /// 64-bit MAC address type
 pub type Eui64AddrType = [u8; 8];
 
-/// Types of IP addresses
+/// Types of IP addresses supporting both IPv4 and IPv6
+///
+/// Storage uses network byte order (big-endian) following RFC 791/8200.
+/// Implements the same traits as MacAddrTypeChoice for consistent handling.
 #[derive(Serialize, Deserialize)]
 #[repr(C)]
 pub enum IpAddrTypeChoice {
@@ -333,13 +502,73 @@ pub enum IpAddrTypeChoice {
     Ipv6(Ipv6AddrType),
 }
 
+impl From<Ipv4AddrType> for IpAddrTypeChoice {
+    fn from(value: Ipv4AddrType) -> Self {
+        Self::Ipv4(value)
+    }
+}
+impl From<Ipv6AddrType> for IpAddrTypeChoice {
+    fn from(value: Ipv6AddrType) -> Self {
+        Self::Ipv6(value)
+    }
+}
+
+impl TryFrom<&[u8]> for IpAddrTypeChoice {
+    type Error = std::array::TryFromSliceError;
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        match value.len() {
+            4 => Ok(Self::Ipv4(value.try_into()?)),
+            16 => Ok(Self::Ipv6(value.try_into()?)),
+            _ => Err(<[u8; 0]>::try_from(&[][..]).unwrap_err()),
+        }
+    }
+}
+
+impl Deref for IpAddrTypeChoice {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Ipv4(addr) => addr,
+            Self::Ipv6(addr) => addr,
+        }
+    }
+}
+
+impl DerefMut for IpAddrTypeChoice {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Ipv4(addr) => addr,
+            Self::Ipv6(addr) => addr,
+        }
+    }
+}
+
+impl AsRef<[u8]> for IpAddrTypeChoice {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            Self::Ipv4(addr) => addr,
+            Self::Ipv6(addr) => addr,
+        }
+    }
+}
+
+impl AsMut<[u8]> for IpAddrTypeChoice {
+    fn as_mut(&mut self) -> &mut [u8] {
+        match self {
+            Self::Ipv4(addr) => addr,
+            Self::Ipv6(addr) => addr,
+        }
+    }
+}
+
 /// IPv4 address as 4 bytes
 pub type Ipv4AddrType = [u8; 4];
 /// IPv6 address as 16 bytes
 pub type Ipv6AddrType = [u8; 16];
 
 /// Collection of integrity register values
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct IntegrityRegisters {
     /// One or more register values identified by labels
@@ -348,7 +577,7 @@ pub struct IntegrityRegisters {
 }
 
 /// Record containing an endorsement for a specific environmental condition
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct EndorsedTripleRecord {
     /// Environmental condition being endorsed
@@ -358,7 +587,7 @@ pub struct EndorsedTripleRecord {
 }
 
 /// Record containing identity information for an environment
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct IdentityTripleRecord {
     /// Environment being identified
@@ -371,7 +600,7 @@ pub struct IdentityTripleRecord {
 }
 
 /// Conditions that must be met for a triple record to be valid
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct TripleRecordCondition {
     /// Optional measurement key identifier
@@ -382,7 +611,7 @@ pub struct TripleRecordCondition {
 }
 
 /// Record containing attestation key information for an environment
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct AttestKeyTripleRecord {
     /// Environment the keys belong to
@@ -395,7 +624,7 @@ pub struct AttestKeyTripleRecord {
 }
 
 /// Record describing dependencies between domains and environments
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct DomainDependencyTripleRecord {
     /// Domain identifier
@@ -407,7 +636,7 @@ pub struct DomainDependencyTripleRecord {
 }
 
 /// Types of domain identifiers
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 pub enum DomainTypeChoice {
     /// Unsigned integer identifier
     Uint(Uint),
@@ -418,8 +647,9 @@ pub enum DomainTypeChoice {
     /// Object Identifier (OID)
     Oid(OidType),
 }
+
 /// Record describing domain membership associations
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct DomainMembershipTripleRecord {
     /// Domain identifier
@@ -431,7 +661,7 @@ pub struct DomainMembershipTripleRecord {
 }
 
 /// Record linking environments to CoSWID tags
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct CoswidTripleRecord {
     /// Environment the CoSWID tags belong to
@@ -443,7 +673,21 @@ pub struct CoswidTripleRecord {
 }
 
 /// Record describing a series of conditional endorsements
-#[derive(Serialize, Deserialize)]
+///
+/// This type implements complex endorsement scenarios where measurements
+/// may change over time in a defined sequence. The record tracks:
+///
+/// 1. Initial environment state and measurements
+/// 2. Series of allowed measurement changes
+/// 3. Required verification at each step
+///
+/// # Processing Rules
+///
+/// - Changes must be applied in sequence order
+/// - Each change requires matching the selection criteria
+/// - New measurements are added only when selections match
+/// - Previous measurements remain valid unless replaced
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ConditionalEndorsementSeriesTripleRecord {
     /// Initial environmental condition
@@ -453,7 +697,7 @@ pub struct ConditionalEndorsementSeriesTripleRecord {
 }
 
 /// Record containing environment state and measurement claims
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct StatefulEnvironmentRecord {
     /// Environment being described
@@ -463,7 +707,7 @@ pub struct StatefulEnvironmentRecord {
 }
 
 /// Record describing conditional changes to measurements
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ConditionalSeriesRecord {
     /// Measurements that must match for changes to apply
@@ -473,7 +717,7 @@ pub struct ConditionalSeriesRecord {
 }
 
 /// Record containing conditional endorsements
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ConditionalEndorsementTripleRecord {
     /// List of environmental conditions

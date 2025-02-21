@@ -14,16 +14,27 @@
 
 /// Module containing CoMID tag types and structures
 pub mod comid;
+
 /// Core types and utilities used across the library
 pub mod core;
+
 /// CoRIM manifest types and structures
 pub mod corim;
+
 /// CoSWID tag types and structures
 pub mod coswid;
+
 /// CoTL (Trust List) types and structures
 pub mod cotl;
+
 /// Triple types used in CoMID tags
 pub mod triples;
+
+/// Fixed Bytes Arrays
+pub mod fixed_bytes;
+
+/// Macros for easier implementation definitions.
+pub(crate) mod macros;
 
 // Re-export all public items from each module
 use comid::*;
@@ -31,4 +42,5 @@ use core::*;
 use corim::*;
 use coswid::*;
 use cotl::*;
+use fixed_bytes::*;
 use triples::*;

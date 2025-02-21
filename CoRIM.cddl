@@ -1,13 +1,12 @@
 corim = concise-rim-type-choice
 
-concise-rim-type-choice /= tagged-corim-map
+concise-rim-type-choice /= tagged-unsigned-corim-map
 concise-rim-type-choice /= signed-corim
 
 concise-tl-tag = {
   &(tag-identity: 0) => tag-identity-map
   &(tags-list: 1) => [ + tag-identity-map ],
   &(tl-validity: 2) => validity-map
-  * $$concise-tl-tag-extension
 }
 
 $concise-tag-type-choice /= tagged-concise-swid-tag
@@ -34,6 +33,7 @@ corim-map = {
   ? &(entities: 5) => [ + corim-entity-map ]
   * $$corim-map-extension
 }
+unsigned-corim-map = corim-map
 
 corim-meta-map = {
   &(signer: 0) => corim-signer-map
@@ -41,6 +41,7 @@ corim-meta-map = {
 }
 
 $corim-role-type-choice /= &(manifest-creator: 1)
+$corim-role-type-choice /= &(manifest-signer: 2)
 
 corim-signer-map = {
   &(signer-name: 0) => $entity-name-type-choice
@@ -51,7 +52,7 @@ corim-signer-map = {
 COSE-Sign1-corim = [
   protected: bstr .cbor protected-corim-header-map
   unprotected: unprotected-corim-header-map
-  payload: bstr .cbor tagged-corim-map
+  payload: bstr .cbor tagged-unsigned-corim-map
   signature: bstr
 ]
 
@@ -68,13 +69,13 @@ protected-corim-header-map = {
 
 signed-corim = #6.18(COSE-Sign1-corim)
 
-tagged-corim-map = #6.501(corim-map)
-
 tagged-concise-swid-tag = #6.505(bytes .cbor concise-swid-tag)
 
 tagged-concise-mid-tag = #6.506(bytes .cbor concise-mid-tag)
 
 tagged-concise-tl-tag = #6.508(bytes .cbor concise-tl-tag)
+
+tagged-unsigned-corim-map = #6.501(unsigned-corim-map)
 
 unprotected-corim-header-map = {
   * cose-label => cose-value

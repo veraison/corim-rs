@@ -1,58 +1,55 @@
 // SPDX-License-Identifier: MIT
 
-//! Core types and utilities for the CoRIM implementation.
+//! Core types and structures for CoRIM (Concise Reference Integrity Manifest)
 //!
 //! This module provides fundamental types and data structures used throughout the CoRIM
-//! specification implementation. It includes:
+//! implementation. It includes:
 //!
 //! # Basic Types
-//!
-//! - Text and string types ([`Text`], [`Tstr`])
-//! - Numeric types ([`Int`], [`Uint`], [`Time`])
-//! - URI types ([`Uri`], [`AnyUri`])
-//! - Binary types for cryptographic operations
+//! * Text and string representations
+//! * Numeric types for various purposes
+//! * Byte array and UUID implementations
+//! * URI handling types
 //!
 //! # Data Structures
+//! * Extension maps for flexible attribute storage
+//! * Hash entries and digest representations
+//! * Label types for various identifiers
+//! * COSE key structures and algorithms
 //!
-//! - [`ExtensionMap`]: Flexible extension mechanism
-//! - [`OneOrMore`]: Container for single or multiple values
-//! - [`GlobalAttributes`]: Common attributes across all types
-//! - [`HashEntry`]: Cryptographic hash representations
+//! # Enums and Choices
+//! * Tagged types for CBOR encoding
+//! * Value type choices (text/bytes/integers)
+//! * Algorithm identifiers
+//! * Version schemes
 //!
-//! # CBOR Tagged Types
+//! # Registries
+//! * CoRIM map registries
+//! * CoMID map registries
+//! * CoTL map registries
 //!
-//! Several types are wrapped with CBOR tags as defined in the specification:
-//! - [`IntegerTime`]: Tag 1
-//! - [`OidType`]: Tag 111
-//! - [`SvnType`]: Tag 552
-//! - [`CoseKeyType`]: Tag 558
+//! # Features
+//! * CBOR tagging support
+//! * Flexible serialization options
+//! * Comprehensive algorithm support
+//! * Extensible data structures
 //!
-//! # Type Registries
-//!
-//! - [`CorimMapRegistry`]: Valid keys for CoRIM maps
-//! - [`ComidMapRegistry`]: Valid keys for CoMID maps
-//! - [`CotlMapRegistry`]: Valid keys for CoTL maps
-//!
-//! # Usage
-//!
-//! ```rust
-//! use corim_rs::core::{Text, HashEntry, Digest};
-//!
-//! // Create a hash entry
-//! let hash = HashEntry {
-//!     hash_alg_id: 1,  // SHA-256
-//!     hash_value: vec![0, 1, 2, 3],
-//! };
-//! ```
+//! This module implements core functionality as specified in the IETF CoRIM specification
+//! and related standards (RFC 8152 for COSE structures).
 
 use std::collections::BTreeMap;
 
+use derive_more::{AsMut, AsRef, Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
+
+use crate::{generate_tagged, FixedBytes};
 
 /// Text represents a UTF-8 string value
 pub type Text = String;
 /// Tstr represents a text string value
 pub type Tstr = String;
+/// Bytes represents an un-tagged array of bytes.
+pub type Bytes = Vec<u8>;
 /// Uri represents one or more text values that conform to the URI syntax
 pub type Uri = OneOrMore<Text>;
 /// AnyUri represents a URI that can be relative or absolute
@@ -69,26 +66,18 @@ pub type Int = i32;
 pub type Integer = Int;
 
 /// ExtensionMap represents the possible types that can be used in extensions
-#[derive(Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, From, TryFrom)]
 pub enum ExtensionMap {
     /// A UTF-8 string value
     Text(Text),
-    /// A text string value
-    Tstr(Tstr),
     /// A URI value
     Uri(Uri),
-    /// Any URI value (relative or absolute)
-    AnyUri(AnyUri),
-    /// A time value
-    Time(Time),
     /// A role identifier
     Role(Role),
     /// An unsigned integer
     Uint(Uint),
     /// A signed integer
     Int(Int),
-    /// An integer value
-    Integer(Integer),
     /// An array of extension values
     Array(Vec<ExtensionMap>),
     /// A map of extension key-value pairs
@@ -96,79 +85,80 @@ pub enum ExtensionMap {
 }
 
 /// UUID type representing a 16-byte unique identifier
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, AsRef, AsMut, Constructor)]
 pub struct UuidType {
     #[serde(flatten)]
     pub field: [u8; 16],
 }
 
-/// UEID type representing a 33-byte Unique Entity Identifier
-#[derive(Serialize, Deserialize)]
-pub struct UeidType {
-    #[serde(with = "serde_arrays")]
-    #[serde(flatten)]
-    pub field: [u8; 33],
+impl TryFrom<&[u8]> for UuidType {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let field = <[u8; 16]>::try_from(value)?;
+        Ok(Self { field })
+    }
 }
 
-macro_rules! generate_tagged {
-    ($(($tag_num: expr, $title: ident, $type: ty, $doc_comments: literal)), * $(,)?) => {
-        $(
-            #[doc = $doc_comments]
-            #[derive(Serialize, Deserialize)]
-            #[repr(C)]
-            #[serde(tag = "$tag_num")]
-            pub struct $title {
-                /// The wrapped value which will be flattened during serialization
-                #[serde(flatten)]
-                pub field: $type,
-            }
-        )*
-    };
+/// UEID type representing a 33-byte Unique Entity Identifier
+#[derive(Serialize, Deserialize, From, Constructor)]
+pub struct UeidType {
+    #[serde(flatten)]
+    pub field: FixedBytes<33>,
 }
 
 generate_tagged!(
-    ("1", IntegerTime, Int, "A representation of time in integer format using CBOR tag 1"),
-    ("111", OidType, Bytes, "An Object Identifier (OID) represented as bytes using CBOR tag 111"),
-    ("552", SvnType, Uint, "A Security Version Number (SVN) using CBOR tag 552"),
-    ("553", MinSvnType, Uint, "A minimum Security Version Number (SVN) using CBOR tag 553"),
-    ("554", PkixBase64KeyType, Tstr, "A PKIX key in base64 format using CBOR tag 554"),
-    ("555", PkixBase64CertType, Tstr, "A PKIX certificate in base64 format using CBOR tag 555"),
-    ("556", PkixBase64CertPathType, Tstr, "A PKIX certificate path in base64 format using CBOR tag 556"),
-    ("557", ThumbprintType, Digest, "A cryptographic thumbprint using CBOR tag 557"),
-    ("559", CertThumprintType, Digest, "A certificate thumbprint using CBOR tag 559"),
-    ("560", Bytes, Vec<u8>, "A generic byte string using CBOR tag 560"),
-    ("561", CertPathThumbprintType, Digest, "A certificate path thumbprint using CBOR tag 561"),
-    ("562", PkixAsn1DerCertType, Bytes, "A PKIX certificate in ASN.1 DER format using CBOR tag 562"),
+    (1, IntegerTime, Int, "A representation of time in integer format using CBOR tag 1"),
+    (37, TaggedUuidType, UuidType, "UUID type wrapped with CBOR tag 37"),
+    (111, OidType, Bytes, "An Object Identifier (OID) represented as bytes using CBOR tag 111"),
+    (550, TaggedUeidType, UeidType, "UEID type wrapped with CBOR tag 550"),
+    (552, SvnType, Uint, "A Security Version Number (SVN) using CBOR tag 552"),
+    (553, MinSvnType, Uint, "A minimum Security Version Number (SVN) using CBOR tag 553"),
+    (554, PkixBase64KeyType, Tstr, "A PKIX key in base64 format using CBOR tag 554"),
+    (555, PkixBase64CertType, Tstr, "A PKIX certificate in base64 format using CBOR tag 555"),
+    (556, PkixBase64CertPathType, Tstr, "A PKIX certificate path in base64 format using CBOR tag 556"),
+    (557, ThumbprintType, Digest, "A cryptographic thumbprint using CBOR tag 557"),
+    (558, CoseKeyType, CoseKeySetOrKey, "CBOR tag 558 wrapper for COSE Key Structures"),
+    (559, CertThumprintType, Digest, "A certificate thumbprint using CBOR tag 559"),
+    (560, TaggedBytes, Vec<u8>, "A generic byte string using CBOR tag 560"),
+    (561, CertPathThumbprintType, Digest, "A certificate path thumbprint using CBOR tag 561"),
+    (562, PkixAsn1DerCertType, TaggedBytes, "A PKIX certificate in ASN.1 DER format using CBOR tag 562"),
+    (563, TaggedMaskedRawValue, MaskedRawValue, "Represents a masked raw value with its mask"),
 );
 
 /// Represents a value that can be either text or bytes
 #[repr(C)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 pub enum TextOrBytes {
     /// UTF-8 string value
     Text(Text),
     /// Raw bytes value
-    Bytes(Bytes),
+    Bytes(TaggedBytes),
+}
+
+impl From<&str> for TextOrBytes {
+    fn from(value: &str) -> Self {
+        Self::Text(value.to_string())
+    }
 }
 
 /// Represents a value that can be either text or fixed-size bytes
 #[repr(C)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 pub enum TextOrBytesSized<const N: usize> {
     /// UTF-8 string value
     Text(Text),
     /// Fixed-size byte array
-    #[serde(with = "serde_arrays")]
-    Bytes([u8; N]),
+    Bytes(FixedBytes<N>),
 }
 
 /// Represents a hash entry with algorithm ID and hash value
 #[repr(C)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 pub struct HashEntry {
     /// Algorithm identifier for the hash
     #[serde(rename = "hash-alg-id")]
-    pub hash_alg_id: Int,
+    pub hash_alg_id: CoseAlgorithm,
     /// The hash value as bytes
     #[serde(rename = "hash-value")]
     pub hash_value: Bytes,
@@ -176,7 +166,7 @@ pub struct HashEntry {
 
 /// Represents a label that can be either text or integer
 #[repr(C)]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, TryFrom)]
 #[serde(untagged)]
 pub enum Label {
     /// Text label
@@ -185,9 +175,18 @@ pub enum Label {
     Int(Int),
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, TryFrom)]
+#[serde(untagged)]
+/// Algorithm label that can be either a text string or a COSE algorithm identifier
+pub enum AlgLabel {
+    Text(Text),
+    Int(CoseAlgorithm),
+}
+
 /// Represents an unsigned label that can be either text or unsigned integer
 #[repr(C)]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, TryFrom)]
 #[serde(untagged)]
 pub enum Ulabel {
     /// Text label
@@ -197,16 +196,16 @@ pub enum Ulabel {
 }
 
 /// Represents one or more values that can be either text or integers
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, PartialOrd, Ord, From, TryFrom)]
 #[serde(untagged)]
 #[repr(C)]
-pub enum OneOrMore<T = ExtensionMap> {
+pub enum OneOrMore<T> {
     One(T),
     Many(Vec<T>),
 }
 
 /// Represents an attribute value that can be either text or integer, single or multiple
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, From, TryFrom)]
 #[serde(untagged)]
 #[repr(C)]
 pub enum AttributeValue {
@@ -215,7 +214,7 @@ pub enum AttributeValue {
 }
 
 /// Represents global attributes with optional language tag and arbitrary attributes
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct GlobalAttributes {
     /// Optional language tag (ex. en_US)
@@ -227,7 +226,7 @@ pub struct GlobalAttributes {
 }
 
 /// Registry of valid keys for CoRIM maps according to the specification
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum CorimMapRegistry {
     /// Unique identifier for the CoRIM
@@ -245,7 +244,7 @@ pub enum CorimMapRegistry {
 }
 
 /// Registry of valid keys for CoMID maps according to the specification
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum ComidMapRegistry {
     /// Language identifier
@@ -261,7 +260,7 @@ pub enum ComidMapRegistry {
 }
 
 /// Registry of valid keys for CoTL maps according to the specification
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum CotlMapRegistry {
     /// Tag identity information
@@ -274,17 +273,17 @@ pub enum CotlMapRegistry {
 
 /// Represents a digest value with its algorithm identifier
 #[repr(C)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 pub struct Digest {
     /// Algorithm identifier for the digest
-    pub alg: Label,
+    pub alg: AlgLabel,
     /// The digest value as bytes
     pub val: Bytes,
 }
 
 /// Represents either a COSE key set or a single COSE key
 #[repr(C)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 pub enum CoseKeySetOrKey {
     /// A set of COSE keys
     KeySet(OneOrMore<CoseKey>),
@@ -293,7 +292,7 @@ pub enum CoseKeySetOrKey {
 }
 
 /// Represents a COSE key structure as defined in RFC 8152
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct CoseKey {
     /// Key type identifier (kty)
@@ -301,69 +300,51 @@ pub struct CoseKey {
     pub kty: Label,
     /// Key identifier (kid)
     #[serde(rename = "2")]
-    pub kid: Bytes,
+    pub kid: TaggedBytes,
     /// Algorithm identifier (alg)
     #[serde(rename = "3")]
-    pub alg: Label,
+    pub alg: AlgLabel,
     /// Allowed operations for this key
     #[serde(rename = "4")]
     pub key_ops: OneOrMore<Label>,
     /// Base initialization vector
     #[serde(rename = "5")]
-    pub base_iv: Bytes,
+    pub base_iv: TaggedBytes,
     /// Optional extension fields
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap>,
 }
 
-/// CBOR tag 558 wrapper for COSE key structures
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-#[serde(tag = "558")]
-pub struct CoseKeyType {
-    /// The wrapped COSE key or key set
-    #[serde(flatten)]
-    pub field: CoseKeySetOrKey,
-}
-
-/// Represents a masked raw value with its mask
-#[derive(Serialize, Deserialize)]
-#[repr(C)]
-#[serde(tag = "563")]
+/// Raw value data structure with associated mask
 pub struct MaskedRawValue {
-    /// The raw value
     pub value: Bytes,
-    /// The mask to apply to the value
     pub mask: Bytes,
 }
 
-/// UUID type wrapped with CBOR tag 37
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-#[serde(tag = "37")]
-pub struct TaggedUuidType {
-    /// The wrapped UUID value
-    #[serde(flatten)]
-    pub bytes: UuidType,
+/// Container for raw values with optional masking
+pub struct RawValueType {
+    pub raw_value: RawValueTypeChoice,
+    pub raw_value_mask: RawValueMaskType,
 }
 
-/// UEID type wrapped with CBOR tag 550
-#[derive(Serialize, Deserialize)]
-#[repr(C)]
-#[serde(tag = "550")]
-pub struct TaggedUeidType {
-    /// The wrapped UEID value
-    #[serde(flatten)]
-    pub bytes: UeidType,
-}
+/// Type alias for raw value masks
+pub type RawValueMaskType = Bytes;
 
-/// Alias for MaskedRawValue type
-pub type RawValueType = MaskedRawValue;
+#[derive(Serialize, Deserialize, From)]
+/// Represents different types of raw values
+pub enum RawValueTypeChoice {
+    TaggedBytes(TaggedBytes),
+    TaggedMaskedRawValue(TaggedMaskedRawValue),
+}
 
 /// Version scheme enumeration as defined in the specification
 #[repr(C)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 pub enum VersionScheme {
     /// Multi-part numeric version (e.g., 1.2.3)
     Multipartnumeric = 1,
@@ -375,4 +356,203 @@ pub enum VersionScheme {
     Decimal = 4,
     /// Semantic versioning (e.g., 1.2.3-beta+build.123)
     Semver = 16384,
+}
+
+/// COSE cryptographic algorithms as defined in RFC 8152 and the IANA COSE Registry
+///
+/// The enum represents all registered algorithm identifiers for:
+/// - Digital signatures
+/// - Message authentication (MAC)
+/// - Content encryption
+/// - Key encryption
+/// - Key derivation
+/// - Hash functions
+///
+/// # Categories
+///
+/// - Signature algorithms (e.g., RS256, ES384, EdDSA)
+/// - Hash functions (e.g., SHA-256, SHA-512, SHAKE128)
+/// - Symmetric encryption (e.g., AES-GCM, ChaCha20-Poly1305)
+/// - Key wrapping (e.g., AES-KW)
+/// - Key derivation (e.g., HKDF variants)
+///
+/// # Value Ranges
+///
+/// - -65536 to -65525: Reserved for private use
+/// - -260 to -256: RSA PSS signatures
+/// - -47 to -1: ECDSA and other asymmetric algorithms
+/// - 0: Reserved
+/// - 1 to 65536: Symmetric algorithms
+///
+/// # Example
+///
+/// ```rust
+/// use corim_rs::core::CoseAlgorithm;
+///
+/// let alg = CoseAlgorithm::ES256;  // ECDSA with SHA-256
+/// let hash_alg = CoseAlgorithm::Sha256;  // SHA-256 hash function
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
+#[repr(i64)]
+pub enum CoseAlgorithm {
+    /// Reserved for private use (-65536)
+    Unassigned0 = -65536,
+    /// RSASSA-PKCS1-v1_5 using SHA-1
+    RS1 = -65535,
+    /// AES-CTR with 128-bit key
+    A128CTR = -65534,
+    /// AES-CTR with 192-bit key
+    A192CTR = -65533,
+    /// AES-CTR with 256-bit key
+    A256CTR = -65532,
+    /// AES-CBC with 128-bit key
+    A128CBC = -65531,
+    /// AES-CBC with 192-bit key
+    A192CBC = -65530,
+    /// AES-CBC with 256-bit key
+    A256CBC = -65529,
+    /// Unassigned (-65528)
+    Unassigned1 = -65528,
+    /// WalnutDSA signature algorithm
+    WalnutDSA = -260,
+    /// RSASSA-PKCS1-v1_5 using SHA-512
+    RS512 = -259,
+    /// RSASSA-PKCS1-v1_5 using SHA-384
+    RS384 = -258,
+    /// RSASSA-PKCS1-v1_5 using SHA-256
+    RS256 = -257,
+    /// Unassigned (-256)
+    Unassigned2 = -256,
+    /// ECDSA using secp256k1 curve and SHA-256
+    ES256K = -47,
+    /// HSS/LMS hash-based signature
+    HssLms = -46,
+    /// SHAKE256 hash function
+    SHAKE256 = -45,
+    /// SHA-512 hash function
+    Sha512 = -44,
+    /// SHA-384 hash function
+    Sha384 = -43,
+    /// RSAES OAEP w/ SHA-512
+    RsaesOaepSha512 = -42,
+    /// RSAES OAEP w/ SHA-256
+    RsaesOaepSha256 = -41,
+    /// RSAES OAEP w/ RFC 8017 default parameters
+    RsaesOaepRfc = 8017,
+    /// RSASSA-PSS w/ SHA-512
+    PS512 = -39,
+    /// RSASSA-PSS w/ SHA-384
+    PS384 = -38,
+    /// RSASSA-PSS w/ SHA-256
+    PS256 = -37,
+    /// ECDSA w/ SHA-512
+    ES512 = -36,
+    /// ECDSA w/ SHA-384
+    ES384 = -35,
+    /// ECDH SS w/ Concat KDF and AES Key Wrap w/ 256-bit key
+    EcdhSsA256kw = -34,
+    /// ECDH SS w/ Concat KDF and AES Key Wrap w/ 192-bit key
+    EcdhSsA192kw = -33,
+    /// ECDH SS w/ Concat KDF and AES Key Wrap w/ 128-bit key
+    EcdhSsA128kw = -32,
+    /// ECDH ES w/ Concat KDF and AES Key Wrap w/ 256-bit key
+    EcdhEsA256kw = -31,
+    /// ECDH ES w/ Concat KDF and AES Key Wrap w/ 192-bit key
+    EcdhEsA192kw = -30,
+    /// ECDH ES w/ Concat KDF and AES Key Wrap w/ 128-bit key
+    EcdhEsA128kw = -29,
+    /// ECDH SS w/ HKDF - SHA-512
+    EcdhSsHkdf512 = -28,
+    /// ECDH SS w/ HKDF - SHA-256
+    EcdhSsHkdf256 = -27,
+    /// ECDH ES w/ HKDF - SHA-512
+    EcdhEsHkdf512 = -26,
+    /// ECDH ES w/ HKDF - SHA-256
+    EcdhEsHkdf256 = -25,
+    /// Unassigned (-24)
+    Unassigned3 = -24,
+    /// SHAKE128 hash function
+    SHAKE128 = -18,
+    /// SHA-512/256 hash function
+    Sha512_256 = -17,
+    /// SHA-256 hash function
+    Sha256 = -16,
+    /// SHA-256 hash truncated to 64-bits
+    Sha256_64 = -15,
+    /// SHA-1 hash function (deprecated)
+    Sha1 = -14,
+    /// Direct key agreement with HKDF and AES-256
+    DirectHkdfAes256 = -13,
+    /// Direct key agreement with HKDF and AES-128
+    DirectHkdfAes128 = -12,
+    /// Direct key agreement with HKDF and SHA-512
+    DirectHkdfSha512 = -11,
+    /// Direct key agreement with HKDF and SHA-256
+    DirectHkdfSha256 = -10,
+    /// Unassigned (-9)
+    Unassigned4 = -9,
+    /// EdDSA signature algorithm
+    EdDSA = -8,
+    /// ECDSA w/ SHA-256
+    ES256 = -7,
+    /// Direct use of CEK
+    Direct = -6,
+    /// AES Key Wrap w/ 256-bit key
+    A256KW = -5,
+    /// AES Key Wrap w/ 192-bit key
+    A192KW = -4,
+    /// AES Key Wrap w/ 128-bit key
+    A128KW = -3,
+    /// Unassigned (-2)
+    Unassigned5 = -2,
+    /// Reserved (0)
+    Reserved = 0,
+    /// AES-GCM mode w/ 128-bit key
+    A128GCM = 1,
+    /// AES-GCM mode w/ 192-bit key
+    A192GCM = 2,
+    /// AES-GCM mode w/ 256-bit key
+    A256GCM = 3,
+    /// HMAC w/ SHA-256 truncated to 64-bits
+    Hmac256_64 = 4,
+    /// HMAC w/ SHA-256
+    Hmac256_256 = 5,
+    /// HMAC w/ SHA-384
+    Hmac384_384 = 6,
+    /// HMAC w/ SHA-512
+    Hmac512_512 = 7,
+    /// Unassigned (8)
+    Unassigned6 = 8,
+    /// AES-CCM mode 16-byte MAC, 13-byte nonce, 128-bit key
+    AesCcm16_64_128 = 10,
+    /// AES-CCM mode 16-byte MAC, 13-byte nonce, 256-bit key
+    AesCcm16_64_256 = 11,
+    /// AES-CCM mode 64-byte MAC, 7-byte nonce, 128-bit key
+    AesCcm64_64_128 = 12,
+    /// AES-CCM mode 64-byte MAC, 7-byte nonce, 256-bit key
+    AesCcm64_64_256 = 13,
+    /// AES-MAC 128-bit key, 64-bit tag
+    AesMac128_64 = 14,
+    /// AES-MAC 256-bit key, 64-bit tag
+    AesMac256_64 = 15,
+    /// Unassigned (16)
+    Unassigned7 = 16,
+    /// ChaCha20/Poly1305 w/ 256-bit key
+    ChaCha20Poly1305 = 24,
+    /// AES-MAC 128-bit key
+    AesMac128 = 128,
+    /// AES-MAC 256-bit key
+    AesMac256 = 256,
+    /// Unassigned (27)
+    Unassigned8 = 27,
+    /// AES-CCM mode 16-byte MAC, 13-byte nonce, 128-bit key
+    AesCcm16_128_128 = 30,
+    /// AES-CCM mode 16-byte MAC, 13-byte nonce, 256-bit key
+    AesCcm16_128_256 = 31,
+    /// AES-CCM mode 64-byte MAC, 7-byte nonce, 128-bit key
+    AesCcm64_128_128 = 32,
+    /// AES-CCM mode 64-byte MAC, 7-byte nonce, 256-bit key
+    AesCcm64_128_256 = 33,
+    /// For generating IVs (Initialization Vectors)
+    IvGeneration = 34,
 }

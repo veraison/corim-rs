@@ -1,60 +1,109 @@
 // SPDX-License-Identifier: MIT
 
-//! Module for handling Concise Module Identifier (CoMID) tags.
+//! Concise Module Identifier (CoMID) Implementation
 //!
-//! CoMID tags provide a structured way to identify and describe software and hardware modules
-//! in a Reference Integrity Manifest (RIM). This module implements the CoMID specification
-//! as defined in the CoRIM standard.
+//! This module implements the CoMID (Concise Module Identifier) data structure as defined in the
+//! IETF CoRIM specification. CoMID provides a structured way to identify and describe software
+//! modules using CBOR-encoded tags.
 //!
 //! # Key Components
 //!
-//! - [`ConciseMidTag`]: The main CoMID tag structure (CBOR tag 506)
-//! - [`TagIdentityMap`]: Identification information for tags
-//! - [`ComidEntityMap`]: Information about entities associated with tags
-//! - [`TriplesMap`]: Collection of triple records describing module characteristics
-//!
-//! # Triple Types
-//!
-//! CoMID tags support several types of triples:
-//! - Reference triples: Link to external references
-//! - Endorsement triples: Contain verification information
-//! - Identity triples: Provide identity information
-//! - Attestation key triples: Contain cryptographic keys
-//! - Domain dependency triples: Describe relationships between domains
-//! - Domain membership triples: Describe domain associations
-//! - CoSWID triples: Contain software identification data
-//! - Conditional endorsement triples: Support complex verification scenarios
+//! * [`ConciseMidTag`] - The main CoMID structure, tagged with CBOR tag 506
+//! * [`TagIdentityMap`] - Identification information for a tag
+//! * [`ComidEntityMap`] - Information about entities associated with the tag
+//! * [`TriplesMap`] - Collection of triples describing module characteristics
 //!
 //! # Example
 //!
-//! ```
-//! use corim_rs::comid::{ConciseMidTag, TagIdentityMap, TagIdTypeChoice};
+//! Creating a basic CoMID tag with entity and identity information:
 //!
-//! // Create a basic CoMID tag
-//! let tag = ConciseMidTag {
-//!     language: None,
-//!     tag_identity: TagIdentityMap {
-//!         tag_id: TagIdTypeChoice::Tstr("example-tag".into()),
-//!         tag_version: None,
+//! ```rust
+//! use corim_rs::{
+//!     comid::{
+//!         ConciseMidTag, TagIdentityMap, ComidEntityMap, TriplesMap,
+//!         TagIdTypeChoice, ComidRoleTypeChoice
 //!     },
-//!     // ... other fields ...
+//!     core::{OneOrMore, Text, Tstr},
+//! };
+//!
+//! // Create a tag identity
+//! let tag_identity = TagIdentityMap {
+//!     tag_id: TagIdTypeChoice::Tstr(Tstr::from("example-tag-id")),
+//!     tag_version: Some(1u32),
+//! };
+//!
+//! // Create an entity
+//! let entity = ComidEntityMap {
+//!     entity_name: Text::from("Example Corp"),
+//!     reg_id: None,
+//!     role: OneOrMore::One(ComidRoleTypeChoice::TagCreator),
+//!     extension: None,
+//! };
+//!
+//! // Create an empty triples map
+//! let triples = TriplesMap {
+//!     reference_triples: None,
+//!     endorse_triples: None,
+//!     identity_triples: None,
+//!     attest_key_triples: None,
+//!     dependency_triples: None,
+//!     membership_triples: None,
+//!     coswid_triples: None,
+//!     conditional_endorsement_series_triples: None,
+//!     conditional_endorsement_triples: None,
+//!     extension: None,
+//! };
+//!
+//! // Create the CoMID tag
+//! let comid = ConciseMidTag {
+//!     language: None,
+//!     tag_identity,
+//!     entities: OneOrMore::One(entity),
+//!     linked_tags: None,
+//!     triples,
+//!     extension: None,
 //! };
 //! ```
+//!
+//! # Features
+//!
+//! * CBOR-based serialization using tag 506
+//! * Support for multiple entity roles
+//! * Extensible triple records for various module characteristics
+//! * Optional language support
+//! * Linking between related tags
+//!
+//! # Architecture
+//!
+//! The module is structured around the main [`ConciseMidTag`] type, which contains:
+//!
+//! 1. Tag identity information via [`TagIdentityMap`]
+//! 2. Associated entities via [`ComidEntityMap`]
+//! 3. Optional links to related tags via [`LinkedTagMap`]
+//! 4. Triple records describing the module via [`TriplesMap`]
+//!
+//! All components support optional extensions through [`ExtensionMap`] for future expandability.
 
 use crate::{
-    AttestKeyTripleRecord, ConditionalEndorsementSeriesTripleRecord,
+    generate_tagged, AttestKeyTripleRecord, ConditionalEndorsementSeriesTripleRecord,
     ConditionalEndorsementTripleRecord, CoswidTripleRecord, DomainDependencyTripleRecord,
     DomainMembershipTripleRecord, EndorsedTripleRecord, ExtensionMap, IdentityTripleRecord,
     OneOrMore, ReferenceTripleRecord, Text, Tstr, Uint, Uri, UuidType,
 };
+use derive_more::{Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
 
 /// A tag version number represented as an unsigned integer
 pub type TagVersionType = Uint;
 
+generate_tagged!((
+    506,
+    TaggedConciseMidTag,
+    ConciseMidTag,
+    "A Concise Module Identifier (CoMID) structured tag"
+),);
 /// A Concise Module Identifier (CoMID) tag structure tagged with CBOR tag 506
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "506")]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ConciseMidTag {
     /// Optional language identifier for the tag content
@@ -77,7 +126,7 @@ pub struct ConciseMidTag {
 }
 
 /// Identification information for a tag
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct TagIdentityMap {
     /// Unique identifier for the tag
@@ -90,7 +139,7 @@ pub struct TagIdentityMap {
 }
 
 /// Represents either a string or UUID tag identifier
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum TagIdTypeChoice {
     /// Text string identifier
@@ -100,7 +149,7 @@ pub enum TagIdTypeChoice {
 }
 
 /// Information about an entity associated with the tag
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ComidEntityMap {
     /// Name of the entity
@@ -119,7 +168,7 @@ pub struct ComidEntityMap {
 }
 
 /// Role types that can be assigned to entities
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum ComidRoleTypeChoice {
     /// Entity that created the tag (value: 0)
@@ -131,7 +180,7 @@ pub enum ComidRoleTypeChoice {
 }
 
 /// Reference to another tag and its relationship to this one
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct LinkedTagMap {
     /// Identifier of the linked tag
@@ -143,17 +192,19 @@ pub struct LinkedTagMap {
 }
 
 /// Types of relationships between tags
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum TagRelTypeChoice {
-    /// This tag supplements the linked tag
+    /// This tag supplements the linked tag by providing additional information
+    /// without replacing or invalidating the linked tag's content
     Supplements,
-    /// This tag replaces the linked tag
+    /// This tag completely replaces the linked tag, indicating that the linked
+    /// tag should no longer be considered valid or current
     Replaces,
 }
 
 /// Collection of different types of triples describing the module characteristics
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From)]
 #[repr(C)]
 pub struct TriplesMap {
     /// Optional reference triples that link to external references
