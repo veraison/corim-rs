@@ -37,7 +37,7 @@
 //! This module implements core functionality as specified in the IETF CoRIM specification
 //! and related standards (RFC 8152 for COSE structures).
 
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use derive_more::{AsMut, AsRef, Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
@@ -45,15 +45,16 @@ use serde::{Deserialize, Serialize};
 use crate::{generate_tagged, FixedBytes};
 
 /// Text represents a UTF-8 string value
-pub type Text = String;
+pub type Text<'a> = Cow<'a, str>;
+// pub type Text = String;
 /// Tstr represents a text string value
-pub type Tstr = String;
+pub type Tstr<'a> = Text<'a>;
 /// Bytes represents an un-tagged array of bytes.
 pub type Bytes = Vec<u8>;
 /// Uri represents one or more text values that conform to the URI syntax
-pub type Uri = OneOrMore<Text>;
+pub type Uri<'a> = OneOrMany<Text<'a>>;
 /// AnyUri represents a URI that can be relative or absolute
-pub type AnyUri = Uri;
+pub type AnyUri<'a> = Uri<'a>;
 /// Time represents an integer value for time measurements
 pub type Time = i32;
 /// Role represents an unsigned 8-bit integer for role identifiers
@@ -66,12 +67,12 @@ pub type Int = i32;
 pub type Integer = Int;
 
 /// ExtensionMap represents the possible types that can be used in extensions
-#[derive(Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, From, TryFrom)]
-pub enum ExtensionMap {
+#[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, From, TryFrom)]
+pub enum ExtensionMap<'a> {
     /// A UTF-8 string value
-    Text(Text),
+    Text(Text<'a>),
     /// A URI value
-    Uri(Uri),
+    Uri(Uri<'a>),
     /// A role identifier
     Role(Role),
     /// An unsigned integer
@@ -79,13 +80,13 @@ pub enum ExtensionMap {
     /// A signed integer
     Int(Int),
     /// An array of extension values
-    Array(Vec<ExtensionMap>),
+    Array(Vec<Box<ExtensionMap<'a>>>),
     /// A map of extension key-value pairs
-    Map(BTreeMap<ExtensionMap, ExtensionMap>),
+    Map(BTreeMap<Box<ExtensionMap<'a>>, Box<ExtensionMap<'a>>>),
 }
 
 /// UUID type representing a 16-byte unique identifier
-#[derive(Serialize, Deserialize, From, AsRef, AsMut, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, AsRef, AsMut, Constructor)]
 pub struct UuidType {
     #[serde(flatten)]
     pub field: [u8; 16],
@@ -101,7 +102,7 @@ impl TryFrom<&[u8]> for UuidType {
 }
 
 /// UEID type representing a 33-byte Unique Entity Identifier
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 pub struct UeidType {
     #[serde(flatten)]
     pub field: FixedBytes<33>,
@@ -114,47 +115,41 @@ generate_tagged!(
     (550, TaggedUeidType, UeidType, "UEID type wrapped with CBOR tag 550"),
     (552, SvnType, Uint, "A Security Version Number (SVN) using CBOR tag 552"),
     (553, MinSvnType, Uint, "A minimum Security Version Number (SVN) using CBOR tag 553"),
-    (554, PkixBase64KeyType, Tstr, "A PKIX key in base64 format using CBOR tag 554"),
-    (555, PkixBase64CertType, Tstr, "A PKIX certificate in base64 format using CBOR tag 555"),
-    (556, PkixBase64CertPathType, Tstr, "A PKIX certificate path in base64 format using CBOR tag 556"),
-    (557, ThumbprintType, Digest, "A cryptographic thumbprint using CBOR tag 557"),
-    (558, CoseKeyType, CoseKeySetOrKey, "CBOR tag 558 wrapper for COSE Key Structures"),
-    (559, CertThumprintType, Digest, "A certificate thumbprint using CBOR tag 559"),
+    (554, PkixBase64KeyType, Tstr<'a>, 'a, "A PKIX key in base64 format using CBOR tag 554"),
+    (555, PkixBase64CertType, Tstr<'a>, 'a, "A PKIX certificate in base64 format using CBOR tag 555"),
+    (556, PkixBase64CertPathType, Tstr<'a>, 'a, "A PKIX certificate path in base64 format using CBOR tag 556"),
+    (557, ThumbprintType, Digest<'a>, 'a, "A cryptographic thumbprint using CBOR tag 557"),
+    (558, CoseKeyType, CoseKeySetOrKey<'a>, 'a, "CBOR tag 558 wrapper for COSE Key Structures"),
+    (559, CertThumprintType, Digest<'a>, 'a, "A certificate thumbprint using CBOR tag 559"),
     (560, TaggedBytes, Vec<u8>, "A generic byte string using CBOR tag 560"),
-    (561, CertPathThumbprintType, Digest, "A certificate path thumbprint using CBOR tag 561"),
+    (561, CertPathThumbprintType, Digest<'a>, 'a, "A certificate path thumbprint using CBOR tag 561"),
     (562, PkixAsn1DerCertType, TaggedBytes, "A PKIX certificate in ASN.1 DER format using CBOR tag 562"),
     (563, TaggedMaskedRawValue, MaskedRawValue, "Represents a masked raw value with its mask"),
 );
 
 /// Represents a value that can be either text or bytes
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, TryFrom)]
-pub enum TextOrBytes {
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+pub enum TextOrBytes<'a> {
     /// UTF-8 string value
-    Text(Text),
+    Text(Text<'a>),
     /// Raw bytes value
     Bytes(TaggedBytes),
 }
 
-impl From<&str> for TextOrBytes {
-    fn from(value: &str) -> Self {
-        Self::Text(value.to_string())
-    }
-}
-
 /// Represents a value that can be either text or fixed-size bytes
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, TryFrom)]
-pub enum TextOrBytesSized<const N: usize> {
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+pub enum TextOrBytesSized<'a, const N: usize> {
     /// UTF-8 string value
-    Text(Text),
+    Text(Text<'a>),
     /// Fixed-size byte array
     Bytes(FixedBytes<N>),
 }
 
 /// Represents a hash entry with algorithm ID and hash value
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 pub struct HashEntry {
     /// Algorithm identifier for the hash
     #[serde(rename = "hash-alg-id")]
@@ -168,9 +163,9 @@ pub struct HashEntry {
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, TryFrom)]
 #[serde(untagged)]
-pub enum Label {
+pub enum Label<'a> {
     /// Text label
-    Text(Text),
+    Text(Text<'a>),
     /// Integer label
     Int(Int),
 }
@@ -179,8 +174,8 @@ pub enum Label {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, TryFrom)]
 #[serde(untagged)]
 /// Algorithm label that can be either a text string or a COSE algorithm identifier
-pub enum AlgLabel {
-    Text(Text),
+pub enum AlgLabel<'a> {
+    Text(Text<'a>),
     Int(CoseAlgorithm),
 }
 
@@ -188,9 +183,9 @@ pub enum AlgLabel {
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, TryFrom)]
 #[serde(untagged)]
-pub enum Ulabel {
+pub enum Ulabel<'a> {
     /// Text label
-    Text(Text),
+    Text(Text<'a>),
     /// Unsigned integer label
     Uint(Uint),
 }
@@ -199,7 +194,7 @@ pub enum Ulabel {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, PartialOrd, Ord, From, TryFrom)]
 #[serde(untagged)]
 #[repr(C)]
-pub enum OneOrMore<T> {
+pub enum OneOrMany<T> {
     One(T),
     Many(Vec<T>),
 }
@@ -208,25 +203,25 @@ pub enum OneOrMore<T> {
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, From, TryFrom)]
 #[serde(untagged)]
 #[repr(C)]
-pub enum AttributeValue {
-    Text(OneOrMore<Text>),
-    Int(OneOrMore<Int>),
+pub enum AttributeValue<'a> {
+    Text(OneOrMany<Text<'a>>),
+    Int(OneOrMany<Int>),
 }
 
 /// Represents global attributes with optional language tag and arbitrary attributes
 #[derive(Debug, Clone, Default, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-pub struct GlobalAttributes {
+pub struct GlobalAttributes<'a> {
     /// Optional language tag (ex. en_US)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lang: Option<Text>,
+    pub lang: Option<Text<'a>>,
     /// Arbitrary attributes
     #[serde(flatten)]
-    pub attributes: BTreeMap<Label, AttributeValue>,
+    pub attributes: BTreeMap<Label<'a>, AttributeValue<'a>>,
 }
 
 /// Registry of valid keys for CoRIM maps according to the specification
-#[derive(Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum CorimMapRegistry {
     /// Unique identifier for the CoRIM
@@ -244,7 +239,7 @@ pub enum CorimMapRegistry {
 }
 
 /// Registry of valid keys for CoMID maps according to the specification
-#[derive(Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum ComidMapRegistry {
     /// Language identifier
@@ -260,7 +255,7 @@ pub enum ComidMapRegistry {
 }
 
 /// Registry of valid keys for CoTL maps according to the specification
-#[derive(Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum CotlMapRegistry {
     /// Tag identity information
@@ -273,50 +268,50 @@ pub enum CotlMapRegistry {
 
 /// Represents a digest value with its algorithm identifier
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, Constructor)]
-pub struct Digest {
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+pub struct Digest<'a> {
     /// Algorithm identifier for the digest
-    pub alg: AlgLabel,
+    pub alg: AlgLabel<'a>,
     /// The digest value as bytes
     pub val: Bytes,
 }
 
 /// Represents either a COSE key set or a single COSE key
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, TryFrom)]
-pub enum CoseKeySetOrKey {
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+pub enum CoseKeySetOrKey<'a> {
     /// A set of COSE keys
-    KeySet(OneOrMore<CoseKey>),
+    KeySet(OneOrMany<CoseKey<'a>>),
     /// A single COSE key
-    Key(CoseKey),
+    Key(CoseKey<'a>),
 }
 
 /// Represents a COSE key structure as defined in RFC 8152
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-pub struct CoseKey {
+pub struct CoseKey<'a> {
     /// Key type identifier (kty)
     #[serde(rename = "1")]
-    pub kty: Label,
+    pub kty: Label<'a>,
     /// Key identifier (kid)
     #[serde(rename = "2")]
     pub kid: TaggedBytes,
     /// Algorithm identifier (alg)
     #[serde(rename = "3")]
-    pub alg: AlgLabel,
+    pub alg: AlgLabel<'a>,
     /// Allowed operations for this key
     #[serde(rename = "4")]
-    pub key_ops: OneOrMore<Label>,
+    pub key_ops: OneOrMany<Label<'a>>,
     /// Base initialization vector
     #[serde(rename = "5")]
     pub base_iv: TaggedBytes,
     /// Optional extension fields
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    pub extension: Option<ExtensionMap>,
+    pub extension: Option<ExtensionMap<'a>>,
 }
 
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 /// Raw value data structure with associated mask
 pub struct MaskedRawValue {
@@ -324,18 +319,18 @@ pub struct MaskedRawValue {
     pub mask: Bytes,
 }
 
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 /// Container for raw values with optional masking
 pub struct RawValueType {
     pub raw_value: RawValueTypeChoice,
-    pub raw_value_mask: RawValueMaskType,
+    pub raw_value_mask: Option<RawValueMaskType>,
 }
 
 /// Type alias for raw value masks
 pub type RawValueMaskType = Bytes;
 
-#[derive(Serialize, Deserialize, From)]
+#[derive(Debug, Serialize, Deserialize, From)]
 /// Represents different types of raw values
 pub enum RawValueTypeChoice {
     TaggedBytes(TaggedBytes),
@@ -344,7 +339,7 @@ pub enum RawValueTypeChoice {
 
 /// Version scheme enumeration as defined in the specification
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
 pub enum VersionScheme {
     /// Multi-part numeric version (e.g., 1.2.3)
     Multipartnumeric = 1,

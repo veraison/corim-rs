@@ -72,18 +72,19 @@
 ///
 #[macro_export]
 macro_rules! generate_tagged {
-    ($(($tag_num: expr, $title: ident, $type: ty, $doc_comments: literal)), * $(,)?) => {
+    // Combined pattern that handles both with and without lifetime parameters
+    ($(($tag_num:expr, $title:ident, $type:ty $(, $($lt:lifetime),* )?, $doc_comments:literal)),* $(,)?) => {
         $(
             #[doc = $doc_comments]
-            #[derive(::serde::Serialize, ::serde::Deserialize)]
+            #[derive(Debug, ::serde::Serialize, ::serde::Deserialize)]
             #[repr(C)]
-            pub struct $title {
+            pub struct $title $(< $($lt),* >)? {
                 /// The wrapped value which will be flattened during serialization
                 #[serde(flatten)]
                 pub field: ::ciborium::tag::Accepted<$type, $tag_num>,
             }
 
-            impl $title {
+            impl $(< $($lt),* >)? $title $(< $($lt),* >)? {
                 /// Creates a new wrapped instance from the provided value
                 #[inline]
                 pub const fn new(value: $type) -> Self {
@@ -93,19 +94,19 @@ macro_rules! generate_tagged {
                 }
             }
 
-            impl std::convert::AsRef<$type> for $title {
+            impl $(< $($lt),* >)? std::convert::AsRef<$type> for $title $(< $($lt),* >)? {
                 fn as_ref(&self) -> &$type {
                     &self.field.0
                 }
             }
 
-            impl std::convert::AsMut<$type> for $title {
+            impl $(< $($lt),* >)? std::convert::AsMut<$type> for $title $(< $($lt),* >)? {
                 fn as_mut(&mut self) -> &mut $type {
                     &mut self.field.0
                 }
             }
 
-            impl std::ops::Deref for $title {
+            impl $(< $($lt),* >)? std::ops::Deref for $title $(< $($lt),* >)? {
                 type Target = $type;
 
                 fn deref(&self) -> &Self::Target {
@@ -113,13 +114,13 @@ macro_rules! generate_tagged {
                 }
             }
 
-            impl std::ops::DerefMut for $title {
+            impl $(< $($lt),* >)? std::ops::DerefMut for $title $(< $($lt),* >)? {
                 fn deref_mut(&mut self) -> &mut Self::Target {
                     &mut self.field.0
                 }
             }
 
-            impl std::convert::From<$type> for $title {
+            impl $(< $($lt),* >)? std::convert::From<$type> for $title $(< $($lt),* >)? {
                 fn from(value: $type) -> Self {
                     Self::new(value)
                 }

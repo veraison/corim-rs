@@ -76,66 +76,68 @@
 //! and optional fields defined in the standard.
 
 use crate::{
-    core::Bytes, generate_tagged, Digest, ExtensionMap, Int, OidType, OneOrMore, TaggedBytes,
+    core::Bytes, generate_tagged, Digest, ExtensionMap, Int, OidType, OneOrMany, TaggedBytes,
     TaggedConciseMidTag, TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
 };
 
 use derive_more::{Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
 /// Represents a Concise Reference Integrity Manifest (CoRIM)
-pub type Corim = ConciseRimTypeChoice;
+pub type Corim<'a> = ConciseRimTypeChoice<'a>;
 
-pub type SignedCorim = TaggedCOSESign1Corim;
+pub type SignedCorim<'a> = TaggedCOSESign1Corim<'a>;
 
-pub type UnsignedCorimMap = CorimMap;
+pub type UnsignedCorimMap<'a> = CorimMap<'a>;
 
 /// A type choice representing either a signed or unsigned CoRIM manifest
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, TryFrom)]
-pub enum ConciseRimTypeChoice {
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+pub enum ConciseRimTypeChoice<'a> {
     /// An unprotected CoRIM with CBOR tag 501
-    TaggedUnsignedCorimMap(TaggedUnsignedCorimMap),
+    TaggedUnsignedCorimMap(TaggedUnsignedCorimMap<'a>),
     /// A COSE Sign1 protected CoRIM
-    SignedCorim(SignedCorim),
+    SignedCorim(SignedCorim<'a>),
 }
 
 generate_tagged!(
     (
         501,
         TaggedUnsignedCorimMap,
-        CorimMap,
+        CorimMap<'a>,
+        'a,
         "A CBOR tagged, unsigned CoRIM Map."
     ),
     (
         18,
         TaggedCOSESign1Corim,
-        COSESign1Corim,
+        COSESign1Corim<'a>,
+        'a,
         "A CBOR tagged, signed CoRIM."
     )
 );
 
 /// The main CoRIM manifest structure containing all reference integrity data
 /// and associated metadata. Tagged with CBOR tag 501.#[repr(C)]
-#[derive(Serialize, Deserialize, From, Constructor)]
-pub struct CorimMap {
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+pub struct CorimMap<'a> {
     /// Unique identifier for the CoRIM
-    pub id: CorimIdTypeChoice,
+    pub id: CorimIdTypeChoice<'a>,
     /// Collection of tags contained in this CoRIM
-    pub tags: OneOrMore<ConciseTagTypeChoice>,
+    pub tags: OneOrMany<ConciseTagTypeChoice<'a>>,
     /// Optional references to other CoRIMs this one depends on
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "dependent-rims")]
-    pub dependent_rims: Option<Vec<CorimLocatorMap>>,
+    pub dependent_rims: Option<Vec<CorimLocatorMap<'a>>>,
     /// Optional profile information
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub profile: Option<ProfileTypeChoice>,
+    pub profile: Option<ProfileTypeChoice<'a>>,
     /// Optional validity period for the CoRIM
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "rim-validity")]
     pub rim_validity: Option<ValidityMap>,
     /// Optional list of entities associated with this CoRIM
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub entities: Option<OneOrMore<CorimEntityMap>>,
+    pub entities: Option<OneOrMany<CorimEntityMap<'a>>>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension: Option<CorimMapExtension>,
@@ -143,50 +145,50 @@ pub struct CorimMap {
 
 /// Represents either a string or UUID identifier for a CoRIM
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, TryFrom)]
-pub enum CorimIdTypeChoice {
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+pub enum CorimIdTypeChoice<'a> {
     /// Text string identifier
-    Tstr(Tstr),
+    Tstr(Tstr<'a>),
     /// UUID identifier
     Uuid(UuidType),
 }
 
 /// Types of tags that can be included in a CoRIM
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, TryFrom)]
-pub enum ConciseTagTypeChoice {
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+pub enum ConciseTagTypeChoice<'a> {
     /// A Concise Software Identity (CoSWID) tag
-    Swid(TaggedConciseSwidTag),
+    Swid(TaggedConciseSwidTag<'a>),
     /// A Concise Module Identity (CoMID) tag
-    Mid(TaggedConciseMidTag),
+    Mid(TaggedConciseMidTag<'a>),
     /// A Concise Trust List (CoTL) tag
-    Tl(TaggedConciseTlTag),
+    Tl(TaggedConciseTlTag<'a>),
 }
 
 /// Location and optional thumbprint of a dependent CoRIM
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, Constructor)]
-pub struct CorimLocatorMap {
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+pub struct CorimLocatorMap<'a> {
     /// URI(s) where the dependent CoRIM can be found
-    pub href: OneOrMore<Uri>,
+    pub href: OneOrMany<Uri<'a>>,
     /// Optional cryptographic thumbprint for verification
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub thumbprint: Option<Digest>,
+    pub thumbprint: Option<Digest<'a>>,
 }
 
 /// Profile identifier that can be either a URI or OID
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, TryFrom)]
-pub enum ProfileTypeChoice {
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+pub enum ProfileTypeChoice<'a> {
     /// URI-based profile identifier
-    Uri(Uri),
+    Uri(Uri<'a>),
     /// OID-based profile identifier
     OidType(OidType),
 }
 
 /// Defines the validity period for a CoRIM or signature
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 pub struct ValidityMap {
     /// Optional start time of the validity period
     #[serde(rename = "not-before")]
@@ -198,22 +200,22 @@ pub struct ValidityMap {
 
 /// Information about an entity associated with the CoRIM
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, Constructor)]
-pub struct CorimEntityMap {
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+pub struct CorimEntityMap<'a> {
     /// Name of the entity
     #[serde(rename = "entity-name")]
-    pub entity_name: Text,
+    pub entity_name: Text<'a>,
     /// Optional registration identifier for the entity
     #[serde(rename = "reg-id")]
-    pub reg_id: Option<Uri>,
+    pub reg_id: Option<Uri<'a>>,
     /// Role of the entity in relation to the CoRIM
     pub role: CorimRoleTypeChoice,
     /// Optional extensible attributes
-    pub extension: Option<ExtensionMap>,
+    pub extension: Option<ExtensionMap<'a>>,
 }
 
 /// Roles that entities can have in relation to a CoRIM manifest
-#[derive(Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
 #[repr(u8)]
 pub enum CorimRoleTypeChoice {
     /// Entity that created the manifest content
@@ -225,7 +227,7 @@ pub enum CorimRoleTypeChoice {
 
 /// Extension map for CoRIM-specific extensions
 #[repr(C)]
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 pub struct CorimMapExtension {
     /// Raw bytes containing the extension data
     #[serde(flatten)]
@@ -233,66 +235,66 @@ pub struct CorimMapExtension {
 }
 
 /// COSE_Sign1 structure for a signed CoRIM with CBOR tag 18
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-pub struct COSESign1Corim {
+pub struct COSESign1Corim<'a> {
     /// Protected header containing signing metadata (must be integrity protected)
-    pub protected: ProtectedCorimHeaderMap,
+    pub protected: ProtectedCorimHeaderMap<'a>,
     /// Unprotected header attributes (not integrity protected)
-    pub unprotected: Option<ExtensionMap>,
+    pub unprotected: Option<ExtensionMap<'a>>,
     /// The actual CoRIM payload being signed
-    pub payload: TaggedUnsignedCorimMap,
+    pub payload: TaggedUnsignedCorimMap<'a>,
     /// Cryptographic signature over the protected header and payload
     pub signature: TaggedBytes,
 }
 
 /// Protected header for a signed CoRIM
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-pub struct ProtectedCorimHeaderMap {
+pub struct ProtectedCorimHeaderMap<'a> {
     /// Algorithm identifier for the signature
     pub alg: Int,
     /// Content type indicator (should be "application/rim+cbor")
     #[serde(rename = "content-type")]
-    pub content_type: String,
+    pub content_type: Text<'a>,
     /// Key identifier for the signing key
     pub kid: Bytes,
     /// CoRIM-specific metadata
     #[serde(rename = "corim-meta")]
-    pub corim_meta: CorimMetaMap,
+    pub corim_meta: CorimMetaMap<'a>,
     /// Optional COSE header parameters
     #[serde(flatten)]
     #[serde(rename = "cose-map")]
-    pub cose_map: Option<CoseMap>,
+    pub cose_map: Option<CoseMap<'a>>,
 }
 
 /// Metadata about the CoRIM signing operation
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-pub struct CorimMetaMap {
+pub struct CorimMetaMap<'a> {
     /// Information about the signer
-    pub signer: CorimSignerMap,
+    pub signer: CorimSignerMap<'a>,
     /// Optional validity period for the signature
     #[serde(rename = "signature-validity")]
     pub signature_validity: Option<ValidityMap>,
 }
 
 /// Information about the entity that signed the CoRIM
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-pub struct CorimSignerMap {
+pub struct CorimSignerMap<'a> {
     /// Name of the signing entity
     #[serde(rename = "signer-name")]
-    pub signer_name: EntityNameTypeChoice,
+    pub signer_name: EntityNameTypeChoice<'a>,
     /// Optional URI identifying the signer
     #[serde(rename = "signer-uri")]
-    pub signer_uri: Option<Uri>,
+    pub signer_uri: Option<Uri<'a>>,
     /// Optional COSE-specific extensions
-    pub extension: Option<CoseMap>,
+    pub extension: Option<CoseMap<'a>>,
 }
 
 /// Type alias for entity names using text strings
-pub type EntityNameTypeChoice = Text;
+pub type EntityNameTypeChoice<'a> = Text<'a>;
 
 /// Type alias for COSE map extensions
-pub type CoseMap = ExtensionMap;
+pub type CoseMap<'a> = ExtensionMap<'a>;

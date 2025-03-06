@@ -88,7 +88,7 @@ use crate::{
     generate_tagged, AttestKeyTripleRecord, ConditionalEndorsementSeriesTripleRecord,
     ConditionalEndorsementTripleRecord, CoswidTripleRecord, DomainDependencyTripleRecord,
     DomainMembershipTripleRecord, EndorsedTripleRecord, ExtensionMap, IdentityTripleRecord,
-    OneOrMore, ReferenceTripleRecord, Text, Tstr, Uint, Uri, UuidType,
+    OneOrMany, ReferenceTripleRecord, Text, Tstr, Uint, Uri, UuidType,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
@@ -99,39 +99,40 @@ pub type TagVersionType = Uint;
 generate_tagged!((
     506,
     TaggedConciseMidTag,
-    ConciseMidTag,
+    ConciseMidTag<'a>,
+    'a,
     "A Concise Module Identifier (CoMID) structured tag"
 ),);
 /// A Concise Module Identifier (CoMID) tag structure tagged with CBOR tag 506
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-pub struct ConciseMidTag {
+pub struct ConciseMidTag<'a> {
     /// Optional language identifier for the tag content
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub language: Option<Text>,
+    pub language: Option<Text<'a>>,
     /// Identity information for this tag
     #[serde(rename = "tag-identity")]
-    pub tag_identity: TagIdentityMap,
+    pub tag_identity: TagIdentityMap<'a>,
     /// List of entities associated with this tag
-    pub entities: OneOrMore<ComidEntityMap>,
+    pub entities: OneOrMany<ComidEntityMap<'a>>,
     /// Optional references to other related tags
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "linked-tags")]
-    pub linked_tags: Option<OneOrMore<LinkedTagMap>>,
+    pub linked_tags: Option<OneOrMany<LinkedTagMap<'a>>>,
     /// Collection of triples describing the module
-    pub triples: TriplesMap,
+    pub triples: TriplesMap<'a>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub extension: Option<ExtensionMap>,
+    pub extension: Option<ExtensionMap<'a>>,
 }
 
 /// Identification information for a tag
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-pub struct TagIdentityMap {
+pub struct TagIdentityMap<'a> {
     /// Unique identifier for the tag
     #[serde(rename = "tag-id")]
-    pub tag_id: TagIdTypeChoice,
+    pub tag_id: TagIdTypeChoice<'a>,
     /// Optional version number for the tag
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "tag-version")]
@@ -139,36 +140,36 @@ pub struct TagIdentityMap {
 }
 
 /// Represents either a string or UUID tag identifier
-#[derive(Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
-pub enum TagIdTypeChoice {
+pub enum TagIdTypeChoice<'a> {
     /// Text string identifier
-    Tstr(Tstr),
+    Tstr(Tstr<'a>),
     /// UUID identifier
     Uuid(UuidType),
 }
 
 /// Information about an entity associated with the tag
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-pub struct ComidEntityMap {
+pub struct ComidEntityMap<'a> {
     /// Name of the entity
     #[serde(rename = "entity-name")]
-    pub entity_name: Text,
+    pub entity_name: Text<'a>,
     /// Optional registration identifier
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "reg-id")]
-    pub reg_id: Option<Uri>,
+    pub reg_id: Option<Uri<'a>>,
     /// One or more roles this entity fulfills
-    pub role: OneOrMore<ComidRoleTypeChoice>,
+    pub role: OneOrMany<ComidRoleTypeChoice>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    pub extension: Option<ExtensionMap>,
+    pub extension: Option<ExtensionMap<'a>>,
 }
 
 /// Role types that can be assigned to entities
-#[derive(Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum ComidRoleTypeChoice {
     /// Entity that created the tag (value: 0)
@@ -180,19 +181,19 @@ pub enum ComidRoleTypeChoice {
 }
 
 /// Reference to another tag and its relationship to this one
-#[derive(Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-pub struct LinkedTagMap {
+pub struct LinkedTagMap<'a> {
     /// Identifier of the linked tag
     #[serde(rename = "linked-tag-id")]
-    pub linked_tag_id: TagIdTypeChoice,
+    pub linked_tag_id: TagIdTypeChoice<'a>,
     /// Relationship type between the tags
     #[serde(rename = "tag-rel")]
     pub tag_rel: TagRelTypeChoice,
 }
 
 /// Types of relationships between tags
-#[derive(Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
 pub enum TagRelTypeChoice {
     /// This tag supplements the linked tag by providing additional information
@@ -204,57 +205,57 @@ pub enum TagRelTypeChoice {
 }
 
 /// Collection of different types of triples describing the module characteristics
-#[derive(Serialize, Deserialize, From)]
+#[derive(Debug, Serialize, Deserialize, From)]
 #[repr(C)]
-pub struct TriplesMap {
+pub struct TriplesMap<'a> {
     /// Optional reference triples that link to external references
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "reference-triples")]
-    pub reference_triples: Option<OneOrMore<ReferenceTripleRecord>>,
+    pub reference_triples: Option<OneOrMany<ReferenceTripleRecord<'a>>>,
 
     /// Optional endorsement triples that contain verification information
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "endorse-triples")]
-    pub endorse_triples: Option<OneOrMore<EndorsedTripleRecord>>,
+    pub endorse_triples: Option<OneOrMany<EndorsedTripleRecord<'a>>>,
 
     /// Optional identity triples that provide identity information
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "identity-triples")]
-    pub identity_triples: Option<OneOrMore<IdentityTripleRecord>>,
+    pub identity_triples: Option<OneOrMany<IdentityTripleRecord<'a>>>,
 
     /// Optional attestation key triples containing cryptographic keys
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "attest_key-triples")]
-    pub attest_key_triples: Option<OneOrMore<AttestKeyTripleRecord>>,
+    pub attest_key_triples: Option<OneOrMany<AttestKeyTripleRecord<'a>>>,
 
     /// Optional domain dependency triples describing relationships between domains
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "dependency-triples")]
-    pub dependency_triples: Option<OneOrMore<DomainDependencyTripleRecord>>,
+    pub dependency_triples: Option<OneOrMany<DomainDependencyTripleRecord<'a>>>,
 
     /// Optional domain membership triples describing domain associations
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "membership-triples")]
-    pub membership_triples: Option<OneOrMore<DomainMembershipTripleRecord>>,
+    pub membership_triples: Option<OneOrMany<DomainMembershipTripleRecord<'a>>>,
 
     /// Optional SWID triples containing software identification data
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "coswid-triples")]
-    pub coswid_triples: Option<OneOrMore<CoswidTripleRecord>>,
+    pub coswid_triples: Option<OneOrMany<CoswidTripleRecord<'a>>>,
 
     /// Optional conditional endorsement series triples for complex endorsement chains
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "conditional-endorsement-series-triples")]
     pub conditional_endorsement_series_triples:
-        Option<OneOrMore<ConditionalEndorsementSeriesTripleRecord>>,
+        Option<OneOrMany<ConditionalEndorsementSeriesTripleRecord<'a>>>,
 
     /// Optional conditional endorsement triples for conditional verification
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "conditional-endorsement-triples")]
-    pub conditional_endorsement_triples: Option<OneOrMore<ConditionalEndorsementTripleRecord>>,
+    pub conditional_endorsement_triples: Option<OneOrMany<ConditionalEndorsementTripleRecord<'a>>>,
 
     /// Optional extensible attributes for future expansion
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    pub extension: Option<ExtensionMap>,
+    pub extension: Option<ExtensionMap<'a>>,
 }

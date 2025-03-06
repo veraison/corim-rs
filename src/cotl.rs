@@ -1,31 +1,31 @@
 // SPDX-License-Identifier: MIT
 
-use ciborium::tag::Accepted;
 use derive_more::{Constructor, From};
 use serde::{Deserialize, Serialize};
 
-use crate::{OneOrMore, TagIdentityMap, ValidityMap};
+use crate::{generate_tagged, OneOrMany, TagIdentityMap, ValidityMap};
 
-// A Concise Trust List (CoTL) tag structure tagged with CBOR tag 507
-///
-/// CoTL tags provide a mechanism to maintain lists of trusted CoMID and CoSWID tags.
-/// They can be used to establish trust relationships and manage tag distribution.
-#[derive(Serialize, Deserialize, From, Constructor)]
-pub struct TaggedConciseTlTag {
-    #[serde(flatten)]
-    pub field: Accepted<ConciseTlTag, 508>,
-}
+generate_tagged!((
+    508,
+    TaggedConciseTlTag,
+    ConciseTlTag<'a>,
+    'a,
+    r#"A Concise Trust List (CoTL) tag structure tagged with CBOR tag 507
 
-#[derive(Serialize, Deserialize, From, Constructor)]
+CoTL tags provide a mechanism to maintain lists of trusted CoMID and CoSWID tags. 
+They can be used to establish trust relationships and manage tag distribution."#
+));
+
+#[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
-pub struct ConciseTlTag {
+pub struct ConciseTlTag<'a> {
     /// Identity information for this trust list tag
     #[serde(rename = "tag-identity")]
-    pub tag_identity: TagIdentityMap,
+    pub tag_identity: TagIdentityMap<'a>,
 
     /// List of trusted tags referenced by this trust list
     #[serde(rename = "tags-list")]
-    pub tags_list: OneOrMore<TagIdentityMap>,
+    pub tags_list: OneOrMany<TagIdentityMap<'a>>,
 
     /// Validity period for this trust list
     #[serde(rename = "tl-validity")]
