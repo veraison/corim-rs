@@ -39,7 +39,7 @@
 /// use corim_rs::generate_tagged;
 ///
 /// // Define a simple type to wrap
-/// #[derive(Debug, PartialEq, Serialize, Deserialize)]
+/// #[derive(Default, Debug, PartialEq, Serialize, Deserialize)]
 /// pub struct MyType(u32);
 ///
 /// // Generate the tagged wrapper

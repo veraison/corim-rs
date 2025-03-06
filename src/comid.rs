@@ -149,6 +149,12 @@ pub enum TagIdTypeChoice<'a> {
     Uuid(UuidType),
 }
 
+impl<'a> From<&'a str> for TagIdTypeChoice<'a> {
+    fn from(value: &'a str) -> Self {
+        TagIdTypeChoice::Tstr(Tstr::from(value))
+    }
+}
+
 /// Information about an entity associated with the tag
 #[derive(Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
@@ -205,7 +211,7 @@ pub enum TagRelTypeChoice {
 }
 
 /// Collection of different types of triples describing the module characteristics
-#[derive(Debug, Serialize, Deserialize, From)]
+#[derive(Default, Debug, Serialize, Deserialize, From)]
 #[repr(C)]
 pub struct TriplesMap<'a> {
     /// Optional reference triples that link to external references

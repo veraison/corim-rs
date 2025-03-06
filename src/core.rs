@@ -66,6 +66,11 @@ pub type Int = i32;
 /// Integer is an alias for Int type
 pub type Integer = Int;
 
+pub enum StrWrapper<'a, T> {
+    Tstr(Tstr<'a>),
+    Other(T),
+}
+
 /// ExtensionMap represents the possible types that can be used in extensions
 #[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, From, TryFrom)]
 pub enum ExtensionMap<'a> {
@@ -86,7 +91,7 @@ pub enum ExtensionMap<'a> {
 }
 
 /// UUID type representing a 16-byte unique identifier
-#[derive(Debug, Serialize, Deserialize, From, AsRef, AsMut, Constructor)]
+#[derive(Default, Debug, Serialize, Deserialize, From, AsRef, AsMut, Constructor)]
 pub struct UuidType {
     #[serde(flatten)]
     pub field: [u8; 16],
@@ -209,7 +214,7 @@ pub enum AttributeValue<'a> {
 }
 
 /// Represents global attributes with optional language tag and arbitrary attributes
-#[derive(Debug, Clone, Default, Serialize, Deserialize, From, Constructor)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct GlobalAttributes<'a> {
     /// Optional language tag (ex. en_US)
@@ -311,7 +316,7 @@ pub struct CoseKey<'a> {
     pub extension: Option<ExtensionMap<'a>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Default, Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 /// Raw value data structure with associated mask
 pub struct MaskedRawValue {

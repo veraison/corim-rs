@@ -76,8 +76,9 @@
 //! and optional fields defined in the standard.
 
 use crate::{
-    core::Bytes, generate_tagged, Digest, ExtensionMap, Int, OidType, OneOrMany, TaggedBytes,
-    TaggedConciseMidTag, TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
+    comid::ConciseMidTag, core::Bytes, coswid::ConciseSwidTag, cotl::ConciseTlTag, generate_tagged,
+    Digest, ExtensionMap, Int, OidType, OneOrMany, TaggedBytes, TaggedConciseMidTag,
+    TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
 };
 
 use derive_more::{Constructor, From, TryFrom};
@@ -153,6 +154,12 @@ pub enum CorimIdTypeChoice<'a> {
     Uuid(UuidType),
 }
 
+impl<'a> From<&'a str> for CorimIdTypeChoice<'a> {
+    fn from(s: &'a str) -> Self {
+        CorimIdTypeChoice::Tstr(s.into())
+    }
+}
+
 /// Types of tags that can be included in a CoRIM
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom)]
@@ -163,6 +170,22 @@ pub enum ConciseTagTypeChoice<'a> {
     Mid(TaggedConciseMidTag<'a>),
     /// A Concise Trust List (CoTL) tag
     Tl(TaggedConciseTlTag<'a>),
+}
+
+impl<'a> From<ConciseSwidTag<'a>> for ConciseTagTypeChoice<'a> {
+    fn from(value: ConciseSwidTag<'a>) -> Self {
+        Self::Swid(value.into())
+    }
+}
+impl<'a> From<ConciseMidTag<'a>> for ConciseTagTypeChoice<'a> {
+    fn from(value: ConciseMidTag<'a>) -> Self {
+        Self::Mid(value.into())
+    }
+}
+impl<'a> From<ConciseTlTag<'a>> for ConciseTagTypeChoice<'a> {
+    fn from(value: ConciseTlTag<'a>) -> Self {
+        Self::Tl(value.into())
+    }
 }
 
 /// Location and optional thumbprint of a dependent CoRIM
@@ -188,7 +211,7 @@ pub enum ProfileTypeChoice<'a> {
 
 /// Defines the validity period for a CoRIM or signature
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Default, Debug, Serialize, Deserialize, From, Constructor)]
 pub struct ValidityMap {
     /// Optional start time of the validity period
     #[serde(rename = "not-before")]
@@ -249,7 +272,7 @@ pub struct COSESign1Corim<'a> {
 }
 
 /// Protected header for a signed CoRIM
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Default, Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ProtectedCorimHeaderMap<'a> {
     /// Algorithm identifier for the signature
@@ -269,7 +292,7 @@ pub struct ProtectedCorimHeaderMap<'a> {
 }
 
 /// Metadata about the CoRIM signing operation
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Default, Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct CorimMetaMap<'a> {
     /// Information about the signer
@@ -280,7 +303,7 @@ pub struct CorimMetaMap<'a> {
 }
 
 /// Information about the entity that signed the CoRIM
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Default, Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct CorimSignerMap<'a> {
     /// Name of the signing entity

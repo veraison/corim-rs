@@ -113,6 +113,12 @@ impl<const N: usize> std::fmt::Debug for FixedBytes<N> {
     }
 }
 
+impl<const N: usize> Default for FixedBytes<N> {
+    fn default() -> Self {
+        Self([0; N])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

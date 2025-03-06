@@ -126,7 +126,7 @@ pub struct EnvironmentMap<'a> {
 }
 
 /// Classification information for an environment
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Default, Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct ClassMap<'a> {
     /// Optional class identifier
@@ -263,7 +263,7 @@ pub enum GroupIdTypeChoice {
 }
 
 /// Map containing measurement values and metadata
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Default, Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct MeasurementMap<'a> {
     /// Optional measurement key identifier
@@ -290,8 +290,14 @@ pub enum MeasuredElementTypeChoice<'a> {
     Tstr(Tstr<'a>),
 }
 
+impl<'a> From<&'a str> for MeasuredElementTypeChoice<'a> {
+    fn from(value: &'a str) -> Self {
+        Self::Tstr(value.into())
+    }
+}
+
 /// Collection of measurement values and attributes
-#[derive(Debug, Default, Serialize, Deserialize, From)]
+#[derive(Default, Debug, Serialize, Deserialize, From)]
 #[repr(C)]
 pub struct MeasurementValuesMap<'a> {
     /// Optional version information
@@ -341,7 +347,7 @@ pub struct MeasurementValuesMap<'a> {
 }
 
 /// Version information with optional versioning scheme
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Default, Debug, Serialize, Deserialize, From, Constructor)]
 #[repr(C)]
 pub struct VersionMap<'a> {
     /// Version identifier string
@@ -367,7 +373,7 @@ pub enum SvnTypeChoice {
 pub type DigestType<'a> = OneOrMany<Digest<'a>>;
 
 /// Status flags indicating various security and configuration states
-#[derive(Debug, Serialize, Deserialize, From)]
+#[derive(Default, Debug, Serialize, Deserialize, From)]
 #[repr(C)]
 pub struct FlagsMap<'a> {
     /// Whether the environment is configured
