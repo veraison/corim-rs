@@ -101,7 +101,9 @@ use derive_more::{Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
 
 /// A reference triple record containing environment and measurement claims
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct ReferenceTripleRecord<'a> {
     /// The environment being referenced
@@ -120,7 +122,9 @@ impl<'a> Default for ReferenceTripleRecord<'a> {
 }
 
 /// Map describing an environment's characteristics
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct EnvironmentMap<'a> {
     /// Optional classification information
@@ -135,7 +139,9 @@ pub struct EnvironmentMap<'a> {
 }
 
 /// Classification information for an environment
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct ClassMap<'a> {
     /// Optional class identifier
@@ -156,7 +162,7 @@ pub struct ClassMap<'a> {
 }
 
 /// Possible types for class identifiers
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum ClassIdTypeChoice {
     /// Object Identifier (OID)
@@ -168,7 +174,7 @@ pub enum ClassIdTypeChoice {
 }
 
 /// Possible types for instance identifiers
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum InstanceIdTypeChoice<'a> {
     /// Unique Entity Identifier
@@ -179,6 +185,12 @@ pub enum InstanceIdTypeChoice<'a> {
     CryptoKey(CryptoKeyTypeChoice<'a>),
     /// Raw bytes
     Bytes(Bytes),
+}
+
+impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        Self::Bytes(value.to_vec())
+    }
 }
 
 /// Types of cryptographic keys and certificates
@@ -238,7 +250,7 @@ pub enum InstanceIdTypeChoice<'a> {
 ///
 /// Each variant provides appropriate constructors and implements common traits
 /// like `From`, `TryFrom`, `Serialize`, and `Deserialize`.
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum CryptoKeyTypeChoice<'a> {
     /// Base64-encoded PKIX key
@@ -262,7 +274,7 @@ pub enum CryptoKeyTypeChoice<'a> {
 }
 
 /// Types of group identifiers
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum GroupIdTypeChoice {
     /// UUID identifier
@@ -272,7 +284,9 @@ pub enum GroupIdTypeChoice {
 }
 
 /// Map containing measurement values and metadata
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct MeasurementMap<'a> {
     /// Optional measurement key identifier
@@ -286,7 +300,7 @@ pub struct MeasurementMap<'a> {
 }
 
 /// Types of measured element identifiers
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum MeasuredElementTypeChoice<'a> {
     /// Object Identifier (OID)
@@ -306,7 +320,7 @@ impl<'a> From<&'a str> for MeasuredElementTypeChoice<'a> {
 }
 
 /// Collection of measurement values and attributes
-#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct MeasurementValuesMap<'a> {
     /// Optional version information
@@ -356,7 +370,9 @@ pub struct MeasurementValuesMap<'a> {
 }
 
 /// Version information with optional versioning scheme
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct VersionMap<'a> {
     /// Version identifier string
@@ -367,7 +383,7 @@ pub struct VersionMap<'a> {
 }
 
 /// Security version number types
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum SvnTypeChoice {
     /// Regular SVN as an unsigned integer
@@ -382,7 +398,7 @@ pub enum SvnTypeChoice {
 pub type DigestType<'a> = OneOrMany<Digest<'a>>;
 
 /// Status flags indicating various security and configuration states
-#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct FlagsMap<'a> {
     /// Whether the environment is configured
@@ -428,7 +444,7 @@ pub struct FlagsMap<'a> {
 /// - `Deref`/`DerefMut` for direct byte manipulation
 /// - `From` for construction from byte arrays
 /// - `TryFrom` for fallible construction from slices
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum MacAddrTypeChoice {
     /// 48-bit EUI address
@@ -508,7 +524,7 @@ pub type Eui64AddrType = [u8; 8];
 ///
 /// Storage uses network byte order (big-endian) following RFC 791/8200.
 /// Implements the same traits as MacAddrTypeChoice for consistent handling.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum IpAddrTypeChoice {
     /// IPv4 address
@@ -583,16 +599,16 @@ pub type Ipv4AddrType = [u8; 4];
 pub type Ipv6AddrType = [u8; 16];
 
 /// Collection of integrity register values
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
-pub struct IntegrityRegisters<'a> {
-    /// One or more register values identified by labels
-    #[serde(flatten)]
-    pub field: OneOrMany<Ulabel<'a>>,
-}
+pub struct IntegrityRegisters<'a>(pub OneOrMany<Ulabel<'a>>);
 
 /// Record containing an endorsement for a specific environmental condition
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct EndorsedTripleRecord<'a> {
     /// Environmental condition being endorsed
@@ -601,8 +617,19 @@ pub struct EndorsedTripleRecord<'a> {
     pub endorsement: OneOrMany<MeasurementMap<'a>>,
 }
 
+impl<'a> Default for EndorsedTripleRecord<'a> {
+    fn default() -> Self {
+        Self {
+            condition: Default::default(),
+            endorsement: OneOrMany::One(Default::default()),
+        }
+    }
+}
+
 /// Record containing identity information for an environment
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct IdentityTripleRecord<'a> {
     /// Environment being identified
@@ -615,7 +642,9 @@ pub struct IdentityTripleRecord<'a> {
 }
 
 /// Conditions that must be met for a triple record to be valid
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct TripleRecordCondition<'a> {
     /// Optional measurement key identifier
@@ -626,7 +655,9 @@ pub struct TripleRecordCondition<'a> {
 }
 
 /// Record containing attestation key information for an environment
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct AttestKeyTripleRecord<'a> {
     /// Environment the keys belong to
@@ -639,7 +670,9 @@ pub struct AttestKeyTripleRecord<'a> {
 }
 
 /// Record describing dependencies between domains and environments
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct DomainDependencyTripleRecord<'a> {
     /// Domain identifier
@@ -651,7 +684,7 @@ pub struct DomainDependencyTripleRecord<'a> {
 }
 
 /// Types of domain identifiers
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum DomainTypeChoice<'a> {
     /// Unsigned integer identifier
     Uint(Uint),
@@ -664,7 +697,9 @@ pub enum DomainTypeChoice<'a> {
 }
 
 /// Record describing domain membership associations
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct DomainMembershipTripleRecord<'a> {
     /// Domain identifier
@@ -676,7 +711,9 @@ pub struct DomainMembershipTripleRecord<'a> {
 }
 
 /// Record linking environments to CoSWID tags
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct CoswidTripleRecord<'a> {
     /// Environment the CoSWID tags belong to
@@ -702,7 +739,9 @@ pub struct CoswidTripleRecord<'a> {
 /// - Each change requires matching the selection criteria
 /// - New measurements are added only when selections match
 /// - Previous measurements remain valid unless replaced
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct ConditionalEndorsementSeriesTripleRecord<'a> {
     /// Initial environmental condition
@@ -712,7 +751,9 @@ pub struct ConditionalEndorsementSeriesTripleRecord<'a> {
 }
 
 /// Record containing environment state and measurement claims
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct StatefulEnvironmentRecord<'a> {
     /// Environment being described
@@ -722,7 +763,9 @@ pub struct StatefulEnvironmentRecord<'a> {
 }
 
 /// Record describing conditional changes to measurements
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct ConditionalSeriesRecord<'a> {
     /// Measurements that must match for changes to apply
@@ -732,7 +775,9 @@ pub struct ConditionalSeriesRecord<'a> {
 }
 
 /// Record containing conditional endorsements
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct ConditionalEndorsementTripleRecord<'a> {
     /// List of environmental conditions

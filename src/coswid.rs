@@ -80,7 +80,7 @@ generate_tagged!((505, TaggedConciseSwidTag, ConciseSwidTag<'a>, 'a, "Represents
 ///
 /// CoSWID tags provide a standardized way to identify and describe software
 /// components, including their metadata, contents, and relationships.
-#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct ConciseSwidTag<'a> {
     /// Unique identifier for the tag
@@ -140,7 +140,7 @@ pub struct ConciseSwidTag<'a> {
 /// useful for identification, deployment, or management purposes. All fields
 /// are optional except for global attributes.
 #[repr(C)]
-#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct SoftwareMetaEntry<'a> {
     /// Current activation status of the software (e.g., "trial", "full", "deleted")
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -223,7 +223,9 @@ pub struct SoftwareMetaEntry<'a> {
 
 /// Information about an entity involved in software development or distribution
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 pub struct EntityEntry<'a> {
     /// Name of the entity
     #[serde(rename = "entity-name")]
@@ -248,7 +250,7 @@ pub struct EntityEntry<'a> {
 
 /// Link to external resources related to the software
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct LinkEntry<'a> {
     /// Optional identifier for the linked artifact
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -279,7 +281,7 @@ pub struct LinkEntry<'a> {
 }
 
 /// Ownership status enumeration for linked resources
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(u8)]
 pub enum Ownership<'a> {
     /// Resource is no longer maintained
@@ -293,7 +295,7 @@ pub enum Ownership<'a> {
 }
 
 /// Relationship types between resources in CoSWID tags
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(u8)]
 pub enum Rel<'a> {
     /// Previous version of the software
@@ -328,7 +330,7 @@ pub enum Rel<'a> {
 /// can be included in a CoSWID tag:
 /// - Payload: The intended or expected state of the software
 /// - Evidence: The actual observed state of the software
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum PayloadOrEvidence<'a> {
     /// Describes the intended state of the software
@@ -338,7 +340,9 @@ pub enum PayloadOrEvidence<'a> {
 }
 
 /// Container for payload information
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct Payload<'a> {
     /// The payload entry containing resource information
@@ -346,7 +350,9 @@ pub struct Payload<'a> {
 }
 
 /// Detailed payload information about software resources
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct PayloadEntry<'a> {
     /// Collection of resources in the software
@@ -367,7 +373,9 @@ pub struct PayloadEntry<'a> {
 /// This structure groups together all the resources that are part of the
 /// software, including files, directories, processes, and other resource types.
 /// It forms the core content description of what comprises the software.
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct ResourceCollection<'a> {
     /// Group of filesystem path elements
@@ -387,7 +395,9 @@ pub struct ResourceCollection<'a> {
 }
 
 /// Group of filesystem path elements in a resource collection
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct PathElementsGroup<'a> {
     /// Optional list of directory entries
@@ -399,7 +409,9 @@ pub struct PathElementsGroup<'a> {
 }
 
 /// Information about a directory in the filesystem
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct DirectoryEntry<'a> {
     /// Basic filesystem item information
@@ -426,7 +438,9 @@ pub struct DirectoryEntry<'a> {
 }
 
 /// Basic information about a filesystem item (file or directory)
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct FileSystemItem<'a> {
     /// Indicates if this is a key/critical filesystem item
@@ -444,7 +458,9 @@ pub struct FileSystemItem<'a> {
 }
 
 /// Information about a file in the filesystem
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct FileEntry<'a> {
     /// Basic filesystem item information
@@ -471,7 +487,9 @@ pub struct FileEntry<'a> {
 }
 
 /// Information about a running process
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct ProcessEntry<'a> {
     /// Name of the process
@@ -490,7 +508,9 @@ pub struct ProcessEntry<'a> {
 }
 
 /// Information about a general resource
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct ResourceEntry<'a> {
     /// Type identifier for the resource
@@ -505,7 +525,9 @@ pub struct ResourceEntry<'a> {
 }
 
 /// Container for evidence information about observed software state
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct Evidence<'a> {
     /// The evidence entry containing observed resource information
@@ -513,7 +535,9 @@ pub struct Evidence<'a> {
 }
 
 /// Detailed evidence information about observed software state
-#[derive(Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct EvidenceEntry<'a> {
     /// Collection of observed resources
@@ -540,7 +564,7 @@ pub struct EvidenceEntry<'a> {
 }
 
 /// Usage requirement levels for resources
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(u8)]
 pub enum Use<'a> {
     /// Resource is optional

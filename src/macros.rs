@@ -76,33 +76,27 @@ macro_rules! generate_tagged {
     ($(($tag_num:expr, $title:ident, $type:ty $(, $($lt:lifetime),* )?, $doc_comments:literal)),* $(,)?) => {
         $(
             #[doc = $doc_comments]
-            #[derive(Debug, ::serde::Serialize, ::serde::Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+            #[derive(Debug, ::serde::Serialize, ::serde::Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
             #[repr(C)]
-            pub struct $title $(< $($lt),* >)? {
-                /// The wrapped value which will be flattened during serialization
-                #[serde(flatten)]
-                pub field: ::ciborium::tag::Accepted<$type, $tag_num>,
-            }
+            pub struct $title $(< $($lt),* >)? (::ciborium::tag::Accepted<$type, $tag_num>);
 
             impl $(< $($lt),* >)? $title $(< $($lt),* >)? {
                 /// Creates a new wrapped instance from the provided value
                 #[inline]
                 pub const fn new(value: $type) -> Self {
-                    Self {
-                        field: ::ciborium::tag::Accepted(value),
-                    }
+                    Self (::ciborium::tag::Accepted(value))
                 }
             }
 
             impl $(< $($lt),* >)? std::convert::AsRef<$type> for $title $(< $($lt),* >)? {
                 fn as_ref(&self) -> &$type {
-                    &self.field.0
+                    &self.0.0
                 }
             }
 
             impl $(< $($lt),* >)? std::convert::AsMut<$type> for $title $(< $($lt),* >)? {
                 fn as_mut(&mut self) -> &mut $type {
-                    &mut self.field.0
+                    &mut self.0.0
                 }
             }
 
@@ -110,13 +104,13 @@ macro_rules! generate_tagged {
                 type Target = $type;
 
                 fn deref(&self) -> &Self::Target {
-                    &self.field.0
+                    &self.0.0
                 }
             }
 
             impl $(< $($lt),* >)? std::ops::DerefMut for $title $(< $($lt),* >)? {
                 fn deref_mut(&mut self) -> &mut Self::Target {
-                    &mut self.field.0
+                    &mut self.0.0
                 }
             }
 

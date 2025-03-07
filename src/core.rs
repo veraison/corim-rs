@@ -67,7 +67,7 @@ pub type Int = i32;
 pub type Integer = Int;
 
 /// ExtensionMap represents the possible types that can be used in extensions
-#[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, From, TryFrom, Clone)]
 pub enum ExtensionMap<'a> {
     /// A UTF-8 string value
     Text(Text<'a>),
@@ -99,27 +99,23 @@ pub enum ExtensionMap<'a> {
     Eq,
     PartialOrd,
     Ord,
+    Clone,
 )]
-pub struct UuidType {
-    #[serde(flatten)]
-    pub field: [u8; 16],
-}
+pub struct UuidType(pub FixedBytes<16>);
 
 impl TryFrom<&[u8]> for UuidType {
     type Error = std::array::TryFromSliceError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let field = <[u8; 16]>::try_from(value)?;
-        Ok(Self { field })
+        Ok(Self(FixedBytes(value.try_into()?)))
     }
 }
 
 /// UEID type representing a 33-byte Unique Entity Identifier
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
-pub struct UeidType {
-    #[serde(flatten)]
-    pub field: FixedBytes<33>,
-}
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
+pub struct UeidType(pub FixedBytes<33>);
 
 generate_tagged!(
     (1, IntegerTime, Int, "A representation of time in integer format using CBOR tag 1"),
@@ -142,7 +138,7 @@ generate_tagged!(
 
 /// Represents a value that can be either text or bytes
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum TextOrBytes<'a> {
     /// UTF-8 string value
     Text(Text<'a>),
@@ -152,7 +148,7 @@ pub enum TextOrBytes<'a> {
 
 /// Represents a value that can be either text or fixed-size bytes
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum TextOrBytesSized<'a, const N: usize> {
     /// UTF-8 string value
     Text(Text<'a>),
@@ -162,7 +158,9 @@ pub enum TextOrBytesSized<'a, const N: usize> {
 
 /// Represents a hash entry with algorithm ID and hash value
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 pub struct HashEntry {
     /// Algorithm identifier for the hash
     #[serde(rename = "hash-alg-id")]
@@ -231,7 +229,6 @@ pub struct GlobalAttributes<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lang: Option<Text<'a>>,
     /// Arbitrary attributes
-    #[serde(flatten)]
     pub attributes: BTreeMap<Label<'a>, AttributeValue<'a>>,
 }
 
@@ -283,7 +280,9 @@ pub enum CotlMapRegistry {
 
 /// Represents a digest value with its algorithm identifier
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 pub struct Digest<'a> {
     /// Algorithm identifier for the digest
     pub alg: AlgLabel<'a>,
@@ -293,7 +292,7 @@ pub struct Digest<'a> {
 
 /// Represents either a COSE key set or a single COSE key
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum CoseKeySetOrKey<'a> {
     /// A set of COSE keys
     KeySet(OneOrMany<CoseKey<'a>>),
@@ -302,7 +301,9 @@ pub enum CoseKeySetOrKey<'a> {
 }
 
 /// Represents a COSE key structure as defined in RFC 8152
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct CoseKey<'a> {
     /// Key type identifier (kty)
@@ -327,7 +328,7 @@ pub struct CoseKey<'a> {
 }
 
 #[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord,
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
 )]
 #[repr(C)]
 /// Raw value data structure with associated mask
@@ -336,7 +337,9 @@ pub struct MaskedRawValue {
     pub mask: Bytes,
 }
 
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 /// Container for raw values with optional masking
 pub struct RawValueType {
@@ -347,7 +350,7 @@ pub struct RawValueType {
 /// Type alias for raw value masks
 pub type RawValueMaskType = Bytes;
 
-#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 /// Represents different types of raw values
 pub enum RawValueTypeChoice {
     TaggedBytes(TaggedBytes),
@@ -356,7 +359,7 @@ pub enum RawValueTypeChoice {
 
 /// Version scheme enumeration as defined in the specification
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum VersionScheme {
     /// Multi-part numeric version (e.g., 1.2.3)
     Multipartnumeric = 1,

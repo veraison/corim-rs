@@ -107,7 +107,9 @@ generate_tagged!((
     "A Concise Module Identifier (CoMID) structured tag"
 ),);
 /// A Concise Module Identifier (CoMID) tag structure tagged with CBOR tag 506
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct ConciseMidTag<'a> {
     /// Optional language identifier for the tag content
@@ -189,7 +191,7 @@ impl<'a> ConciseMidTag<'a> {
     ///    - If reference triples exist but none match the environment, a new triple is added
     pub fn add_reference_value<T>(
         &mut self,
-        environment: EnvironmentMap<'a>,
+        environment: &EnvironmentMap<'a>,
         mkey: Option<MeasuredElementTypeChoice<'a>>,
         value: &T,
     ) -> Result<(), std::io::Error>
@@ -216,13 +218,13 @@ impl<'a> ConciseMidTag<'a> {
         match &mut self.triples.reference_triples {
             None => {
                 let new_record = ReferenceTripleRecord {
-                    ref_env: environment,
+                    ref_env: environment.clone(),
                     ref_claims: measurement.into(),
                 };
                 self.triples.reference_triples = Some(OneOrMany::One(new_record));
             }
             Some(OneOrMany::One(record)) => {
-                if record.ref_env == environment {
+                if record.ref_env == *environment {
                     match &mut record.ref_claims {
                         OneOrMany::One(original_claim) => {
                             record.ref_claims =
@@ -232,7 +234,7 @@ impl<'a> ConciseMidTag<'a> {
                     }
                 } else {
                     let new_record: ReferenceTripleRecord<'a> = ReferenceTripleRecord {
-                        ref_env: environment,
+                        ref_env: environment.clone(),
                         ref_claims: measurement.into(),
                     };
 
@@ -241,7 +243,7 @@ impl<'a> ConciseMidTag<'a> {
                 }
             }
             Some(OneOrMany::Many(vec)) => {
-                if let Some(record) = vec.iter_mut().find(|r| r.ref_env == environment) {
+                if let Some(record) = vec.iter_mut().find(|r| r.ref_env == *environment) {
                     match &mut record.ref_claims {
                         OneOrMany::One(claim) => {
                             record.ref_claims =
@@ -251,8 +253,81 @@ impl<'a> ConciseMidTag<'a> {
                     }
                 } else {
                     let new_record = ReferenceTripleRecord {
-                        ref_env: environment,
+                        ref_env: environment.clone(),
                         ref_claims: measurement.into(),
+                    };
+                    vec.push(new_record);
+                }
+            }
+        }
+        Ok(())
+    }
+    pub fn add_endorsement_value<T>(
+        &mut self,
+        environment: &EnvironmentMap<'a>,
+        mkey: Option<MeasuredElementTypeChoice<'a>>,
+        value: &T,
+    ) -> Result<(), std::io::Error>
+    where
+        T: ?Sized + Serialize,
+    {
+        let mut raw_bytes = vec![];
+        ciborium::into_writer(value, &mut raw_bytes)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        let raw_value = TaggedBytes::new(raw_bytes);
+
+        let measurement = MeasurementMap {
+            mkey,
+            mval: MeasurementValuesMap {
+                raw: Some(RawValueType {
+                    raw_value: raw_value.into(),
+                    raw_value_mask: None,
+                }),
+                ..Default::default()
+            },
+            authorized_by: None,
+        };
+
+        match &mut self.triples.endorse_triples {
+            None => {
+                let new_record = EndorsedTripleRecord {
+                    condition: environment.clone(),
+                    endorsement: measurement.into(),
+                };
+                self.triples.endorse_triples = Some(OneOrMany::One(new_record));
+            }
+            Some(OneOrMany::One(record)) => {
+                if record.condition == *environment {
+                    match &mut record.endorsement {
+                        OneOrMany::One(original_claim) => {
+                            record.endorsement =
+                                OneOrMany::Many(vec![std::mem::take(original_claim), measurement])
+                        }
+                        OneOrMany::Many(claims) => claims.push(measurement),
+                    }
+                } else {
+                    let new_record: EndorsedTripleRecord<'a> = EndorsedTripleRecord {
+                        condition: environment.clone(),
+                        endorsement: measurement.into(),
+                    };
+
+                    let many = vec![std::mem::take(record), new_record];
+                    self.triples.endorse_triples = Some(OneOrMany::Many(many));
+                }
+            }
+            Some(OneOrMany::Many(vec)) => {
+                if let Some(record) = vec.iter_mut().find(|r| r.condition == *environment) {
+                    match &mut record.endorsement {
+                        OneOrMany::One(claim) => {
+                            record.endorsement =
+                                OneOrMany::Many(vec![std::mem::take(claim), measurement])
+                        }
+                        OneOrMany::Many(claims) => claims.push(measurement),
+                    }
+                } else {
+                    let new_record = EndorsedTripleRecord {
+                        condition: environment.clone(),
+                        endorsement: measurement.into(),
                     };
                     vec.push(new_record);
                 }
@@ -263,7 +338,9 @@ impl<'a> ConciseMidTag<'a> {
 }
 
 /// Identification information for a tag
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct TagIdentityMap<'a> {
     /// Unique identifier for the tag
@@ -276,7 +353,7 @@ pub struct TagIdentityMap<'a> {
 }
 
 /// Represents either a string or UUID tag identifier
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum TagIdTypeChoice<'a> {
     /// Text string identifier
@@ -292,7 +369,9 @@ impl<'a> From<&'a str> for TagIdTypeChoice<'a> {
 }
 
 /// Information about an entity associated with the tag
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct ComidEntityMap<'a> {
     /// Name of the entity
@@ -311,7 +390,7 @@ pub struct ComidEntityMap<'a> {
 }
 
 /// Role types that can be assigned to entities
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum ComidRoleTypeChoice {
     /// Entity that created the tag (value: 0)
@@ -323,7 +402,9 @@ pub enum ComidRoleTypeChoice {
 }
 
 /// Reference to another tag and its relationship to this one
-#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[repr(C)]
 pub struct LinkedTagMap<'a> {
     /// Identifier of the linked tag
@@ -335,7 +416,7 @@ pub struct LinkedTagMap<'a> {
 }
 
 /// Types of relationships between tags
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum TagRelTypeChoice {
     /// This tag supplements the linked tag by providing additional information
@@ -347,7 +428,7 @@ pub enum TagRelTypeChoice {
 }
 
 /// Collection of different types of triples describing the module characteristics
-#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct TriplesMap<'a> {
     /// Optional reference triples that link to external references
