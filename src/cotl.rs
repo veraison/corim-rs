@@ -16,7 +16,7 @@ CoTL tags provide a mechanism to maintain lists of trusted CoMID and CoSWID tags
 They can be used to establish trust relationships and manage tag distribution."#
 ));
 
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub struct ConciseTlTag<'a> {
     /// Identity information for this trust list tag

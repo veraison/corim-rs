@@ -76,7 +76,7 @@ macro_rules! generate_tagged {
     ($(($tag_num:expr, $title:ident, $type:ty $(, $($lt:lifetime),* )?, $doc_comments:literal)),* $(,)?) => {
         $(
             #[doc = $doc_comments]
-            #[derive(Debug, ::serde::Serialize, ::serde::Deserialize)]
+            #[derive(Debug, ::serde::Serialize, ::serde::Deserialize, PartialEq, Eq, PartialOrd, Ord)]
             #[repr(C)]
             pub struct $title $(< $($lt),* >)? {
                 /// The wrapped value which will be flattened during serialization

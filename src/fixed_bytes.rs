@@ -72,7 +72,7 @@ impl<'de, const N: usize> Visitor<'de> for FixedBytesVisitor<'de, N> {
     }
 }
 
-#[derive(From, AsMut, AsRef, Deref, DerefMut)]
+#[derive(From, AsMut, AsRef, Deref, DerefMut, PartialEq, Eq, PartialOrd, Ord, Clone)]
 /// A fixed-length byte array wrapper with serialization support
 ///
 /// This type wraps a byte array of size `N` and provides serialization/deserialization
@@ -87,7 +87,7 @@ impl<'de, const N: usize> Visitor<'de> for FixedBytesVisitor<'de, N> {
 /// ```rust
 /// use corim_rs::fixed_bytes::FixedBytes;
 ///
-/// // Create a 16-byte array
+/// // Create a 200-byte array
 /// let bytes = FixedBytes([0u8; 200]);
 ///
 /// // Access as slice

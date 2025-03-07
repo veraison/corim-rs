@@ -85,7 +85,10 @@
 //! All components support optional extensions through [`ExtensionMap`] for future expandability.
 
 use crate::{
-    generate_tagged, AttestKeyTripleRecord, ConditionalEndorsementSeriesTripleRecord,
+    core::{RawValueType, TaggedBytes},
+    generate_tagged,
+    triples::{EnvironmentMap, MeasuredElementTypeChoice, MeasurementMap, MeasurementValuesMap},
+    AttestKeyTripleRecord, ConditionalEndorsementSeriesTripleRecord,
     ConditionalEndorsementTripleRecord, CoswidTripleRecord, DomainDependencyTripleRecord,
     DomainMembershipTripleRecord, EndorsedTripleRecord, ExtensionMap, IdentityTripleRecord,
     OneOrMany, ReferenceTripleRecord, Text, Tstr, Uint, Uri, UuidType,
@@ -104,7 +107,7 @@ generate_tagged!((
     "A Concise Module Identifier (CoMID) structured tag"
 ),);
 /// A Concise Module Identifier (CoMID) tag structure tagged with CBOR tag 506
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub struct ConciseMidTag<'a> {
     /// Optional language identifier for the tag content
@@ -126,8 +129,141 @@ pub struct ConciseMidTag<'a> {
     pub extension: Option<ExtensionMap<'a>>,
 }
 
+impl<'a> ConciseMidTag<'a> {
+    /// Adds a reference value to the CoMID tag's reference triples.
+    ///
+    /// This method serializes the provided value to CBOR bytes and adds it as a raw measurement value
+    /// within a reference triple. If a reference triple with the same environment already exists,
+    /// the measurement is added to that triple. Otherwise, a new reference triple is created.
+    ///
+    /// # Arguments
+    ///
+    /// * `environment` - The environment map that describes the context for this reference value
+    /// * `mkey` - Optional measurement element type that identifies what is being measured
+    /// * `value` - The value to serialize and store as the reference value
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if successful, or an `std::io::Error` if serialization fails.
+    ///
+    /// # Example
+    ///
+    /// ``` ignore
+    /// use corim_rs::{
+    ///     comid::{ConciseMidTag, TagIdentityMap, ComidEntityMap, TriplesMap, TagIdTypeChoice},
+    ///     core::{OneOrMore, Text, Tstr},
+    ///     triples::{EnvironmentMap, MeasuredElementTypeChoice},
+    /// };
+    ///
+    /// let mut comid = ConciseMidTag {
+    ///     language: None,
+    ///     tag_identity: TagIdentityMap {
+    ///         tag_id: TagIdTypeChoice::Tstr(Tstr::from("example-id")),
+    ///         tag_version: Some(1),
+    ///     },
+    ///     entities: OneOrMore::One(ComidEntityMap {
+    ///         entity_name: Text::from("Example Corp"),
+    ///         reg_id: None,
+    ///         role: OneOrMore::One(corim_rs::comid::ComidRoleTypeChoice::TagCreator),
+    ///         extension: None,
+    ///     }),
+    ///     linked_tags: None,
+    ///     triples: TriplesMap::default(),
+    ///     extension: None,
+    /// };
+    ///
+    /// // Add a reference value
+    /// let env = EnvironmentMap::default();
+    /// let reference_data = "example reference value";
+    /// comid.add_reference_value(env, None, &reference_data).expect("Failed to add reference value");
+    /// ```
+    ///
+    /// # How It Works
+    ///
+    /// 1. The value is serialized to CBOR bytes using the `ciborium` library
+    /// 2. The bytes are wrapped in a `TaggedBytes` structure
+    /// 3. A `MeasurementMap` is created with the provided measurement key and the raw value
+    /// 4. The method then updates the CoMID's reference triples based on existing data:
+    ///    - If no reference triples exist, a new one is created
+    ///    - If a reference triple with the matching environment exists, the measurement is added to it
+    ///    - If reference triples exist but none match the environment, a new triple is added
+    pub fn add_reference_value<T>(
+        &mut self,
+        environment: EnvironmentMap<'a>,
+        mkey: Option<MeasuredElementTypeChoice<'a>>,
+        value: &T,
+    ) -> Result<(), std::io::Error>
+    where
+        T: ?Sized + Serialize,
+    {
+        let mut raw_bytes = vec![];
+        ciborium::into_writer(value, &mut raw_bytes)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        let raw_value = TaggedBytes::new(raw_bytes);
+
+        let measurement = MeasurementMap {
+            mkey,
+            mval: MeasurementValuesMap {
+                raw: Some(RawValueType {
+                    raw_value: raw_value.into(),
+                    raw_value_mask: None,
+                }),
+                ..Default::default()
+            },
+            authorized_by: None,
+        };
+
+        match &mut self.triples.reference_triples {
+            None => {
+                let new_record = ReferenceTripleRecord {
+                    ref_env: environment,
+                    ref_claims: measurement.into(),
+                };
+                self.triples.reference_triples = Some(OneOrMany::One(new_record));
+            }
+            Some(OneOrMany::One(record)) => {
+                if record.ref_env == environment {
+                    match &mut record.ref_claims {
+                        OneOrMany::One(original_claim) => {
+                            record.ref_claims =
+                                OneOrMany::Many(vec![std::mem::take(original_claim), measurement])
+                        }
+                        OneOrMany::Many(claims) => claims.push(measurement),
+                    }
+                } else {
+                    let new_record: ReferenceTripleRecord<'a> = ReferenceTripleRecord {
+                        ref_env: environment,
+                        ref_claims: measurement.into(),
+                    };
+
+                    let many = vec![std::mem::take(record), new_record];
+                    self.triples.reference_triples = Some(OneOrMany::Many(many));
+                }
+            }
+            Some(OneOrMany::Many(vec)) => {
+                if let Some(record) = vec.iter_mut().find(|r| r.ref_env == environment) {
+                    match &mut record.ref_claims {
+                        OneOrMany::One(claim) => {
+                            record.ref_claims =
+                                OneOrMany::Many(vec![std::mem::take(claim), measurement])
+                        }
+                        OneOrMany::Many(claims) => claims.push(measurement),
+                    }
+                } else {
+                    let new_record = ReferenceTripleRecord {
+                        ref_env: environment,
+                        ref_claims: measurement.into(),
+                    };
+                    vec.push(new_record);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Identification information for a tag
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub struct TagIdentityMap<'a> {
     /// Unique identifier for the tag
@@ -140,7 +276,7 @@ pub struct TagIdentityMap<'a> {
 }
 
 /// Represents either a string or UUID tag identifier
-#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub enum TagIdTypeChoice<'a> {
     /// Text string identifier
@@ -156,7 +292,7 @@ impl<'a> From<&'a str> for TagIdTypeChoice<'a> {
 }
 
 /// Information about an entity associated with the tag
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub struct ComidEntityMap<'a> {
     /// Name of the entity
@@ -175,7 +311,7 @@ pub struct ComidEntityMap<'a> {
 }
 
 /// Role types that can be assigned to entities
-#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub enum ComidRoleTypeChoice {
     /// Entity that created the tag (value: 0)
@@ -187,7 +323,7 @@ pub enum ComidRoleTypeChoice {
 }
 
 /// Reference to another tag and its relationship to this one
-#[derive(Debug, Serialize, Deserialize, From, Constructor)]
+#[derive(Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub struct LinkedTagMap<'a> {
     /// Identifier of the linked tag
@@ -199,7 +335,7 @@ pub struct LinkedTagMap<'a> {
 }
 
 /// Types of relationships between tags
-#[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub enum TagRelTypeChoice {
     /// This tag supplements the linked tag by providing additional information
@@ -211,7 +347,7 @@ pub enum TagRelTypeChoice {
 }
 
 /// Collection of different types of triples describing the module characteristics
-#[derive(Default, Debug, Serialize, Deserialize, From)]
+#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub struct TriplesMap<'a> {
     /// Optional reference triples that link to external references
