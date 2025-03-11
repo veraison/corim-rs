@@ -54,7 +54,7 @@
 //!     link: None,
 //!     payload_or_evidence: None,
 //!     extensions: None,
-//!     global_attributes: Default::default(),
+//!     global_attributes: None,
 //! };
 //! ```
 //!
@@ -69,7 +69,7 @@
 
 use crate::{
     generate_tagged, AnyUri, ExtensionMap, GlobalAttributes, HashEntry, Int, Integer, IntegerTime,
-    Label, OneOrMany, Role, Text, TextOrBytes, TextOrBytesSized, Uint, Uri, VersionScheme,
+    Label, OneOrMore, Role, Text, TextOrBytes, TextOrBytesSized, Uint, Uri, VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
@@ -84,54 +84,61 @@ generate_tagged!((505, TaggedConciseSwidTag, ConciseSwidTag<'a>, 'a, "Represents
 #[repr(C)]
 pub struct ConciseSwidTag<'a> {
     /// Unique identifier for the tag
-    #[serde(rename = "tag-id")]
+    #[serde(rename = "0")]
     pub tag_id: TextOrBytes<'a>,
     /// Version number for the tag
-    #[serde(rename = "tag-version")]
+    #[serde(rename = "12")]
     pub tag_version: Int,
     /// Indicates if this is a base (corpus) tag
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "8")]
     pub corpus: Option<bool>,
     /// Indicates if this is a patch tag
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "9")]
     pub patch: Option<bool>,
     /// Indicates if this is a supplemental tag
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "11")]
     pub supplemental: Option<bool>,
     /// Name of the software product
-    #[serde(rename = "software-name")]
+    #[serde(rename = "1")]
     pub software_name: Text<'a>,
     /// Version of the software product
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "software-version")]
+    #[serde(rename = "13")]
     pub software_version: Option<Text<'a>>,
     /// Scheme used for version numbering
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "version-scheme")]
+    #[serde(rename = "14")]
     pub version_scheme: Option<VersionScheme>,
     /// Media type or environment context
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "10")]
     pub media: Option<Text<'a>>,
     /// Additional metadata about the software
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "software-meta")]
-    pub software_meta: Option<OneOrMany<SoftwareMetaEntry<'a>>>,
+    #[serde(rename = "5")]
+    pub software_meta: Option<OneOrMore<SoftwareMetaEntry<'a>>>,
     /// List of entities associated with the software
-    pub entity: OneOrMany<EntityEntry<'a>>,
+    #[serde(rename = "2")]
+    pub entity: OneOrMore<EntityEntry<'a>>,
     /// Optional links to related resources
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub link: Option<OneOrMany<LinkEntry<'a>>>,
+    #[serde(rename = "4")]
+    pub link: Option<OneOrMore<LinkEntry<'a>>>,
     /// Optional payload or evidence data
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "payload-or-evidence")]
+    #[serde(flatten)]
     pub payload_or_evidence: Option<PayloadOrEvidence<'a>>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to the whole tag
-    #[serde(rename = "global-attributes")]
-    pub global_attributes: GlobalAttributes<'a>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
 /// Additional metadata about the software component
@@ -144,71 +151,77 @@ pub struct ConciseSwidTag<'a> {
 pub struct SoftwareMetaEntry<'a> {
     /// Current activation status of the software (e.g., "trial", "full", "deleted")
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "activation-status")]
+    #[serde(rename = "43")]
     pub activation_status: Option<Text<'a>>,
 
     /// Distribution channel type (e.g., "retail", "enterprise", "beta")
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "channel-type")]
+    #[serde(rename = "44")]
     pub channel_type: Option<Text<'a>>,
 
     /// Informal or marketing version name
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "coloquial-version")]
+    #[serde(rename = "45")]
     pub coloquial_version: Option<Text<'a>>,
 
     /// Detailed description of the software
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "46")]
     pub description: Option<Text<'a>>,
 
     /// Edition or variation of the software
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "47")]
     pub edition: Option<Text<'a>>,
 
     /// Indicates if entitlement data is required to use the software
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "entitlement-data-required")]
+    #[serde(rename = "48")]
     pub entitlement_data_required: Option<bool>,
 
     /// Key used for software entitlement
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "entitlement-key")]
+    #[serde(rename = "49")]
     pub entitlement_key: Option<Text<'a>>,
 
     /// Tool that generated this metadata (16 bytes max)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "50")]
     pub generator: Option<TextOrBytesSized<'a, 16>>,
 
     /// Persistent identifier for the software
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "persistent-id")]
+    #[serde(rename = "51")]
     pub persistent_id: Option<Text<'a>>,
 
     /// Product name
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "52")]
     pub product: Option<Text<'a>>,
 
     /// Product family name
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "product-family")]
+    #[serde(rename = "53")]
     pub product_family: Option<Text<'a>>,
 
     /// Revision identifier
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "54")]
     pub revision: Option<Text<'a>>,
 
     /// Brief description of the software
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "55")]
     pub summary: Option<Text<'a>>,
 
     /// UNSPSC classification code
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "unspsc-code")]
+    #[serde(rename = "56")]
     pub unspsc_code: Option<Text<'a>>,
 
     /// Version of UNSPSC codeset used
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "unspsc-version")]
+    #[serde(rename = "57")]
     pub unspsc_version: Option<Text<'a>>,
 
     /// Optional extensible attributes
@@ -217,8 +230,9 @@ pub struct SoftwareMetaEntry<'a> {
     pub extensions: Option<ExtensionMap<'a>>,
 
     /// Global attributes that apply to this metadata entry
-    #[serde(rename = "global-attributes")]
-    pub global_attributes: GlobalAttributes<'a>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
 /// Information about an entity involved in software development or distribution
@@ -228,24 +242,27 @@ pub struct SoftwareMetaEntry<'a> {
 )]
 pub struct EntityEntry<'a> {
     /// Name of the entity
-    #[serde(rename = "entity-name")]
+    #[serde(rename = "31")]
     pub entity_name: Text<'a>,
     /// Optional registration identifier URI for the entity
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "reg-id")]
+    #[serde(rename = "32")]
     pub reg_id: Option<Uri<'a>>,
     /// One or more roles this entity fulfills
-    pub role: OneOrMany<Role>,
+    #[serde(rename = "33")]
+    pub role: OneOrMore<Role>,
     /// Optional cryptographic hash for entity verification
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "34")]
     pub thumbprint: Option<HashEntry>,
     /// Optional extensible attributes
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extensions: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this entity
-    #[serde(rename = "global-attributes")]
-    pub global_attributes: GlobalAttributes<'a>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
 /// Link to external resources related to the software
@@ -254,35 +271,43 @@ pub struct EntityEntry<'a> {
 pub struct LinkEntry<'a> {
     /// Optional identifier for the linked artifact
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "37")]
     pub artifact: Option<Text<'a>>,
     /// URI reference to the linked resource
+    #[serde(rename = "38")]
     pub href: AnyUri<'a>,
     /// Optional media type or context
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "10")]
     pub media: Option<Text<'a>>,
     /// Optional ownership status of the linked resource
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "39")]
     pub ownership: Option<Ownership<'a>>,
     /// Relationship type between this tag and the linked resource
+    #[serde(rename = "40")]
     pub rel: Rel<'a>,
     /// Optional MIME type of the linked resource
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "media-type")]
+    #[serde(rename = "41")]
     pub media_type: Option<Text<'a>>,
     /// Optional usage requirement level
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "42")]
     pub r#use: Option<Use<'a>>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this link
-    #[serde(rename = "global-attributes")]
-    pub global_attributes: GlobalAttributes<'a>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
 /// Ownership status enumeration for linked resources
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(u8)]
+#[serde(untagged)]
 pub enum Ownership<'a> {
     /// Resource is no longer maintained
     Abandon = 1,
@@ -297,6 +322,7 @@ pub enum Ownership<'a> {
 /// Relationship types between resources in CoSWID tags
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(u8)]
+#[serde(untagged)]
 pub enum Rel<'a> {
     /// Previous version of the software
     Ancestor = 1,
@@ -332,6 +358,7 @@ pub enum Rel<'a> {
 /// - Evidence: The actual observed state of the software
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum PayloadOrEvidence<'a> {
     /// Describes the intended state of the software
     Payload(Payload<'a>),
@@ -345,6 +372,7 @@ pub enum PayloadOrEvidence<'a> {
 )]
 #[repr(C)]
 pub struct Payload<'a> {
+    #[serde(rename = "6")]
     /// The payload entry containing resource information
     payload: PayloadEntry<'a>,
 }
@@ -356,16 +384,17 @@ pub struct Payload<'a> {
 #[repr(C)]
 pub struct PayloadEntry<'a> {
     /// Collection of resources in the software
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    #[serde(rename = "resource-collection")]
-    pub resource_collection: ResourceCollection<'a>,
+    pub resource_collection: Option<ResourceCollection<'a>>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this payload entry
-    #[serde(rename = "global-attributes")]
-    pub global_attributes: GlobalAttributes<'a>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
 /// Collection of resources that make up the software component
@@ -379,15 +408,17 @@ pub struct PayloadEntry<'a> {
 #[repr(C)]
 pub struct ResourceCollection<'a> {
     /// Group of filesystem path elements
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    #[serde(rename = "path-elements-group")]
-    pub path_elements_group: PathElementsGroup<'a>,
+    pub path_elements_group: Option<PathElementsGroup<'a>>,
     /// Optional list of processes
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub process: Option<OneOrMany<ProcessEntry<'a>>>,
+    #[serde(rename = "18")]
+    pub process: Option<OneOrMore<ProcessEntry<'a>>>,
     /// Optional list of resources
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource: Option<OneOrMany<ResourceEntry<'a>>>,
+    #[serde(rename = "19")]
+    pub resource: Option<OneOrMore<ResourceEntry<'a>>>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
@@ -400,12 +431,14 @@ pub struct ResourceCollection<'a> {
 )]
 #[repr(C)]
 pub struct PathElementsGroup<'a> {
-    /// Optional list of directory entries
+    /// Optional list of directory entries.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub directory: Option<OneOrMany<DirectoryEntry<'a>>>,
+    #[serde(rename = "16")]
+    pub directory: Option<OneOrMore<DirectoryEntry<'a>>>,
     /// Optional list of file entries
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub file: Option<OneOrMany<FileEntry<'a>>>,
+    #[serde(rename = "17")]
+    pub file: Option<OneOrMore<FileEntry<'a>>>,
 }
 
 /// Information about a directory in the filesystem
@@ -415,26 +448,19 @@ pub struct PathElementsGroup<'a> {
 #[repr(C)]
 pub struct DirectoryEntry<'a> {
     /// Basic filesystem item information
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    #[serde(rename = "filesystem-item")]
-    pub filesystem_item: FileSystemItem<'a>,
-    /// Optional directory size in bytes
+    pub filesystem_item: Option<FileSystemItem<'a>>,
+    /// Optional path elements group (boxed to cover possible infinite recursion).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub size: Option<Uint>,
-    /// Optional version identifier for the directory
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "file-version")]
-    pub file_version: Option<Text<'a>>,
-    /// Optional cryptographic hash of directory contents
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hash: Option<HashEntry>,
-    /// Optional extensible attributes
+    pub path_elements: Option<Box<PathElementsGroup<'a>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this directory
-    #[serde(rename = "global-attributes")]
-    pub global_attributes: GlobalAttributes<'a>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
 /// Basic information about a filesystem item (file or directory)
@@ -445,15 +471,18 @@ pub struct DirectoryEntry<'a> {
 pub struct FileSystemItem<'a> {
     /// Indicates if this is a key/critical filesystem item
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "22")]
     pub key: Option<bool>,
     /// Optional location in the filesystem
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "23")]
     pub location: Option<Text<'a>>,
     /// Name of the filesystem item
-    #[serde(rename = "fs-name")]
+    #[serde(rename = "24")]
     pub fs_name: Text<'a>,
     /// Optional root directory path
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "25")]
     pub root: Option<Text<'a>>,
 }
 
@@ -464,26 +493,29 @@ pub struct FileSystemItem<'a> {
 #[repr(C)]
 pub struct FileEntry<'a> {
     /// Basic filesystem item information
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    #[serde(rename = "filesystem-item")]
-    pub filesystem_item: FileSystemItem<'a>,
+    pub filesystem_item: Option<FileSystemItem<'a>>,
     /// Optional file size in bytes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "20")]
     pub size: Option<Uint>,
     /// Optional version identifier for the file
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "file-version")]
+    #[serde(rename = "21")]
     pub file_version: Option<Text<'a>>,
     /// Optional cryptographic hash of file contents
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "7")]
     pub hash: Option<HashEntry>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this file
-    #[serde(rename = "global-attributes")]
-    pub global_attributes: GlobalAttributes<'a>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
 /// Information about a running process
@@ -493,18 +525,20 @@ pub struct FileEntry<'a> {
 #[repr(C)]
 pub struct ProcessEntry<'a> {
     /// Name of the process
-    #[serde(rename = "process-name")]
+    #[serde(rename = "27")]
     pub process_name: Text<'a>,
     /// Optional process identifier
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "28")]
     pub pid: Option<Integer>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this process
-    #[serde(rename = "global-attributes")]
-    pub global_attributes: GlobalAttributes<'a>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
 /// Information about a general resource
@@ -514,14 +548,16 @@ pub struct ProcessEntry<'a> {
 #[repr(C)]
 pub struct ResourceEntry<'a> {
     /// Type identifier for the resource
+    #[serde(rename = "29")]
     pub r#type: Text<'a>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this resource
-    #[serde(rename = "global-attributes")]
-    pub global_attributes: GlobalAttributes<'a>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
 /// Container for evidence information about observed software state
@@ -530,6 +566,7 @@ pub struct ResourceEntry<'a> {
 )]
 #[repr(C)]
 pub struct Evidence<'a> {
+    #[serde(rename = "3")]
     /// The evidence entry containing observed resource information
     pub evidence: EvidenceEntry<'a>,
 }
@@ -541,31 +578,35 @@ pub struct Evidence<'a> {
 #[repr(C)]
 pub struct EvidenceEntry<'a> {
     /// Collection of observed resources
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    #[serde(rename = "resource-collection")]
-    pub resource_collection: ResourceCollection<'a>,
+    pub resource_collection: Option<ResourceCollection<'a>>,
     /// Optional timestamp when evidence was collected
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "35")]
     pub date: Option<IntegerTime>,
     /// Optional identifier of the device where evidence was collected
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "device-id")]
+    #[serde(rename = "36")]
     pub device_id: Option<Text<'a>>,
     /// Optional location where evidence was collected
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "23")]
     pub location: Option<Text<'a>>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this evidence entry
-    #[serde(rename = "global-attributes")]
-    pub global_attributes: GlobalAttributes<'a>,
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
 /// Usage requirement levels for resources
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(u8)]
+#[serde(untagged)]
 pub enum Use<'a> {
     /// Resource is optional
     Optional = 1,

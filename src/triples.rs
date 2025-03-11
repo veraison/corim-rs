@@ -93,7 +93,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::{
     core::PkixBase64CertPathType, Bytes, CertPathThumbprintType, CertThumprintType,
-    ConciseSwidTagId, CoseKeyType, Digest, ExtensionMap, MinSvnType, OidType, OneOrMany,
+    ConciseSwidTagId, CoseKeyType, Digest, ExtensionMap, MinSvnType, OidType, OneOrMore,
     PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, SvnType, Text,
     ThumbprintType, Tstr, UeidType, Uint, Ulabel, UuidType, VersionScheme,
 };
@@ -109,14 +109,14 @@ pub struct ReferenceTripleRecord<'a> {
     /// The environment being referenced
     pub ref_env: EnvironmentMap<'a>,
     /// One or more measurement claims about the environment
-    pub ref_claims: OneOrMany<MeasurementMap<'a>>,
+    pub ref_claims: OneOrMore<MeasurementMap<'a>>,
 }
 
 impl<'a> Default for ReferenceTripleRecord<'a> {
     fn default() -> Self {
         Self {
             ref_env: Default::default(),
-            ref_claims: OneOrMany::One(Default::default()),
+            ref_claims: OneOrMore::One(Default::default()),
         }
     }
 }
@@ -129,12 +129,15 @@ impl<'a> Default for ReferenceTripleRecord<'a> {
 pub struct EnvironmentMap<'a> {
     /// Optional classification information
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "0")]
     pub class: Option<ClassMap<'a>>,
     /// Optional instance identifier
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "1")]
     pub instance: Option<InstanceIdTypeChoice<'a>>,
     /// Optional group identifier
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "2")]
     pub group: Option<GroupIdTypeChoice>,
 }
 
@@ -146,24 +149,30 @@ pub struct EnvironmentMap<'a> {
 pub struct ClassMap<'a> {
     /// Optional class identifier
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "0")]
     pub class_id: Option<ClassIdTypeChoice>,
     /// Optional vendor name
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "1")]
     pub vendor: Option<Tstr<'a>>,
     /// Optional model identifier
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "2")]
     pub model: Option<Tstr<'a>>,
     /// Optional layer number
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "3")]
     pub layer: Option<Uint>,
     /// Optional index number
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "4")]
     pub index: Option<Uint>,
 }
 
 /// Possible types for class identifiers
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum ClassIdTypeChoice {
     /// Object Identifier (OID)
     Oid(OidType),
@@ -176,6 +185,7 @@ pub enum ClassIdTypeChoice {
 /// Possible types for instance identifiers
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum InstanceIdTypeChoice<'a> {
     /// Unique Entity Identifier
     Ueid(UeidType),
@@ -252,6 +262,7 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 /// like `From`, `TryFrom`, `Serialize`, and `Deserialize`.
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum CryptoKeyTypeChoice<'a> {
     /// Base64-encoded PKIX key
     PkixBase64Key(PkixBase64KeyType<'a>),
@@ -276,6 +287,7 @@ pub enum CryptoKeyTypeChoice<'a> {
 /// Types of group identifiers
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum GroupIdTypeChoice {
     /// UUID identifier
     Uuid(UuidType),
@@ -291,17 +303,21 @@ pub enum GroupIdTypeChoice {
 pub struct MeasurementMap<'a> {
     /// Optional measurement key identifier
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "0")]
     pub mkey: Option<MeasuredElementTypeChoice<'a>>,
     /// Measurement values
+    #[serde(rename = "1")]
     pub mval: MeasurementValuesMap<'a>,
     /// Optional list of authorizing keys
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub authorized_by: Option<OneOrMany<CryptoKeyTypeChoice<'a>>>,
+    #[serde(rename = "2")]
+    pub authorized_by: Option<OneOrMore<CryptoKeyTypeChoice<'a>>>,
 }
 
 /// Types of measured element identifiers
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum MeasuredElementTypeChoice<'a> {
     /// Object Identifier (OID)
     Oid(OidType),
@@ -325,15 +341,19 @@ impl<'a> From<&'a str> for MeasuredElementTypeChoice<'a> {
 pub struct MeasurementValuesMap<'a> {
     /// Optional version information
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "0")]
     pub version: Option<VersionMap<'a>>,
     /// Optional security version number
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "1")]
     pub svn: Option<SvnTypeChoice>,
     /// Optional cryptographic digest
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "2")]
     pub digest: Option<DigestType<'a>>,
     /// Optional status flags
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "3")]
     pub flags: Option<FlagsMap<'a>>,
     /// Optional raw measurement value
     #[serde(flatten)]
@@ -341,27 +361,35 @@ pub struct MeasurementValuesMap<'a> {
     pub raw: Option<RawValueType>,
     /// Optional MAC address
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "6")]
     pub mac_addr: Option<MacAddrTypeChoice>,
     /// Optional IP address
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "7")]
     pub ip_addr: Option<IpAddrTypeChoice>,
     /// Optional serial number
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "8")]
     pub serial_number: Option<Text<'a>>,
     /// Optional UEID
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "9")]
     pub ueid: Option<UeidType>,
     /// Optional UUID
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "10")]
     pub uuid: Option<UuidType>,
     /// Optional name
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "11")]
     pub name: Option<Text<'a>>,
     /// Optional cryptographic keys
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cryptokeys: Option<OneOrMany<CryptoKeyTypeChoice<'a>>>,
+    #[serde(rename = "13")]
+    pub cryptokeys: Option<OneOrMore<CryptoKeyTypeChoice<'a>>>,
     /// Optional integrity register values
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "14")]
     pub integrity_registers: Option<IntegrityRegisters<'a>>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -385,6 +413,7 @@ pub struct VersionMap<'a> {
 /// Security version number types
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum SvnTypeChoice {
     /// Regular SVN as an unsigned integer
     Svn(Uint),
@@ -395,7 +424,7 @@ pub enum SvnTypeChoice {
 }
 
 /// Collection of one or more cryptographic digests
-pub type DigestType<'a> = OneOrMany<Digest<'a>>;
+pub type DigestType<'a> = OneOrMore<Digest<'a>>;
 
 /// Status flags indicating various security and configuration states
 #[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -403,33 +432,43 @@ pub type DigestType<'a> = OneOrMany<Digest<'a>>;
 pub struct FlagsMap<'a> {
     /// Whether the environment is configured
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "0")]
     pub is_configured: Option<bool>,
     /// Whether the environment is in a secure state
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "1")]
     pub is_secure: Option<bool>,
     /// Whether the environment is in recovery mode
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "2")]
     pub is_recovery: Option<bool>,
     /// Whether debug features are enabled
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "3")]
     pub is_debug: Option<bool>,
     /// Whether replay protection is enabled
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "4")]
     pub is_replay_protected: Option<bool>,
     /// Whether integrity protection is enabled
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "5")]
     pub is_integrity_protected: Option<bool>,
     /// Whether runtime measurements are enabled
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "6")]
     pub is_runtime_meas: Option<bool>,
     /// Whether the environment is immutable
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "7")]
     pub is_immutable: Option<bool>,
     /// Whether the environment is part of the TCB
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "8")]
     pub is_tcb: Option<bool>,
     /// Whether confidentiality protection is enabled
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "9")]
     pub is_confidentiality_protected: Option<bool>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -446,6 +485,7 @@ pub struct FlagsMap<'a> {
 /// - `TryFrom` for fallible construction from slices
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum MacAddrTypeChoice {
     /// 48-bit EUI address
     Eui48Addr(Eui48AddrType),
@@ -526,6 +566,7 @@ pub type Eui64AddrType = [u8; 8];
 /// Implements the same traits as MacAddrTypeChoice for consistent handling.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum IpAddrTypeChoice {
     /// IPv4 address
     Ipv4(Ipv4AddrType),
@@ -603,7 +644,7 @@ pub type Ipv6AddrType = [u8; 16];
     Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
 )]
 #[repr(C)]
-pub struct IntegrityRegisters<'a>(pub OneOrMany<Ulabel<'a>>);
+pub struct IntegrityRegisters<'a>(pub OneOrMore<Ulabel<'a>>);
 
 /// Record containing an endorsement for a specific environmental condition
 #[derive(
@@ -614,14 +655,14 @@ pub struct EndorsedTripleRecord<'a> {
     /// Environmental condition being endorsed
     pub condition: EnvironmentMap<'a>,
     /// One or more measurement endorsements
-    pub endorsement: OneOrMany<MeasurementMap<'a>>,
+    pub endorsement: OneOrMore<MeasurementMap<'a>>,
 }
 
 impl<'a> Default for EndorsedTripleRecord<'a> {
     fn default() -> Self {
         Self {
             condition: Default::default(),
-            endorsement: OneOrMany::One(Default::default()),
+            endorsement: OneOrMore::One(Default::default()),
         }
     }
 }
@@ -635,7 +676,7 @@ pub struct IdentityTripleRecord<'a> {
     /// Environment being identified
     pub environment: EnvironmentMap<'a>,
     /// List of cryptographic keys associated with the identity
-    pub key_list: OneOrMany<CryptoKeyTypeChoice<'a>>,
+    pub key_list: OneOrMore<CryptoKeyTypeChoice<'a>>,
     /// Optional conditions for the identity
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<TripleRecordCondition<'a>>,
@@ -649,9 +690,11 @@ pub struct IdentityTripleRecord<'a> {
 pub struct TripleRecordCondition<'a> {
     /// Optional measurement key identifier
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "0")]
     pub mkey: Option<MeasuredElementTypeChoice<'a>>,
     /// Keys authorized to verify the condition
-    pub authorized_by: OneOrMany<CryptoKeyTypeChoice<'a>>,
+    #[serde(rename = "1")]
+    pub authorized_by: OneOrMore<CryptoKeyTypeChoice<'a>>,
 }
 
 /// Record containing attestation key information for an environment
@@ -663,7 +706,7 @@ pub struct AttestKeyTripleRecord<'a> {
     /// Environment the keys belong to
     pub environment: EnvironmentMap<'a>,
     /// List of attestation keys
-    pub key_list: OneOrMany<CryptoKeyTypeChoice<'a>>,
+    pub key_list: OneOrMore<CryptoKeyTypeChoice<'a>>,
     /// Optional conditions for key usage
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<TripleRecordCondition<'a>>,
@@ -680,11 +723,12 @@ pub struct DomainDependencyTripleRecord<'a> {
     pub domain_choice: DomainTypeChoice<'a>,
     /// One or more dependent environments
     #[serde(flatten)]
-    pub environment_map: OneOrMany<EnvironmentMap<'a>>,
+    pub environment_map: OneOrMore<EnvironmentMap<'a>>,
 }
 
 /// Types of domain identifiers
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(untagged)]
 pub enum DomainTypeChoice<'a> {
     /// Unsigned integer identifier
     Uint(Uint),
@@ -707,7 +751,7 @@ pub struct DomainMembershipTripleRecord<'a> {
     pub domain_choice: DomainTypeChoice<'a>,
     /// One or more member environments
     #[serde(flatten)]
-    pub environment_map: OneOrMany<EnvironmentMap<'a>>,
+    pub environment_map: OneOrMore<EnvironmentMap<'a>>,
 }
 
 /// Record linking environments to CoSWID tags
@@ -721,7 +765,7 @@ pub struct CoswidTripleRecord<'a> {
     pub environment_map: EnvironmentMap<'a>,
     /// List of associated CoSWID tag identifiers
     #[serde(flatten)]
-    pub coswid_tags: OneOrMany<ConciseSwidTagId<'a>>,
+    pub coswid_tags: OneOrMore<ConciseSwidTagId<'a>>,
 }
 
 /// Record describing a series of conditional endorsements
@@ -747,7 +791,7 @@ pub struct ConditionalEndorsementSeriesTripleRecord<'a> {
     /// Initial environmental condition
     pub condition: StatefulEnvironmentRecord<'a>,
     /// Series of conditional changes
-    pub series: OneOrMany<ConditionalSeriesRecord<'a>>,
+    pub series: OneOrMore<ConditionalSeriesRecord<'a>>,
 }
 
 /// Record containing environment state and measurement claims
@@ -759,7 +803,7 @@ pub struct StatefulEnvironmentRecord<'a> {
     /// Environment being described
     pub environment: EnvironmentMap<'a>,
     /// List of measurement claims about the environment
-    pub claims_list: OneOrMany<MeasurementMap<'a>>,
+    pub claims_list: OneOrMore<MeasurementMap<'a>>,
 }
 
 /// Record describing conditional changes to measurements
@@ -769,9 +813,9 @@ pub struct StatefulEnvironmentRecord<'a> {
 #[repr(C)]
 pub struct ConditionalSeriesRecord<'a> {
     /// Measurements that must match for changes to apply
-    pub selection: OneOrMany<MeasurementMap<'a>>,
+    pub selection: OneOrMore<MeasurementMap<'a>>,
     /// Measurements to add when selection matches
-    pub addition: OneOrMany<MeasurementMap<'a>>,
+    pub addition: OneOrMore<MeasurementMap<'a>>,
 }
 
 /// Record containing conditional endorsements
@@ -781,7 +825,7 @@ pub struct ConditionalSeriesRecord<'a> {
 #[repr(C)]
 pub struct ConditionalEndorsementTripleRecord<'a> {
     /// List of environmental conditions
-    pub conditions: OneOrMany<StatefulEnvironmentRecord<'a>>,
+    pub conditions: OneOrMore<StatefulEnvironmentRecord<'a>>,
     /// List of endorsements that apply when conditions are met
-    pub endorsements: OneOrMany<EndorsedTripleRecord<'a>>,
+    pub endorsements: OneOrMore<EndorsedTripleRecord<'a>>,
 }

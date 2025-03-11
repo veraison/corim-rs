@@ -3,7 +3,7 @@
 use derive_more::{Constructor, From};
 use serde::{Deserialize, Serialize};
 
-use crate::{generate_tagged, OneOrMany, TagIdentityMap, ValidityMap};
+use crate::{generate_tagged, OneOrMore, TagIdentityMap, ValidityMap};
 
 generate_tagged!((
     508,
@@ -22,14 +22,14 @@ They can be used to establish trust relationships and manage tag distribution."#
 #[repr(C)]
 pub struct ConciseTlTag<'a> {
     /// Identity information for this trust list tag
-    #[serde(rename = "tag-identity")]
+    #[serde(rename = "0")]
     pub tag_identity: TagIdentityMap<'a>,
 
     /// List of trusted tags referenced by this trust list
-    #[serde(rename = "tags-list")]
-    pub tags_list: OneOrMany<TagIdentityMap<'a>>,
+    #[serde(rename = "1")]
+    pub tags_list: OneOrMore<TagIdentityMap<'a>>,
 
     /// Validity period for this trust list
-    #[serde(rename = "tl-validity")]
+    #[serde(rename = "2")]
     pub tl_validity: ValidityMap,
 }

@@ -77,7 +77,7 @@
 
 use crate::{
     comid::ConciseMidTag, core::Bytes, coswid::ConciseSwidTag, cotl::ConciseTlTag, generate_tagged,
-    Digest, ExtensionMap, Int, OidType, OneOrMany, TaggedBytes, TaggedConciseMidTag,
+    Digest, ExtensionMap, Int, OidType, OneOrMore, TaggedBytes, TaggedConciseMidTag,
     TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
 };
 
@@ -93,6 +93,7 @@ pub type UnsignedCorimMap<'a> = CorimMap<'a>;
 /// A type choice representing either a signed or unsigned CoRIM manifest
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+#[serde(untagged)]
 pub enum ConciseRimTypeChoice<'a> {
     /// An unprotected CoRIM with CBOR tag 501
     TaggedUnsignedCorimMap(TaggedUnsignedCorimMap<'a>),
@@ -122,25 +123,30 @@ generate_tagged!(
 #[derive(
     Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
 )]
+#[repr(C)]
 pub struct CorimMap<'a> {
     /// Unique identifier for the CoRIM
+    #[serde(rename = "0")]
     pub id: CorimIdTypeChoice<'a>,
     /// Collection of tags contained in this CoRIM
-    pub tags: OneOrMany<ConciseTagTypeChoice<'a>>,
+    #[serde(rename = "1")]
+    pub tags: OneOrMore<ConciseTagTypeChoice<'a>>,
     /// Optional references to other CoRIMs this one depends on
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "dependent-rims")]
+    #[serde(rename = "2")]
     pub dependent_rims: Option<Vec<CorimLocatorMap<'a>>>,
     /// Optional profile information
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "3")]
     pub profile: Option<ProfileTypeChoice<'a>>,
     /// Optional validity period for the CoRIM
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "rim-validity")]
+    #[serde(rename = "4")]
     pub rim_validity: Option<ValidityMap>,
     /// Optional list of entities associated with this CoRIM
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub entities: Option<OneOrMany<CorimEntityMap<'a>>>,
+    #[serde(rename = "5")]
+    pub entities: Option<OneOrMore<CorimEntityMap<'a>>>,
     /// Optional extensible attributes
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -150,6 +156,8 @@ pub struct CorimMap<'a> {
 /// Represents either a string or UUID identifier for a CoRIM
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(untagged)]
+
 pub enum CorimIdTypeChoice<'a> {
     /// Text string identifier
     Tstr(Tstr<'a>),
@@ -166,6 +174,7 @@ impl<'a> From<&'a str> for CorimIdTypeChoice<'a> {
 /// Types of tags that can be included in a CoRIM
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(untagged)]
 pub enum ConciseTagTypeChoice<'a> {
     /// A Concise Software Identity (CoSWID) tag
     Swid(TaggedConciseSwidTag<'a>),
@@ -175,45 +184,45 @@ pub enum ConciseTagTypeChoice<'a> {
     Tl(TaggedConciseTlTag<'a>),
 }
 
-impl<'a> From<ConciseSwidTag<'a>> for OneOrMany<ConciseTagTypeChoice<'a>> {
+impl<'a> From<ConciseSwidTag<'a>> for OneOrMore<ConciseTagTypeChoice<'a>> {
     #[inline]
     fn from(value: ConciseSwidTag<'a>) -> Self {
-        OneOrMany::One(value.into())
+        OneOrMore::One(value.into())
     }
 }
 
-impl<'a> From<ConciseMidTag<'a>> for OneOrMany<ConciseTagTypeChoice<'a>> {
+impl<'a> From<ConciseMidTag<'a>> for OneOrMore<ConciseTagTypeChoice<'a>> {
     #[inline]
     fn from(value: ConciseMidTag<'a>) -> Self {
-        OneOrMany::One(value.into())
+        OneOrMore::One(value.into())
     }
 }
 
-impl<'a> From<ConciseTlTag<'a>> for OneOrMany<ConciseTagTypeChoice<'a>> {
+impl<'a> From<ConciseTlTag<'a>> for OneOrMore<ConciseTagTypeChoice<'a>> {
     #[inline]
     fn from(value: ConciseTlTag<'a>) -> Self {
-        OneOrMany::One(value.into())
+        OneOrMore::One(value.into())
     }
 }
 
-impl<'a> From<Vec<ConciseSwidTag<'a>>> for OneOrMany<ConciseTagTypeChoice<'a>> {
+impl<'a> From<Vec<ConciseSwidTag<'a>>> for OneOrMore<ConciseTagTypeChoice<'a>> {
     #[inline]
     fn from(value: Vec<ConciseSwidTag<'a>>) -> Self {
-        OneOrMany::Many(value.into_iter().map(Into::into).collect())
+        OneOrMore::Many(value.into_iter().map(Into::into).collect())
     }
 }
 
-impl<'a> From<Vec<ConciseMidTag<'a>>> for OneOrMany<ConciseTagTypeChoice<'a>> {
+impl<'a> From<Vec<ConciseMidTag<'a>>> for OneOrMore<ConciseTagTypeChoice<'a>> {
     #[inline]
     fn from(value: Vec<ConciseMidTag<'a>>) -> Self {
-        OneOrMany::Many(value.into_iter().map(Into::into).collect())
+        OneOrMore::Many(value.into_iter().map(Into::into).collect())
     }
 }
 
-impl<'a> From<Vec<ConciseTlTag<'a>>> for OneOrMany<ConciseTagTypeChoice<'a>> {
+impl<'a> From<Vec<ConciseTlTag<'a>>> for OneOrMore<ConciseTagTypeChoice<'a>> {
     #[inline]
     fn from(value: Vec<ConciseTlTag<'a>>) -> Self {
-        OneOrMany::Many(value.into_iter().map(Into::into).collect())
+        OneOrMore::Many(value.into_iter().map(Into::into).collect())
     }
 }
 
@@ -245,15 +254,18 @@ impl<'a> From<ConciseTlTag<'a>> for ConciseTagTypeChoice<'a> {
 )]
 pub struct CorimLocatorMap<'a> {
     /// URI(s) where the dependent CoRIM can be found
-    pub href: OneOrMany<Uri<'a>>,
+    #[serde(rename = "0")]
+    pub href: OneOrMore<Uri<'a>>,
     /// Optional cryptographic thumbprint for verification
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "1")]
     pub thumbprint: Option<Digest<'a>>,
 }
 
 /// Profile identifier that can be either a URI or OID
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(untagged)]
 pub enum ProfileTypeChoice<'a> {
     /// URI-based profile identifier
     Uri(Uri<'a>),
@@ -268,10 +280,10 @@ pub enum ProfileTypeChoice<'a> {
 )]
 pub struct ValidityMap {
     /// Optional start time of the validity period
-    #[serde(rename = "not-before")]
+    #[serde(rename = "0")]
     pub not_before: Option<Time>,
     /// Required end time of the validity period
-    #[serde(rename = "not-after")]
+    #[serde(rename = "1")]
     pub not_after: Time,
 }
 
@@ -282,20 +294,25 @@ pub struct ValidityMap {
 )]
 pub struct CorimEntityMap<'a> {
     /// Name of the entity
-    #[serde(rename = "entity-name")]
+    #[serde(rename = "0")]
     pub entity_name: Text<'a>,
     /// Optional registration identifier for the entity
-    #[serde(rename = "reg-id")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "1")]
     pub reg_id: Option<Uri<'a>>,
     /// Role of the entity in relation to the CoRIM
+    #[serde(rename = "2")]
     pub role: CorimRoleTypeChoice,
     /// Optional extensible attributes
+    #[serde(flatten)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub extension: Option<ExtensionMap<'a>>,
 }
 
 /// Roles that entities can have in relation to a CoRIM manifest
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(u8)]
+#[serde(untagged)]
 pub enum CorimRoleTypeChoice {
     /// Entity that created the manifest content
     ManifestCreator = 1,
@@ -334,19 +351,20 @@ pub struct COSESign1Corim<'a> {
 #[repr(C)]
 pub struct ProtectedCorimHeaderMap<'a> {
     /// Algorithm identifier for the signature
+    #[serde(rename = "1")]
     pub alg: Int,
     /// Content type indicator (should be "application/rim+cbor")
-    #[serde(rename = "content-type")]
+    #[serde(rename = "3")]
     pub content_type: Text<'a>,
     /// Key identifier for the signing key
+    #[serde(rename = "4")]
     pub kid: Bytes,
     /// CoRIM-specific metadata
-    #[serde(rename = "corim-meta")]
+    #[serde(rename = "8")]
     pub corim_meta: CorimMetaMap<'a>,
     /// Optional COSE header parameters
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    #[serde(rename = "cose-map")]
     pub cose_map: Option<CoseMap<'a>>,
 }
 
@@ -357,9 +375,11 @@ pub struct ProtectedCorimHeaderMap<'a> {
 #[repr(C)]
 pub struct CorimMetaMap<'a> {
     /// Information about the signer
+    #[serde(rename = "0")]
     pub signer: CorimSignerMap<'a>,
     /// Optional validity period for the signature
-    #[serde(rename = "signature-validity")]
+    #[serde(rename = "1")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub signature_validity: Option<ValidityMap>,
 }
 
@@ -370,12 +390,14 @@ pub struct CorimMetaMap<'a> {
 #[repr(C)]
 pub struct CorimSignerMap<'a> {
     /// Name of the signing entity
-    #[serde(rename = "signer-name")]
+    #[serde(rename = "0")]
     pub signer_name: EntityNameTypeChoice<'a>,
     /// Optional URI identifying the signer
-    #[serde(rename = "signer-uri")]
+    #[serde(rename = "1")]
     pub signer_uri: Option<Uri<'a>>,
     /// Optional COSE-specific extensions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(flatten)]
     pub extension: Option<CoseMap<'a>>,
 }
 

@@ -52,7 +52,7 @@ pub type Tstr<'a> = Text<'a>;
 /// Bytes represents an un-tagged array of bytes.
 pub type Bytes = Vec<u8>;
 /// Uri represents one or more text values that conform to the URI syntax
-pub type Uri<'a> = OneOrMany<Text<'a>>;
+pub type Uri<'a> = OneOrMore<Text<'a>>;
 /// AnyUri represents a URI that can be relative or absolute
 pub type AnyUri<'a> = Uri<'a>;
 /// Time represents an integer value for time measurements
@@ -68,6 +68,7 @@ pub type Integer = Int;
 
 /// ExtensionMap represents the possible types that can be used in extensions
 #[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, From, TryFrom, Clone)]
+#[serde(untagged)]
 pub enum ExtensionMap<'a> {
     /// A UTF-8 string value
     Text(Text<'a>),
@@ -139,6 +140,8 @@ generate_tagged!(
 /// Represents a value that can be either text or bytes
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(untagged)]
+
 pub enum TextOrBytes<'a> {
     /// UTF-8 string value
     Text(Text<'a>),
@@ -149,6 +152,7 @@ pub enum TextOrBytes<'a> {
 /// Represents a value that can be either text or fixed-size bytes
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(untagged)]
 pub enum TextOrBytesSized<'a, const N: usize> {
     /// UTF-8 string value
     Text(Text<'a>),
@@ -205,7 +209,7 @@ pub enum Ulabel<'a> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, PartialOrd, Ord, From, TryFrom)]
 #[serde(untagged)]
 #[repr(C)]
-pub enum OneOrMany<T> {
+pub enum OneOrMore<T> {
     One(T),
     Many(Vec<T>),
 }
@@ -215,13 +219,13 @@ pub enum OneOrMany<T> {
 #[serde(untagged)]
 #[repr(C)]
 pub enum AttributeValue<'a> {
-    Text(OneOrMany<Text<'a>>),
-    Int(OneOrMany<Int>),
+    Text(OneOrMore<Text<'a>>),
+    Int(OneOrMore<Int>),
 }
 
 /// Represents global attributes with optional language tag and arbitrary attributes
 #[derive(
-    Default, Debug, Clone, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord,
+    Debug, Clone, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord,
 )]
 #[repr(C)]
 pub struct GlobalAttributes<'a> {
@@ -229,12 +233,14 @@ pub struct GlobalAttributes<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lang: Option<Text<'a>>,
     /// Arbitrary attributes
-    pub attributes: BTreeMap<Label<'a>, AttributeValue<'a>>,
+    #[serde(flatten)]
+    pub attributes: ExtensionMap<'a>,
 }
 
 /// Registry of valid keys for CoRIM maps according to the specification
 #[derive(Debug, Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum CorimMapRegistry {
     /// Unique identifier for the CoRIM
     Id,
@@ -253,6 +259,7 @@ pub enum CorimMapRegistry {
 /// Registry of valid keys for CoMID maps according to the specification
 #[derive(Debug, Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum ComidMapRegistry {
     /// Language identifier
     Language,
@@ -269,6 +276,7 @@ pub enum ComidMapRegistry {
 /// Registry of valid keys for CoTL maps according to the specification
 #[derive(Debug, Serialize, Deserialize, From, TryFrom)]
 #[repr(C)]
+#[serde(untagged)]
 pub enum CotlMapRegistry {
     /// Tag identity information
     TagIdentity,
@@ -293,9 +301,10 @@ pub struct Digest<'a> {
 /// Represents either a COSE key set or a single COSE key
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(untagged)]
 pub enum CoseKeySetOrKey<'a> {
     /// A set of COSE keys
-    KeySet(OneOrMany<CoseKey<'a>>),
+    KeySet(OneOrMore<CoseKey<'a>>),
     /// A single COSE key
     Key(CoseKey<'a>),
 }
@@ -317,7 +326,7 @@ pub struct CoseKey<'a> {
     pub alg: AlgLabel<'a>,
     /// Allowed operations for this key
     #[serde(rename = "4")]
-    pub key_ops: OneOrMany<Label<'a>>,
+    pub key_ops: OneOrMore<Label<'a>>,
     /// Base initialization vector
     #[serde(rename = "5")]
     pub base_iv: TaggedBytes,
@@ -343,7 +352,10 @@ pub struct MaskedRawValue {
 #[repr(C)]
 /// Container for raw values with optional masking
 pub struct RawValueType {
+    #[serde(rename = "4")]
     pub raw_value: RawValueTypeChoice,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "5")]
     pub raw_value_mask: Option<RawValueMaskType>,
 }
 
@@ -351,6 +363,7 @@ pub struct RawValueType {
 pub type RawValueMaskType = Bytes;
 
 #[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(untagged)]
 /// Represents different types of raw values
 pub enum RawValueTypeChoice {
     TaggedBytes(TaggedBytes),
@@ -360,6 +373,7 @@ pub enum RawValueTypeChoice {
 /// Version scheme enumeration as defined in the specification
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(untagged)]
 pub enum VersionScheme {
     /// Multi-part numeric version (e.g., 1.2.3)
     Multipartnumeric = 1,
@@ -409,6 +423,7 @@ pub enum VersionScheme {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(i64)]
+#[serde(untagged)]
 pub enum CoseAlgorithm {
     /// Reserved for private use (-65536)
     Unassigned0 = -65536,
