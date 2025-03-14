@@ -23,7 +23,7 @@
 //!         ConciseMidTag, TagIdentityMap, ComidEntityMap, TriplesMap,
 //!         TagIdTypeChoice, ComidRoleTypeChoice
 //!     },
-//!     core::{OneOrMore, Text, Tstr},
+//!     core::{Text, Tstr},
 //! };
 //!
 //! // Create a tag identity
@@ -36,7 +36,7 @@
 //! let entity = ComidEntityMap {
 //!     entity_name: Text::from("Example Corp"),
 //!     reg_id: None,
-//!     role: OneOrMore::One(ComidRoleTypeChoice::TagCreator),
+//!     role: vec![ComidRoleTypeChoice::TagCreator],
 //!     extension: None,
 //! };
 //!
@@ -58,7 +58,7 @@
 //! let comid = ConciseMidTag {
 //!     language: None,
 //!     tag_identity,
-//!     entities: OneOrMore::One(entity),
+//!     entities: vec![entity],
 //!     linked_tags: None,
 //!     triples,
 //!     extension: None,
@@ -91,7 +91,7 @@ use crate::{
     AttestKeyTripleRecord, ConditionalEndorsementSeriesTripleRecord,
     ConditionalEndorsementTripleRecord, CoswidTripleRecord, DomainDependencyTripleRecord,
     DomainMembershipTripleRecord, EndorsedTripleRecord, ExtensionMap, IdentityTripleRecord,
-    OneOrMore, ReferenceTripleRecord, Text, Tstr, Uint, Uri, UuidType,
+    ReferenceTripleRecord, Text, Tstr, Uint, Uri, UuidType,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
@@ -121,11 +121,11 @@ pub struct ConciseMidTag<'a> {
     pub tag_identity: TagIdentityMap<'a>,
     /// List of entities associated with this tag
     #[serde(rename = "2")]
-    pub entities: OneOrMore<ComidEntityMap<'a>>,
+    pub entities: Vec<ComidEntityMap<'a>>,
     /// Optional references to other related tags
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "3")]
-    pub linked_tags: Option<OneOrMore<LinkedTagMap<'a>>>,
+    pub linked_tags: Option<Vec<LinkedTagMap<'a>>>,
     /// Collection of triples describing the module
     #[serde(rename = "4")]
     pub triples: TriplesMap<'a>,
@@ -223,42 +223,17 @@ impl<'a> ConciseMidTag<'a> {
             None => {
                 let new_record = ReferenceTripleRecord {
                     ref_env: environment.clone(),
-                    ref_claims: measurement.into(),
+                    ref_claims: vec![measurement],
                 };
-                self.triples.reference_triples = Some(OneOrMore::One(new_record));
+                self.triples.reference_triples = Some(vec![new_record]);
             }
-            Some(OneOrMore::One(record)) => {
-                if record.ref_env == *environment {
-                    match &mut record.ref_claims {
-                        OneOrMore::One(original_claim) => {
-                            record.ref_claims =
-                                OneOrMore::Many(vec![std::mem::take(original_claim), measurement])
-                        }
-                        OneOrMore::Many(claims) => claims.push(measurement),
-                    }
-                } else {
-                    let new_record: ReferenceTripleRecord<'a> = ReferenceTripleRecord {
-                        ref_env: environment.clone(),
-                        ref_claims: measurement.into(),
-                    };
-
-                    let many = vec![std::mem::take(record), new_record];
-                    self.triples.reference_triples = Some(OneOrMore::Many(many));
-                }
-            }
-            Some(OneOrMore::Many(vec)) => {
+            Some(vec) => {
                 if let Some(record) = vec.iter_mut().find(|r| r.ref_env == *environment) {
-                    match &mut record.ref_claims {
-                        OneOrMore::One(claim) => {
-                            record.ref_claims =
-                                OneOrMore::Many(vec![std::mem::take(claim), measurement])
-                        }
-                        OneOrMore::Many(claims) => claims.push(measurement),
-                    }
+                    record.ref_claims.push(measurement);
                 } else {
                     let new_record = ReferenceTripleRecord {
                         ref_env: environment.clone(),
-                        ref_claims: measurement.into(),
+                        ref_claims: vec![measurement],
                     };
                     vec.push(new_record);
                 }
@@ -296,42 +271,18 @@ impl<'a> ConciseMidTag<'a> {
             None => {
                 let new_record = EndorsedTripleRecord {
                     condition: environment.clone(),
-                    endorsement: measurement.into(),
+                    endorsement: vec![measurement],
                 };
-                self.triples.endorse_triples = Some(OneOrMore::One(new_record));
+                self.triples.endorse_triples = Some(vec![new_record]);
             }
-            Some(OneOrMore::One(record)) => {
-                if record.condition == *environment {
-                    match &mut record.endorsement {
-                        OneOrMore::One(original_claim) => {
-                            record.endorsement =
-                                OneOrMore::Many(vec![std::mem::take(original_claim), measurement])
-                        }
-                        OneOrMore::Many(claims) => claims.push(measurement),
-                    }
-                } else {
-                    let new_record: EndorsedTripleRecord<'a> = EndorsedTripleRecord {
-                        condition: environment.clone(),
-                        endorsement: measurement.into(),
-                    };
 
-                    let many = vec![std::mem::take(record), new_record];
-                    self.triples.endorse_triples = Some(OneOrMore::Many(many));
-                }
-            }
-            Some(OneOrMore::Many(vec)) => {
+            Some(vec) => {
                 if let Some(record) = vec.iter_mut().find(|r| r.condition == *environment) {
-                    match &mut record.endorsement {
-                        OneOrMore::One(claim) => {
-                            record.endorsement =
-                                OneOrMore::Many(vec![std::mem::take(claim), measurement])
-                        }
-                        OneOrMore::Many(claims) => claims.push(measurement),
-                    }
+                    record.endorsement.push(measurement);
                 } else {
                     let new_record = EndorsedTripleRecord {
                         condition: environment.clone(),
-                        endorsement: measurement.into(),
+                        endorsement: vec![measurement],
                     };
                     vec.push(new_record);
                 }
@@ -380,14 +331,15 @@ impl<'a> From<&'a str> for TagIdTypeChoice<'a> {
 #[repr(C)]
 pub struct ComidEntityMap<'a> {
     /// Name of the entity
-    #[serde(rename = "entity-name")]
+    #[serde(rename = "31")]
     pub entity_name: Text<'a>,
     /// Optional registration identifier
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "reg-id")]
+    #[serde(rename = "32")]
     pub reg_id: Option<Uri<'a>>,
     /// One or more roles this entity fulfills
-    pub role: OneOrMore<ComidRoleTypeChoice>,
+    #[serde(rename = "33")]
+    pub role: Vec<ComidRoleTypeChoice>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
@@ -441,48 +393,48 @@ pub struct TriplesMap<'a> {
     /// Optional reference triples that link to external references
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "0")]
-    pub reference_triples: Option<OneOrMore<ReferenceTripleRecord<'a>>>,
+    pub reference_triples: Option<Vec<ReferenceTripleRecord<'a>>>,
 
     /// Optional endorsement triples that contain verification information
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "1")]
-    pub endorse_triples: Option<OneOrMore<EndorsedTripleRecord<'a>>>,
+    pub endorse_triples: Option<Vec<EndorsedTripleRecord<'a>>>,
 
     /// Optional identity triples that provide identity information
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
-    pub identity_triples: Option<OneOrMore<IdentityTripleRecord<'a>>>,
+    pub identity_triples: Option<Vec<IdentityTripleRecord<'a>>>,
 
     /// Optional attestation key triples containing cryptographic keys
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "3")]
-    pub attest_key_triples: Option<OneOrMore<AttestKeyTripleRecord<'a>>>,
+    pub attest_key_triples: Option<Vec<AttestKeyTripleRecord<'a>>>,
 
     /// Optional domain dependency triples describing relationships between domains
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "4")]
-    pub dependency_triples: Option<OneOrMore<DomainDependencyTripleRecord<'a>>>,
+    pub dependency_triples: Option<Vec<DomainDependencyTripleRecord<'a>>>,
 
     /// Optional domain membership triples describing domain associations
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "5")]
-    pub membership_triples: Option<OneOrMore<DomainMembershipTripleRecord<'a>>>,
+    pub membership_triples: Option<Vec<DomainMembershipTripleRecord<'a>>>,
 
     /// Optional SWID triples containing software identification data
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "6")]
-    pub coswid_triples: Option<OneOrMore<CoswidTripleRecord<'a>>>,
+    pub coswid_triples: Option<Vec<CoswidTripleRecord<'a>>>,
 
     /// Optional conditional endorsement series triples for complex endorsement chains
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "8")]
     pub conditional_endorsement_series_triples:
-        Option<OneOrMore<ConditionalEndorsementSeriesTripleRecord<'a>>>,
+        Option<Vec<ConditionalEndorsementSeriesTripleRecord<'a>>>,
 
     /// Optional conditional endorsement triples for conditional verification
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "10")]
-    pub conditional_endorsement_triples: Option<OneOrMore<ConditionalEndorsementTripleRecord<'a>>>,
+    pub conditional_endorsement_triples: Option<Vec<ConditionalEndorsementTripleRecord<'a>>>,
 
     /// Optional extensible attributes for future expansion
     #[serde(skip_serializing_if = "Option::is_none")]

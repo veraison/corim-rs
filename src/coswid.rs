@@ -40,7 +40,7 @@
 //!
 //! // Create a basic CoSWID tag
 //! let tag = ConciseSwidTag {
-//!     tag_id: "example-software".to_string().into(),
+//!     tag_id: "example-software".into(),
 //!     tag_version: 1,
 //!     software_name: "Example Software".to_string().into(),
 //!     entity: vec![].into(),  // Add entities here

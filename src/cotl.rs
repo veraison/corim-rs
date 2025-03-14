@@ -3,7 +3,7 @@
 use derive_more::{Constructor, From};
 use serde::{Deserialize, Serialize};
 
-use crate::{generate_tagged, OneOrMore, TagIdentityMap, ValidityMap};
+use crate::{generate_tagged, TagIdentityMap, ValidityMap};
 
 generate_tagged!((
     508,
@@ -27,7 +27,7 @@ pub struct ConciseTlTag<'a> {
 
     /// List of trusted tags referenced by this trust list
     #[serde(rename = "1")]
-    pub tags_list: OneOrMore<TagIdentityMap<'a>>,
+    pub tags_list: Vec<TagIdentityMap<'a>>,
 
     /// Validity period for this trust list
     #[serde(rename = "2")]

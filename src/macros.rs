@@ -39,7 +39,7 @@
 /// use corim_rs::generate_tagged;
 ///
 /// // Define a simple type to wrap
-/// #[derive(Default, Debug, PartialEq, Serialize, Deserialize)]
+/// #[derive(Default, Debug, PartialEq, Serialize, Deserialize, Eq, PartialOrd, Ord, Clone)]
 /// pub struct MyType(u32);
 ///
 /// // Generate the tagged wrapper
@@ -55,7 +55,7 @@
 /// let tagged = TaggedMyType::new(value);
 ///
 /// // Access via Deref
-/// assert_eq!(tagged.0, 123);
+/// assert_eq!(tagged.0.0.0, 123);
 ///
 /// // Convert using From
 /// let tagged2: TaggedMyType = MyType(456).into();

@@ -52,7 +52,7 @@
 //! let rim = Corim::TaggedUnsignedCorimMap(
 //!     TaggedUnsignedCorimMap::new(
 //!         CorimMap {
-//!             id: "Corim-Unique-Identifier-01".to_string().into(),
+//!             id: "Corim-Unique-Identifier-01".into(),
 //!             tags: vec![].into(),
 //!             dependent_rims: None,
 //!             profile: None,
@@ -130,7 +130,7 @@ pub struct CorimMap<'a> {
     pub id: CorimIdTypeChoice<'a>,
     /// Collection of tags contained in this CoRIM
     #[serde(rename = "1")]
-    pub tags: OneOrMore<ConciseTagTypeChoice<'a>>,
+    pub tags: Vec<ConciseTagTypeChoice<'a>>,
     /// Optional references to other CoRIMs this one depends on
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
@@ -146,7 +146,7 @@ pub struct CorimMap<'a> {
     /// Optional list of entities associated with this CoRIM
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "5")]
-    pub entities: Option<OneOrMore<CorimEntityMap<'a>>>,
+    pub entities: Option<Vec<CorimEntityMap<'a>>>,
     /// Optional extensible attributes
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -255,7 +255,7 @@ impl<'a> From<ConciseTlTag<'a>> for ConciseTagTypeChoice<'a> {
 pub struct CorimLocatorMap<'a> {
     /// URI(s) where the dependent CoRIM can be found
     #[serde(rename = "0")]
-    pub href: OneOrMore<Uri<'a>>,
+    pub href: Vec<Uri<'a>>,
     /// Optional cryptographic thumbprint for verification
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "1")]

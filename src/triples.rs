@@ -109,14 +109,14 @@ pub struct ReferenceTripleRecord<'a> {
     /// The environment being referenced
     pub ref_env: EnvironmentMap<'a>,
     /// One or more measurement claims about the environment
-    pub ref_claims: OneOrMore<MeasurementMap<'a>>,
+    pub ref_claims: Vec<MeasurementMap<'a>>,
 }
 
 impl<'a> Default for ReferenceTripleRecord<'a> {
     fn default() -> Self {
         Self {
             ref_env: Default::default(),
-            ref_claims: OneOrMore::One(Default::default()),
+            ref_claims: Default::default(),
         }
     }
 }
@@ -311,7 +311,7 @@ pub struct MeasurementMap<'a> {
     /// Optional list of authorizing keys
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
-    pub authorized_by: Option<OneOrMore<CryptoKeyTypeChoice<'a>>>,
+    pub authorized_by: Option<Vec<CryptoKeyTypeChoice<'a>>>,
 }
 
 /// Types of measured element identifiers
@@ -386,7 +386,7 @@ pub struct MeasurementValuesMap<'a> {
     /// Optional cryptographic keys
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "13")]
-    pub cryptokeys: Option<OneOrMore<CryptoKeyTypeChoice<'a>>>,
+    pub cryptokeys: Option<Vec<CryptoKeyTypeChoice<'a>>>,
     /// Optional integrity register values
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "14")]
@@ -424,7 +424,7 @@ pub enum SvnTypeChoice {
 }
 
 /// Collection of one or more cryptographic digests
-pub type DigestType<'a> = OneOrMore<Digest<'a>>;
+pub type DigestType<'a> = Vec<Digest<'a>>;
 
 /// Status flags indicating various security and configuration states
 #[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -655,14 +655,14 @@ pub struct EndorsedTripleRecord<'a> {
     /// Environmental condition being endorsed
     pub condition: EnvironmentMap<'a>,
     /// One or more measurement endorsements
-    pub endorsement: OneOrMore<MeasurementMap<'a>>,
+    pub endorsement: Vec<MeasurementMap<'a>>,
 }
 
 impl<'a> Default for EndorsedTripleRecord<'a> {
     fn default() -> Self {
         Self {
             condition: Default::default(),
-            endorsement: OneOrMore::One(Default::default()),
+            endorsement: Default::default(),
         }
     }
 }
@@ -676,7 +676,7 @@ pub struct IdentityTripleRecord<'a> {
     /// Environment being identified
     pub environment: EnvironmentMap<'a>,
     /// List of cryptographic keys associated with the identity
-    pub key_list: OneOrMore<CryptoKeyTypeChoice<'a>>,
+    pub key_list: Vec<CryptoKeyTypeChoice<'a>>,
     /// Optional conditions for the identity
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<TripleRecordCondition<'a>>,
@@ -694,7 +694,7 @@ pub struct TripleRecordCondition<'a> {
     pub mkey: Option<MeasuredElementTypeChoice<'a>>,
     /// Keys authorized to verify the condition
     #[serde(rename = "1")]
-    pub authorized_by: OneOrMore<CryptoKeyTypeChoice<'a>>,
+    pub authorized_by: Vec<CryptoKeyTypeChoice<'a>>,
 }
 
 /// Record containing attestation key information for an environment
@@ -706,7 +706,7 @@ pub struct AttestKeyTripleRecord<'a> {
     /// Environment the keys belong to
     pub environment: EnvironmentMap<'a>,
     /// List of attestation keys
-    pub key_list: OneOrMore<CryptoKeyTypeChoice<'a>>,
+    pub key_list: Vec<CryptoKeyTypeChoice<'a>>,
     /// Optional conditions for key usage
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<TripleRecordCondition<'a>>,
@@ -723,7 +723,7 @@ pub struct DomainDependencyTripleRecord<'a> {
     pub domain_choice: DomainTypeChoice<'a>,
     /// One or more dependent environments
     #[serde(flatten)]
-    pub environment_map: OneOrMore<EnvironmentMap<'a>>,
+    pub environment_map: Vec<EnvironmentMap<'a>>,
 }
 
 /// Types of domain identifiers
@@ -751,7 +751,7 @@ pub struct DomainMembershipTripleRecord<'a> {
     pub domain_choice: DomainTypeChoice<'a>,
     /// One or more member environments
     #[serde(flatten)]
-    pub environment_map: OneOrMore<EnvironmentMap<'a>>,
+    pub environment_map: Vec<EnvironmentMap<'a>>,
 }
 
 /// Record linking environments to CoSWID tags
@@ -765,7 +765,7 @@ pub struct CoswidTripleRecord<'a> {
     pub environment_map: EnvironmentMap<'a>,
     /// List of associated CoSWID tag identifiers
     #[serde(flatten)]
-    pub coswid_tags: OneOrMore<ConciseSwidTagId<'a>>,
+    pub coswid_tags: Vec<ConciseSwidTagId<'a>>,
 }
 
 /// Record describing a series of conditional endorsements
@@ -791,7 +791,7 @@ pub struct ConditionalEndorsementSeriesTripleRecord<'a> {
     /// Initial environmental condition
     pub condition: StatefulEnvironmentRecord<'a>,
     /// Series of conditional changes
-    pub series: OneOrMore<ConditionalSeriesRecord<'a>>,
+    pub series: Vec<ConditionalSeriesRecord<'a>>,
 }
 
 /// Record containing environment state and measurement claims
@@ -803,7 +803,7 @@ pub struct StatefulEnvironmentRecord<'a> {
     /// Environment being described
     pub environment: EnvironmentMap<'a>,
     /// List of measurement claims about the environment
-    pub claims_list: OneOrMore<MeasurementMap<'a>>,
+    pub claims_list: Vec<MeasurementMap<'a>>,
 }
 
 /// Record describing conditional changes to measurements
@@ -813,9 +813,9 @@ pub struct StatefulEnvironmentRecord<'a> {
 #[repr(C)]
 pub struct ConditionalSeriesRecord<'a> {
     /// Measurements that must match for changes to apply
-    pub selection: OneOrMore<MeasurementMap<'a>>,
+    pub selection: Vec<MeasurementMap<'a>>,
     /// Measurements to add when selection matches
-    pub addition: OneOrMore<MeasurementMap<'a>>,
+    pub addition: Vec<MeasurementMap<'a>>,
 }
 
 /// Record containing conditional endorsements
@@ -825,7 +825,7 @@ pub struct ConditionalSeriesRecord<'a> {
 #[repr(C)]
 pub struct ConditionalEndorsementTripleRecord<'a> {
     /// List of environmental conditions
-    pub conditions: OneOrMore<StatefulEnvironmentRecord<'a>>,
+    pub conditions: Vec<StatefulEnvironmentRecord<'a>>,
     /// List of endorsements that apply when conditions are met
-    pub endorsements: OneOrMore<EndorsedTripleRecord<'a>>,
+    pub endorsements: Vec<EndorsedTripleRecord<'a>>,
 }

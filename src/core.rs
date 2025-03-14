@@ -149,6 +149,12 @@ pub enum TextOrBytes<'a> {
     Bytes(TaggedBytes),
 }
 
+impl<'a> From<&'a str> for TextOrBytes<'a> {
+    fn from(value: &'a str) -> Self {
+        Self::Text(std::borrow::Cow::Borrowed(value))
+    }
+}
+
 /// Represents a value that can be either text or fixed-size bytes
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -304,7 +310,7 @@ pub struct Digest<'a> {
 #[serde(untagged)]
 pub enum CoseKeySetOrKey<'a> {
     /// A set of COSE keys
-    KeySet(OneOrMore<CoseKey<'a>>),
+    KeySet(Vec<CoseKey<'a>>),
     /// A single COSE key
     Key(CoseKey<'a>),
 }
