@@ -76,9 +76,12 @@
 //! and optional fields defined in the standard.
 
 use crate::{
-    comid::ConciseMidTag, core::Bytes, coswid::ConciseSwidTag, cotl::ConciseTlTag, generate_tagged,
-    Digest, ExtensionMap, Int, OidType, OneOrMore, TaggedBytes, TaggedConciseMidTag,
-    TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
+    comid::ConciseMidTag,
+    core::{Bytes, NonEmptyVec},
+    coswid::ConciseSwidTag,
+    cotl::ConciseTlTag,
+    generate_tagged, Digest, ExtensionMap, Int, OidType, OneOrMore, TaggedBytes,
+    TaggedConciseMidTag, TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
 };
 
 use derive_more::{Constructor, From, TryFrom};
@@ -130,11 +133,11 @@ pub struct CorimMap<'a> {
     pub id: CorimIdTypeChoice<'a>,
     /// Collection of tags contained in this CoRIM
     #[serde(rename = "1")]
-    pub tags: Vec<ConciseTagTypeChoice<'a>>,
+    pub tags: NonEmptyVec<ConciseTagTypeChoice<'a>>,
     /// Optional references to other CoRIMs this one depends on
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
-    pub dependent_rims: Option<Vec<CorimLocatorMap<'a>>>,
+    pub dependent_rims: Option<NonEmptyVec<CorimLocatorMap<'a>>>,
     /// Optional profile information
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "3")]
@@ -146,7 +149,7 @@ pub struct CorimMap<'a> {
     /// Optional list of entities associated with this CoRIM
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "5")]
-    pub entities: Option<Vec<CorimEntityMap<'a>>>,
+    pub entities: Option<NonEmptyVec<CorimEntityMap<'a>>>,
     /// Optional extensible attributes
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -255,7 +258,7 @@ impl<'a> From<ConciseTlTag<'a>> for ConciseTagTypeChoice<'a> {
 pub struct CorimLocatorMap<'a> {
     /// URI(s) where the dependent CoRIM can be found
     #[serde(rename = "0")]
-    pub href: Vec<Uri<'a>>,
+    pub href: NonEmptyVec<Uri<'a>>,
     /// Optional cryptographic thumbprint for verification
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "1")]
@@ -302,7 +305,7 @@ pub struct CorimEntityMap<'a> {
     pub reg_id: Option<Uri<'a>>,
     /// Role of the entity in relation to the CoRIM
     #[serde(rename = "2")]
-    pub role: CorimRoleTypeChoice,
+    pub role: NonEmptyVec<CorimRoleTypeChoice>,
     /// Optional extensible attributes
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]

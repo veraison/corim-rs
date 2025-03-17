@@ -36,11 +36,19 @@ pub mod fixed_bytes;
 /// Macros for easier implementation definitions.
 pub(crate) mod macros;
 
-// Re-export all public items from each module
+/// Errors for easily handling problems.
+pub mod error;
+
+/// Custom CoRIM Results.
+pub mod result;
+
+// Use all public items from each module
 use comid::*;
 use core::*;
 use corim::*;
 use coswid::*;
 use cotl::*;
+use error::*;
 use fixed_bytes::*;
+use result::*;
 use triples::*;

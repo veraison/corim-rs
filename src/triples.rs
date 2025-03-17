@@ -92,10 +92,11 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::{
-    core::PkixBase64CertPathType, Bytes, CertPathThumbprintType, CertThumprintType,
-    ConciseSwidTagId, CoseKeyType, Digest, ExtensionMap, MinSvnType, OidType, OneOrMore,
-    PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, SvnType, Text,
-    ThumbprintType, Tstr, UeidType, Uint, Ulabel, UuidType, VersionScheme,
+    core::{NonEmptyVec, PkixBase64CertPathType},
+    Bytes, CertPathThumbprintType, CertThumprintType, ConciseSwidTagId, CoseKeyType, Digest,
+    ExtensionMap, MinSvnType, OidType, OneOrMore, PkixAsn1DerCertType, PkixBase64CertType,
+    PkixBase64KeyType, RawValueType, Result, SvnType, Text, ThumbprintType, TriplesError, Tstr,
+    UeidType, Uint, Ulabel, UuidType, VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
@@ -109,16 +110,7 @@ pub struct ReferenceTripleRecord<'a> {
     /// The environment being referenced
     pub ref_env: EnvironmentMap<'a>,
     /// One or more measurement claims about the environment
-    pub ref_claims: Vec<MeasurementMap<'a>>,
-}
-
-impl<'a> Default for ReferenceTripleRecord<'a> {
-    fn default() -> Self {
-        Self {
-            ref_env: Default::default(),
-            ref_claims: Default::default(),
-        }
-    }
+    pub ref_claims: NonEmptyVec<MeasurementMap<'a>>,
 }
 
 /// Map describing an environment's characteristics
@@ -141,7 +133,44 @@ pub struct EnvironmentMap<'a> {
     pub group: Option<GroupIdTypeChoice>,
 }
 
-/// Classification information for an environment
+pub struct EnvironmentMapBuilder<'a> {
+    /// Optional classification information
+    pub class: Option<ClassMap<'a>>,
+    /// Optional instance identifier
+    pub instance: Option<InstanceIdTypeChoice<'a>>,
+    /// Optional group identifier
+    pub group: Option<GroupIdTypeChoice>,
+}
+
+impl<'a> EnvironmentMapBuilder<'a> {
+    pub fn class(mut self, values: ClassMap<'a>) -> Self {
+        self.class = Some(values);
+        self
+    }
+
+    pub fn instance(mut self, instance: InstanceIdTypeChoice<'a>) -> Self {
+        self.instance = Some(instance);
+        self
+    }
+
+    pub fn group(mut self, group: GroupIdTypeChoice) -> Self {
+        self.group = Some(group);
+        self
+    }
+
+    pub fn build(self) -> Result<EnvironmentMap<'a>> {
+        if self.class.is_none() && self.instance.is_none() && self.group.is_none() {
+            return Err(TriplesError::EmptyEnvironmentMap)?;
+        }
+        Ok(EnvironmentMap {
+            class: self.class,
+            instance: self.instance,
+            group: self.group,
+        })
+    }
+}
+/// Classification information for an environment. It is **HIGHLY** recommend to use ClassMapBuilder to ensure the CDDL enforcement of
+/// at least one field being present.
 #[derive(
     Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
 )]
@@ -167,6 +196,65 @@ pub struct ClassMap<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "4")]
     pub index: Option<Uint>,
+}
+
+#[derive(Default)]
+pub struct ClassMapBuilder<'a> {
+    /// Optional class identifier
+    pub class_id: Option<ClassIdTypeChoice>,
+    /// Optional vendor name
+    pub vendor: Option<Tstr<'a>>,
+    /// Optional model identifier
+    pub model: Option<Tstr<'a>>,
+    /// Optional layer number
+    pub layer: Option<Uint>,
+    /// Optional index number
+    pub index: Option<Uint>,
+}
+
+impl<'a> ClassMapBuilder<'a> {
+    pub fn class_id(mut self, value: ClassIdTypeChoice) -> Self {
+        self.class_id = Some(value);
+        self
+    }
+
+    pub fn vendor(mut self, value: Tstr<'a>) -> Self {
+        self.vendor = Some(value);
+        self
+    }
+
+    pub fn model(mut self, value: Tstr<'a>) -> Self {
+        self.model = Some(value);
+        self
+    }
+
+    pub fn layer(mut self, value: Uint) -> Self {
+        self.layer = Some(value);
+        self
+    }
+
+    pub fn index(mut self, value: Uint) -> Self {
+        self.index = Some(value);
+        self
+    }
+
+    pub fn build(self) -> Result<ClassMap<'a>> {
+        if self.class_id.is_none()
+            && self.vendor.is_none()
+            && self.model.is_none()
+            && self.layer.is_none()
+            && self.index.is_none()
+        {
+            return Err(TriplesError::EmptyClassMap)?;
+        }
+        Ok(ClassMap {
+            class_id: self.class_id,
+            vendor: self.vendor,
+            model: self.model,
+            layer: self.layer,
+            index: self.index,
+        })
+    }
 }
 
 /// Possible types for class identifiers
@@ -230,7 +318,7 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 ///
 /// ```rust
 /// use corim_rs::triples::CryptoKeyTypeChoice;
-/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, AlgLabel, Label, CoseAlgorithm, OneOrMore};
+/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, AlgLabel, Label, CoseAlgorithm, NonEmptyVec};
 ///
 /// // Base64 encoded certificate
 /// let cert = CryptoKeyTypeChoice::PkixBase64Cert(
@@ -243,10 +331,10 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 ///         kty: Label::Int(1),  // EC2 key type
 ///         kid: TaggedBytes::new(vec![1, 2, 3]),  // Key ID
 ///         alg: AlgLabel::Int(CoseAlgorithm::ES256),  // ES256 algorithm
-///         key_ops: OneOrMore::Many(vec![
+///         key_ops: vec![
 ///             Label::Int(1),  // sign
 ///             Label::Int(2),  // verify
-///         ]),
+///         ].into(),
 ///         base_iv: TaggedBytes::new(vec![4, 5, 6]),  // Initialization vector
 ///         extension: None,  // No extensions
 ///     }))
@@ -311,7 +399,7 @@ pub struct MeasurementMap<'a> {
     /// Optional list of authorizing keys
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
-    pub authorized_by: Option<Vec<CryptoKeyTypeChoice<'a>>>,
+    pub authorized_by: Option<NonEmptyVec<CryptoKeyTypeChoice<'a>>>,
 }
 
 /// Types of measured element identifiers
@@ -335,7 +423,8 @@ impl<'a> From<&'a str> for MeasuredElementTypeChoice<'a> {
     }
 }
 
-/// Collection of measurement values and attributes
+/// Collection of measurement values and attributes. It is **HIGHLY** recommend to use MeasurementValuesMapBuilder
+/// to ensure the CDDL enforcement of at least one field being present.
 #[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct MeasurementValuesMap<'a> {
@@ -386,7 +475,7 @@ pub struct MeasurementValuesMap<'a> {
     /// Optional cryptographic keys
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "13")]
-    pub cryptokeys: Option<Vec<CryptoKeyTypeChoice<'a>>>,
+    pub cryptokeys: Option<NonEmptyVec<CryptoKeyTypeChoice<'a>>>,
     /// Optional integrity register values
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "14")]
@@ -395,6 +484,132 @@ pub struct MeasurementValuesMap<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
+}
+
+pub struct MeasurementValuesMapBuilder<'a> {
+    /// Optional version information
+    pub version: Option<VersionMap<'a>>,
+    /// Optional security version number
+    pub svn: Option<SvnTypeChoice>,
+    /// Optional cryptographic digest
+    pub digest: Option<DigestType<'a>>,
+    /// Optional status flags
+    pub flags: Option<FlagsMap<'a>>,
+    /// Optional raw measurement value
+    pub raw: Option<RawValueType>,
+    /// Optional MAC address
+    pub mac_addr: Option<MacAddrTypeChoice>,
+    /// Optional IP address
+    pub ip_addr: Option<IpAddrTypeChoice>,
+    /// Optional serial number
+    pub serial_number: Option<Text<'a>>,
+    /// Optional UEID
+    pub ueid: Option<UeidType>,
+    /// Optional UUID
+    pub uuid: Option<UuidType>,
+    /// Optional name
+    pub name: Option<Text<'a>>,
+    /// Optional cryptographic keys
+    pub cryptokeys: Option<NonEmptyVec<CryptoKeyTypeChoice<'a>>>,
+    /// Optional integrity register values
+    pub integrity_registers: Option<IntegrityRegisters<'a>>,
+    /// Optional extensible attributes
+    pub extensions: Option<ExtensionMap<'a>>,
+}
+
+impl<'a> MeasurementValuesMapBuilder<'a> {
+    pub fn version(mut self, value: VersionMap<'a>) -> Self {
+        self.version = Some(value);
+        self
+    }
+    pub fn svn(mut self, value: SvnTypeChoice) -> Self {
+        self.svn = Some(value);
+        self
+    }
+    pub fn digest(mut self, value: DigestType<'a>) -> Self {
+        self.digest = Some(value);
+        self
+    }
+    pub fn flags(mut self, value: FlagsMap<'a>) -> Self {
+        self.flags = Some(value);
+        self
+    }
+    pub fn raw(mut self, value: RawValueType) -> Self {
+        self.raw = Some(value);
+        self
+    }
+    pub fn mac_addr(mut self, value: MacAddrTypeChoice) -> Self {
+        self.mac_addr = Some(value);
+        self
+    }
+    pub fn ip_addr(mut self, value: IpAddrTypeChoice) -> Self {
+        self.ip_addr = Some(value);
+        self
+    }
+    pub fn serial_number(mut self, value: Text<'a>) -> Self {
+        self.serial_number = Some(value);
+        self
+    }
+    pub fn ueid(mut self, value: UeidType) -> Self {
+        self.ueid = Some(value);
+        self
+    }
+    pub fn uuid(mut self, value: UuidType) -> Self {
+        self.uuid = Some(value);
+        self
+    }
+    pub fn name(mut self, value: Text<'a>) -> Self {
+        self.name = Some(value);
+        self
+    }
+    pub fn cryptokeys(mut self, value: NonEmptyVec<CryptoKeyTypeChoice<'a>>) -> Self {
+        self.cryptokeys = Some(value);
+        self
+    }
+    pub fn integrity_registers(mut self, value: IntegrityRegisters<'a>) -> Self {
+        self.integrity_registers = Some(value);
+        self
+    }
+    pub fn extensions(mut self, value: ExtensionMap<'a>) -> Self {
+        self.extensions = Some(value);
+        self
+    }
+
+    pub fn build(self) -> Result<MeasurementValuesMap<'a>> {
+        if self.version.is_none()
+            && self.svn.is_none()
+            && self.digest.is_none()
+            && self.flags.is_none()
+            && self.raw.is_none()
+            && self.mac_addr.is_none()
+            && self.ip_addr.is_none()
+            && self.serial_number.is_none()
+            && self.ueid.is_none()
+            && self.uuid.is_none()
+            && self.name.is_none()
+            && self.cryptokeys.is_none()
+            && self.integrity_registers.is_none()
+            && self.extensions.is_none()
+        {
+            return Err(TriplesError::EmptyMeasurementValuesMap)?;
+        }
+        Ok(MeasurementValuesMap {
+            version: self.version,
+            svn: self.svn,
+            digest: self.digest,
+            flags: self.flags,
+            raw: self.raw,
+            mac_addr: self.mac_addr,
+            ip_addr: self.ip_addr,
+            serial_number: self.serial_number,
+            ueid: self.ueid,
+            uuid: self.uuid,
+            name: self.name,
+            cryptokeys: self.cryptokeys,
+            integrity_registers: self.integrity_registers,
+            extensions: self.extensions,
+        })
+    }
 }
 
 /// Version information with optional versioning scheme
@@ -424,7 +639,7 @@ pub enum SvnTypeChoice {
 }
 
 /// Collection of one or more cryptographic digests
-pub type DigestType<'a> = Vec<Digest<'a>>;
+pub type DigestType<'a> = NonEmptyVec<Digest<'a>>;
 
 /// Status flags indicating various security and configuration states
 #[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -508,7 +723,7 @@ impl From<Eui64AddrType> for MacAddrTypeChoice {
 impl TryFrom<&[u8]> for MacAddrTypeChoice {
     type Error = std::array::TryFromSliceError;
 
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(value: &[u8]) -> std::result::Result<Self, Self::Error> {
         match value.len() {
             6 => Ok(Self::Eui48Addr(value.try_into().unwrap())),
             8 => Ok(Self::Eui64Addr(value.try_into().unwrap())),
@@ -587,7 +802,7 @@ impl From<Ipv6AddrType> for IpAddrTypeChoice {
 
 impl TryFrom<&[u8]> for IpAddrTypeChoice {
     type Error = std::array::TryFromSliceError;
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(value: &[u8]) -> std::result::Result<Self, Self::Error> {
         match value.len() {
             4 => Ok(Self::Ipv4(value.try_into()?)),
             16 => Ok(Self::Ipv6(value.try_into()?)),
@@ -655,16 +870,7 @@ pub struct EndorsedTripleRecord<'a> {
     /// Environmental condition being endorsed
     pub condition: EnvironmentMap<'a>,
     /// One or more measurement endorsements
-    pub endorsement: Vec<MeasurementMap<'a>>,
-}
-
-impl<'a> Default for EndorsedTripleRecord<'a> {
-    fn default() -> Self {
-        Self {
-            condition: Default::default(),
-            endorsement: Default::default(),
-        }
-    }
+    pub endorsement: NonEmptyVec<MeasurementMap<'a>>,
 }
 
 /// Record containing identity information for an environment
@@ -676,25 +882,55 @@ pub struct IdentityTripleRecord<'a> {
     /// Environment being identified
     pub environment: EnvironmentMap<'a>,
     /// List of cryptographic keys associated with the identity
-    pub key_list: Vec<CryptoKeyTypeChoice<'a>>,
+    pub key_list: NonEmptyVec<CryptoKeyTypeChoice<'a>>,
     /// Optional conditions for the identity
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub conditions: Option<TripleRecordCondition<'a>>,
+    pub conditions: Option<TriplesRecordCondition<'a>>,
 }
 
-/// Conditions that must be met for a triple record to be valid
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+/// Conditions that must be met for a triple record to be valid.It is
+/// **HIGHLY** recommended to use the TriplesRecordConditionBuilder, to ensure the CDDL enforcement of
+/// at least one field being present.
+#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
-pub struct TripleRecordCondition<'a> {
+pub struct TriplesRecordCondition<'a> {
     /// Optional measurement key identifier
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "0")]
     pub mkey: Option<MeasuredElementTypeChoice<'a>>,
     /// Keys authorized to verify the condition
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "1")]
-    pub authorized_by: Vec<CryptoKeyTypeChoice<'a>>,
+    pub authorized_by: Option<NonEmptyVec<CryptoKeyTypeChoice<'a>>>,
+}
+
+pub struct TriplesRecordConditionBuilder<'a> {
+    /// Optional measurement key identifier
+    pub mkey: Option<MeasuredElementTypeChoice<'a>>,
+    /// Keys authorized to verify the condition
+    pub authorized_by: Option<NonEmptyVec<CryptoKeyTypeChoice<'a>>>,
+}
+
+impl<'a> TriplesRecordConditionBuilder<'a> {
+    pub fn mkey(mut self, value: MeasuredElementTypeChoice<'a>) -> Self {
+        self.mkey = Some(value);
+        self
+    }
+
+    pub fn authorized_by(mut self, value: NonEmptyVec<CryptoKeyTypeChoice<'a>>) -> Self {
+        self.authorized_by = Some(value);
+        self
+    }
+
+    pub fn build(self) -> Result<TriplesRecordCondition<'a>> {
+        if self.mkey.is_none() && self.authorized_by.is_none() {
+            return Err(TriplesError::EmptyTripleRecordCondition)?;
+        }
+        Ok(TriplesRecordCondition {
+            mkey: self.mkey,
+            authorized_by: self.authorized_by,
+        })
+    }
 }
 
 /// Record containing attestation key information for an environment
@@ -706,10 +942,10 @@ pub struct AttestKeyTripleRecord<'a> {
     /// Environment the keys belong to
     pub environment: EnvironmentMap<'a>,
     /// List of attestation keys
-    pub key_list: Vec<CryptoKeyTypeChoice<'a>>,
+    pub key_list: NonEmptyVec<CryptoKeyTypeChoice<'a>>,
     /// Optional conditions for key usage
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub conditions: Option<TripleRecordCondition<'a>>,
+    pub conditions: Option<TriplesRecordCondition<'a>>,
 }
 
 /// Record describing dependencies between domains and environments
@@ -723,7 +959,7 @@ pub struct DomainDependencyTripleRecord<'a> {
     pub domain_choice: DomainTypeChoice<'a>,
     /// One or more dependent environments
     #[serde(flatten)]
-    pub environment_map: Vec<EnvironmentMap<'a>>,
+    pub environment_map: NonEmptyVec<EnvironmentMap<'a>>,
 }
 
 /// Types of domain identifiers
@@ -751,7 +987,7 @@ pub struct DomainMembershipTripleRecord<'a> {
     pub domain_choice: DomainTypeChoice<'a>,
     /// One or more member environments
     #[serde(flatten)]
-    pub environment_map: Vec<EnvironmentMap<'a>>,
+    pub environment_map: NonEmptyVec<EnvironmentMap<'a>>,
 }
 
 /// Record linking environments to CoSWID tags
@@ -765,7 +1001,7 @@ pub struct CoswidTripleRecord<'a> {
     pub environment_map: EnvironmentMap<'a>,
     /// List of associated CoSWID tag identifiers
     #[serde(flatten)]
-    pub coswid_tags: Vec<ConciseSwidTagId<'a>>,
+    pub coswid_tags: NonEmptyVec<ConciseSwidTagId<'a>>,
 }
 
 /// Record describing a series of conditional endorsements
@@ -791,7 +1027,7 @@ pub struct ConditionalEndorsementSeriesTripleRecord<'a> {
     /// Initial environmental condition
     pub condition: StatefulEnvironmentRecord<'a>,
     /// Series of conditional changes
-    pub series: Vec<ConditionalSeriesRecord<'a>>,
+    pub series: NonEmptyVec<ConditionalSeriesRecord<'a>>,
 }
 
 /// Record containing environment state and measurement claims
@@ -803,7 +1039,7 @@ pub struct StatefulEnvironmentRecord<'a> {
     /// Environment being described
     pub environment: EnvironmentMap<'a>,
     /// List of measurement claims about the environment
-    pub claims_list: Vec<MeasurementMap<'a>>,
+    pub claims_list: NonEmptyVec<MeasurementMap<'a>>,
 }
 
 /// Record describing conditional changes to measurements
@@ -813,9 +1049,9 @@ pub struct StatefulEnvironmentRecord<'a> {
 #[repr(C)]
 pub struct ConditionalSeriesRecord<'a> {
     /// Measurements that must match for changes to apply
-    pub selection: Vec<MeasurementMap<'a>>,
+    pub selection: NonEmptyVec<MeasurementMap<'a>>,
     /// Measurements to add when selection matches
-    pub addition: Vec<MeasurementMap<'a>>,
+    pub addition: NonEmptyVec<MeasurementMap<'a>>,
 }
 
 /// Record containing conditional endorsements
@@ -825,7 +1061,7 @@ pub struct ConditionalSeriesRecord<'a> {
 #[repr(C)]
 pub struct ConditionalEndorsementTripleRecord<'a> {
     /// List of environmental conditions
-    pub conditions: Vec<StatefulEnvironmentRecord<'a>>,
+    pub conditions: NonEmptyVec<StatefulEnvironmentRecord<'a>>,
     /// List of endorsements that apply when conditions are met
-    pub endorsements: Vec<EndorsedTripleRecord<'a>>,
+    pub endorsements: NonEmptyVec<EndorsedTripleRecord<'a>>,
 }

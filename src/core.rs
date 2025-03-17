@@ -37,7 +37,11 @@
 //! This module implements core functionality as specified in the IETF CoRIM specification
 //! and related standards (RFC 8152 for COSE structures).
 
-use std::{borrow::Cow, collections::BTreeMap};
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    ops::{Deref, DerefMut},
+};
 
 use derive_more::{AsMut, AsRef, Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
@@ -137,6 +141,64 @@ generate_tagged!(
     (563, TaggedMaskedRawValue, MaskedRawValue, "Represents a masked raw value with its mask"),
 );
 
+#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct NonEmptyVec<T>(Vec<T>);
+
+impl<T> NonEmptyVec<T> {
+    pub fn new(one: T, more: Vec<T>) -> Self {
+        let mut items = Vec::with_capacity(1 + more.len());
+        items.push(one);
+        items.extend(more);
+        Self(items)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn push(&mut self, value: T) {
+        self.0.push(value)
+    }
+}
+
+impl<T> From<T> for NonEmptyVec<T> {
+    fn from(value: T) -> Self {
+        Self(vec![value])
+    }
+}
+
+impl<T: Clone> From<&[T]> for NonEmptyVec<T> {
+    fn from(value: &[T]) -> Self {
+        Self(value.to_vec())
+    }
+}
+
+impl<T> Deref for NonEmptyVec<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for NonEmptyVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<T> AsRef<[T]> for NonEmptyVec<T> {
+    fn as_ref(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<T> AsMut<[T]> for NonEmptyVec<T> {
+    fn as_mut(&mut self) -> &mut [T] {
+        &mut self.0
+    }
+}
+
 /// Represents a value that can be either text or bytes
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -189,6 +251,12 @@ pub enum Label<'a> {
     Text(Text<'a>),
     /// Integer label
     Int(Int),
+}
+
+impl<'a> From<&'a str> for Label<'a> {
+    fn from(value: &'a str) -> Self {
+        Self::Text(std::borrow::Cow::Borrowed(value))
+    }
 }
 
 #[repr(C)]
@@ -310,7 +378,7 @@ pub struct Digest<'a> {
 #[serde(untagged)]
 pub enum CoseKeySetOrKey<'a> {
     /// A set of COSE keys
-    KeySet(Vec<CoseKey<'a>>),
+    KeySet(NonEmptyVec<CoseKey<'a>>),
     /// A single COSE key
     Key(CoseKey<'a>),
 }
@@ -332,7 +400,7 @@ pub struct CoseKey<'a> {
     pub alg: AlgLabel<'a>,
     /// Allowed operations for this key
     #[serde(rename = "4")]
-    pub key_ops: OneOrMore<Label<'a>>,
+    pub key_ops: NonEmptyVec<Label<'a>>,
     /// Base initialization vector
     #[serde(rename = "5")]
     pub base_iv: TaggedBytes,

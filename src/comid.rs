@@ -43,7 +43,7 @@
 //! // Create an empty triples map
 //! let triples = TriplesMap {
 //!     reference_triples: None,
-//!     endorse_triples: None,
+//!     endorsed_triples: None,
 //!     identity_triples: None,
 //!     attest_key_triples: None,
 //!     dependency_triples: None,
@@ -58,7 +58,7 @@
 //! let comid = ConciseMidTag {
 //!     language: None,
 //!     tag_identity,
-//!     entities: vec![entity],
+//!     entities: Some(vec![entity].into()),
 //!     linked_tags: None,
 //!     triples,
 //!     extension: None,
@@ -85,13 +85,13 @@
 //! All components support optional extensions through [`ExtensionMap`] for future expandability.
 
 use crate::{
-    core::{RawValueType, TaggedBytes},
+    core::{NonEmptyVec, RawValueType, TaggedBytes},
     generate_tagged,
     triples::{EnvironmentMap, MeasuredElementTypeChoice, MeasurementMap, MeasurementValuesMap},
-    AttestKeyTripleRecord, ConditionalEndorsementSeriesTripleRecord,
+    AttestKeyTripleRecord, ComidError, ConditionalEndorsementSeriesTripleRecord,
     ConditionalEndorsementTripleRecord, CoswidTripleRecord, DomainDependencyTripleRecord,
     DomainMembershipTripleRecord, EndorsedTripleRecord, ExtensionMap, IdentityTripleRecord,
-    ReferenceTripleRecord, Text, Tstr, Uint, Uri, UuidType,
+    ReferenceTripleRecord, Result, Text, Tstr, Uint, Uri, UuidType,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
@@ -120,12 +120,13 @@ pub struct ConciseMidTag<'a> {
     #[serde(rename = "1")]
     pub tag_identity: TagIdentityMap<'a>,
     /// List of entities associated with this tag
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
-    pub entities: Vec<ComidEntityMap<'a>>,
+    pub entities: Option<NonEmptyVec<ComidEntityMap<'a>>>,
     /// Optional references to other related tags
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "3")]
-    pub linked_tags: Option<Vec<LinkedTagMap<'a>>>,
+    pub linked_tags: Option<NonEmptyVec<LinkedTagMap<'a>>>,
     /// Collection of triples describing the module
     #[serde(rename = "4")]
     pub triples: TriplesMap<'a>,
@@ -198,7 +199,7 @@ impl<'a> ConciseMidTag<'a> {
         environment: &EnvironmentMap<'a>,
         mkey: MeasuredElementTypeChoice<'a>,
         value: &T,
-    ) -> Result<(), std::io::Error>
+    ) -> std::io::Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -223,9 +224,9 @@ impl<'a> ConciseMidTag<'a> {
             None => {
                 let new_record = ReferenceTripleRecord {
                     ref_env: environment.clone(),
-                    ref_claims: vec![measurement],
+                    ref_claims: vec![measurement].into(),
                 };
-                self.triples.reference_triples = Some(vec![new_record]);
+                self.triples.reference_triples = Some(vec![new_record].into());
             }
             Some(vec) => {
                 if let Some(record) = vec.iter_mut().find(|r| r.ref_env == *environment) {
@@ -233,7 +234,7 @@ impl<'a> ConciseMidTag<'a> {
                 } else {
                     let new_record = ReferenceTripleRecord {
                         ref_env: environment.clone(),
-                        ref_claims: vec![measurement],
+                        ref_claims: vec![measurement].into(),
                     };
                     vec.push(new_record);
                 }
@@ -246,7 +247,7 @@ impl<'a> ConciseMidTag<'a> {
         environment: &EnvironmentMap<'a>,
         mkey: MeasuredElementTypeChoice<'a>,
         value: &T,
-    ) -> Result<(), std::io::Error>
+    ) -> std::io::Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -267,13 +268,13 @@ impl<'a> ConciseMidTag<'a> {
             authorized_by: None,
         };
 
-        match &mut self.triples.endorse_triples {
+        match &mut self.triples.endorsed_triples {
             None => {
                 let new_record = EndorsedTripleRecord {
                     condition: environment.clone(),
-                    endorsement: vec![measurement],
+                    endorsement: vec![measurement].into(),
                 };
-                self.triples.endorse_triples = Some(vec![new_record]);
+                self.triples.endorsed_triples = Some(vec![new_record].into());
             }
 
             Some(vec) => {
@@ -282,7 +283,7 @@ impl<'a> ConciseMidTag<'a> {
                 } else {
                     let new_record = EndorsedTripleRecord {
                         condition: environment.clone(),
-                        endorsement: vec![measurement],
+                        endorsement: vec![measurement].into(),
                     };
                     vec.push(new_record);
                 }
@@ -386,58 +387,171 @@ pub enum TagRelTypeChoice {
     Replaces,
 }
 
-/// Collection of different types of triples describing the module characteristics
+/// Collection of different types of triples describing the module characteristics. It is
+/// **HIGHLY** recommended to use the TriplesMapBuilder, to ensure the CDDL enforcement of
+/// at least one field being present.
 #[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct TriplesMap<'a> {
     /// Optional reference triples that link to external references
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "0")]
-    pub reference_triples: Option<Vec<ReferenceTripleRecord<'a>>>,
+    pub reference_triples: Option<NonEmptyVec<ReferenceTripleRecord<'a>>>,
 
     /// Optional endorsement triples that contain verification information
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "1")]
-    pub endorse_triples: Option<Vec<EndorsedTripleRecord<'a>>>,
+    pub endorsed_triples: Option<NonEmptyVec<EndorsedTripleRecord<'a>>>,
 
     /// Optional identity triples that provide identity information
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
-    pub identity_triples: Option<Vec<IdentityTripleRecord<'a>>>,
+    pub identity_triples: Option<NonEmptyVec<IdentityTripleRecord<'a>>>,
 
     /// Optional attestation key triples containing cryptographic keys
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "3")]
-    pub attest_key_triples: Option<Vec<AttestKeyTripleRecord<'a>>>,
+    pub attest_key_triples: Option<NonEmptyVec<AttestKeyTripleRecord<'a>>>,
 
     /// Optional domain dependency triples describing relationships between domains
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "4")]
-    pub dependency_triples: Option<Vec<DomainDependencyTripleRecord<'a>>>,
+    pub dependency_triples: Option<NonEmptyVec<DomainDependencyTripleRecord<'a>>>,
 
     /// Optional domain membership triples describing domain associations
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "5")]
-    pub membership_triples: Option<Vec<DomainMembershipTripleRecord<'a>>>,
+    pub membership_triples: Option<NonEmptyVec<DomainMembershipTripleRecord<'a>>>,
 
     /// Optional SWID triples containing software identification data
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "6")]
-    pub coswid_triples: Option<Vec<CoswidTripleRecord<'a>>>,
+    pub coswid_triples: Option<NonEmptyVec<CoswidTripleRecord<'a>>>,
 
     /// Optional conditional endorsement series triples for complex endorsement chains
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "8")]
     pub conditional_endorsement_series_triples:
-        Option<Vec<ConditionalEndorsementSeriesTripleRecord<'a>>>,
+        Option<NonEmptyVec<ConditionalEndorsementSeriesTripleRecord<'a>>>,
 
     /// Optional conditional endorsement triples for conditional verification
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "10")]
-    pub conditional_endorsement_triples: Option<Vec<ConditionalEndorsementTripleRecord<'a>>>,
+    pub conditional_endorsement_triples:
+        Option<NonEmptyVec<ConditionalEndorsementTripleRecord<'a>>>,
 
     /// Optional extensible attributes for future expansion
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap<'a>>,
+}
+
+#[derive(Default)]
+pub struct TriplesMapBuilder<'a> {
+    reference_triples: Option<NonEmptyVec<ReferenceTripleRecord<'a>>>,
+    endorsed_triples: Option<NonEmptyVec<EndorsedTripleRecord<'a>>>,
+    identity_triples: Option<NonEmptyVec<IdentityTripleRecord<'a>>>,
+    attest_key_triples: Option<NonEmptyVec<AttestKeyTripleRecord<'a>>>,
+    dependency_triples: Option<NonEmptyVec<DomainDependencyTripleRecord<'a>>>,
+    membership_triples: Option<NonEmptyVec<DomainMembershipTripleRecord<'a>>>,
+    coswid_triples: Option<NonEmptyVec<CoswidTripleRecord<'a>>>,
+    conditional_endorsement_series_triples:
+        Option<NonEmptyVec<ConditionalEndorsementSeriesTripleRecord<'a>>>,
+    conditional_endorsement_triples: Option<NonEmptyVec<ConditionalEndorsementTripleRecord<'a>>>,
+    extension: Option<ExtensionMap<'a>>,
+}
+
+impl<'a> TriplesMapBuilder<'a> {
+    // Setter methods for each field
+    pub fn reference_triples(mut self, value: NonEmptyVec<ReferenceTripleRecord<'a>>) -> Self {
+        self.reference_triples = Some(value);
+        self
+    }
+
+    pub fn endorsed_triples(mut self, value: NonEmptyVec<EndorsedTripleRecord<'a>>) -> Self {
+        self.endorsed_triples = Some(value);
+        self
+    }
+
+    pub fn identity_triples(mut self, value: NonEmptyVec<IdentityTripleRecord<'a>>) -> Self {
+        self.identity_triples = Some(value);
+        self
+    }
+
+    pub fn attest_key_triples(mut self, value: NonEmptyVec<AttestKeyTripleRecord<'a>>) -> Self {
+        self.attest_key_triples = Some(value);
+        self
+    }
+
+    pub fn dependency_triples(
+        mut self,
+        value: NonEmptyVec<DomainDependencyTripleRecord<'a>>,
+    ) -> Self {
+        self.dependency_triples = Some(value);
+        self
+    }
+
+    pub fn membership_triples(
+        mut self,
+        value: NonEmptyVec<DomainMembershipTripleRecord<'a>>,
+    ) -> Self {
+        self.membership_triples = Some(value);
+        self
+    }
+
+    pub fn coswid_triples(mut self, value: NonEmptyVec<CoswidTripleRecord<'a>>) -> Self {
+        self.coswid_triples = Some(value);
+        self
+    }
+
+    pub fn conditional_endorsement_series_triples(
+        mut self,
+        value: NonEmptyVec<ConditionalEndorsementSeriesTripleRecord<'a>>,
+    ) -> Self {
+        self.conditional_endorsement_series_triples = Some(value);
+        self
+    }
+
+    pub fn conditional_endorsement_triples(
+        mut self,
+        value: NonEmptyVec<ConditionalEndorsementTripleRecord<'a>>,
+    ) -> Self {
+        self.conditional_endorsement_triples = Some(value);
+        self
+    }
+
+    pub fn extension(mut self, value: ExtensionMap<'a>) -> Self {
+        self.extension = Some(value);
+        self
+    }
+
+    /// Builds the TriplesMap, returning an error if no fields are set
+    pub fn build(self) -> Result<TriplesMap<'a>> {
+        if self.reference_triples.is_none()
+            && self.endorsed_triples.is_none()
+            && self.identity_triples.is_none()
+            && self.attest_key_triples.is_none()
+            && self.dependency_triples.is_none()
+            && self.membership_triples.is_none()
+            && self.coswid_triples.is_none()
+            && self.conditional_endorsement_series_triples.is_none()
+            && self.conditional_endorsement_triples.is_none()
+            && self.extension.is_none()
+        {
+            return Err(ComidError::EmptyTriplesMap)?;
+        }
+
+        Ok(TriplesMap {
+            reference_triples: self.reference_triples,
+            endorsed_triples: self.endorsed_triples,
+            identity_triples: self.identity_triples,
+            attest_key_triples: self.attest_key_triples,
+            dependency_triples: self.dependency_triples,
+            membership_triples: self.membership_triples,
+            coswid_triples: self.coswid_triples,
+            conditional_endorsement_series_triples: self.conditional_endorsement_series_triples,
+            conditional_endorsement_triples: self.conditional_endorsement_triples,
+            extension: self.extension,
+        })
+    }
 }
