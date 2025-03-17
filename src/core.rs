@@ -44,7 +44,7 @@ use std::{
 };
 
 use derive_more::{AsMut, AsRef, Constructor, From, TryFrom};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{generate_tagged, FixedBytes};
 
@@ -230,16 +230,79 @@ pub enum TextOrBytesSized<'a, const N: usize> {
 
 /// Represents a hash entry with algorithm ID and hash value
 #[repr(C)]
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct HashEntry {
     /// Algorithm identifier for the hash
-    #[serde(rename = "hash-alg-id")]
     pub hash_alg_id: CoseAlgorithm,
     /// The hash value as bytes
-    #[serde(rename = "hash-value")]
     pub hash_value: Bytes,
+}
+
+impl Serialize for HashEntry {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeSeq;
+        // The total length is 1 (for hash_alg_id) plus the number of bytes in hash_value
+        let len = 1 + self.hash_value.len();
+        let mut seq = serializer.serialize_seq(Some(len))?;
+
+        // Serialize hash_alg_id first
+        seq.serialize_element(&self.hash_alg_id)?;
+
+        // Serialize each byte in hash_value individually
+        for byte in &self.hash_value {
+            seq.serialize_element(byte)?;
+        }
+
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for HashEntry {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::{SeqAccess, Visitor};
+        use std::fmt;
+
+        struct HashEntryVisitor;
+
+        impl<'de> Visitor<'de> for HashEntryVisitor {
+            type Value = HashEntry;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str(
+                    "a sequence with at least one element (hash_alg_id followed by bytes)",
+                )
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                // Get the first element (hash_alg_id)
+                let hash_alg_id = seq
+                    .next_element::<CoseAlgorithm>()?
+                    .ok_or_else(|| serde::de::Error::custom("missing hash_alg_id"))?;
+
+                // Collect the remaining elements as bytes
+                let mut bytes = Vec::new();
+                while let Some(byte) = seq.next_element::<u8>()? {
+                    bytes.push(byte);
+                }
+
+                Ok(HashEntry {
+                    hash_alg_id,
+                    hash_value: bytes,
+                })
+            }
+        }
+
+        deserializer.deserialize_seq(HashEntryVisitor)
+    }
 }
 
 /// Represents a label that can be either text or integer
@@ -495,9 +558,8 @@ pub enum VersionScheme {
 /// let alg = CoseAlgorithm::ES256;  // ECDSA with SHA-256
 /// let hash_alg = CoseAlgorithm::Sha256;  // SHA-256 hash function
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(i64)]
-#[serde(untagged)]
 pub enum CoseAlgorithm {
     /// Reserved for private use (-65536)
     Unassigned0 = -65536,
@@ -659,4 +721,133 @@ pub enum CoseAlgorithm {
     AesCcm64_128_256 = 33,
     /// For generating IVs (Initialization Vectors)
     IvGeneration = 34,
+}
+
+impl Serialize for CoseAlgorithm {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_i64(self.clone() as i64)
+    }
+}
+impl<'de> Deserialize<'de> for CoseAlgorithm {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Deserialize the value as an i64
+        let value = i64::deserialize(deserializer)?;
+
+        // Match the i64 value to the corresponding enum variant
+        match value {
+            -65536 => Ok(CoseAlgorithm::Unassigned0),
+            -65535 => Ok(CoseAlgorithm::RS1),
+            -65534 => Ok(CoseAlgorithm::A128CTR),
+            -65533 => Ok(CoseAlgorithm::A192CTR),
+            -65532 => Ok(CoseAlgorithm::A256CTR),
+            -65531 => Ok(CoseAlgorithm::A128CBC),
+            -65530 => Ok(CoseAlgorithm::A192CBC),
+            -65529 => Ok(CoseAlgorithm::A256CBC),
+            -65528 => Ok(CoseAlgorithm::Unassigned1),
+            -260 => Ok(CoseAlgorithm::WalnutDSA),
+            -259 => Ok(CoseAlgorithm::RS512),
+            -258 => Ok(CoseAlgorithm::RS384),
+            -257 => Ok(CoseAlgorithm::RS256),
+            -256 => Ok(CoseAlgorithm::Unassigned2),
+            -47 => Ok(CoseAlgorithm::ES256K),
+            -46 => Ok(CoseAlgorithm::HssLms),
+            -45 => Ok(CoseAlgorithm::SHAKE256),
+            -44 => Ok(CoseAlgorithm::Sha512),
+            -43 => Ok(CoseAlgorithm::Sha384),
+            -42 => Ok(CoseAlgorithm::RsaesOaepSha512),
+            -41 => Ok(CoseAlgorithm::RsaesOaepSha256),
+            8017 => Ok(CoseAlgorithm::RsaesOaepRfc),
+            -39 => Ok(CoseAlgorithm::PS512),
+            -38 => Ok(CoseAlgorithm::PS384),
+            -37 => Ok(CoseAlgorithm::PS256),
+            -36 => Ok(CoseAlgorithm::ES512),
+            -35 => Ok(CoseAlgorithm::ES384),
+            -34 => Ok(CoseAlgorithm::EcdhSsA256kw),
+            -33 => Ok(CoseAlgorithm::EcdhSsA192kw),
+            -32 => Ok(CoseAlgorithm::EcdhSsA128kw),
+            -31 => Ok(CoseAlgorithm::EcdhEsA256kw),
+            -30 => Ok(CoseAlgorithm::EcdhEsA192kw),
+            -29 => Ok(CoseAlgorithm::EcdhEsA128kw),
+            -28 => Ok(CoseAlgorithm::EcdhSsHkdf512),
+            -27 => Ok(CoseAlgorithm::EcdhSsHkdf256),
+            -26 => Ok(CoseAlgorithm::EcdhEsHkdf512),
+            -25 => Ok(CoseAlgorithm::EcdhEsHkdf256),
+            -24 => Ok(CoseAlgorithm::Unassigned3),
+            -18 => Ok(CoseAlgorithm::SHAKE128),
+            -17 => Ok(CoseAlgorithm::Sha512_256),
+            -16 => Ok(CoseAlgorithm::Sha256),
+            -15 => Ok(CoseAlgorithm::Sha256_64),
+            -14 => Ok(CoseAlgorithm::Sha1),
+            -13 => Ok(CoseAlgorithm::DirectHkdfAes256),
+            -12 => Ok(CoseAlgorithm::DirectHkdfAes128),
+            -11 => Ok(CoseAlgorithm::DirectHkdfSha512),
+            -10 => Ok(CoseAlgorithm::DirectHkdfSha256),
+            -9 => Ok(CoseAlgorithm::Unassigned4),
+            -8 => Ok(CoseAlgorithm::EdDSA),
+            -7 => Ok(CoseAlgorithm::ES256),
+            -6 => Ok(CoseAlgorithm::Direct),
+            -5 => Ok(CoseAlgorithm::A256KW),
+            -4 => Ok(CoseAlgorithm::A192KW),
+            -3 => Ok(CoseAlgorithm::A128KW),
+            -2 => Ok(CoseAlgorithm::Unassigned5),
+            0 => Ok(CoseAlgorithm::Reserved),
+            1 => Ok(CoseAlgorithm::A128GCM),
+            2 => Ok(CoseAlgorithm::A192GCM),
+            3 => Ok(CoseAlgorithm::A256GCM),
+            4 => Ok(CoseAlgorithm::Hmac256_64),
+            5 => Ok(CoseAlgorithm::Hmac256_256),
+            6 => Ok(CoseAlgorithm::Hmac384_384),
+            7 => Ok(CoseAlgorithm::Hmac512_512),
+            8 => Ok(CoseAlgorithm::Unassigned6),
+            10 => Ok(CoseAlgorithm::AesCcm16_64_128),
+            11 => Ok(CoseAlgorithm::AesCcm16_64_256),
+            12 => Ok(CoseAlgorithm::AesCcm64_64_128),
+            13 => Ok(CoseAlgorithm::AesCcm64_64_256),
+            14 => Ok(CoseAlgorithm::AesMac128_64),
+            15 => Ok(CoseAlgorithm::AesMac256_64),
+            16 => Ok(CoseAlgorithm::Unassigned7),
+            24 => Ok(CoseAlgorithm::ChaCha20Poly1305),
+            128 => Ok(CoseAlgorithm::AesMac128),
+            256 => Ok(CoseAlgorithm::AesMac256),
+            27 => Ok(CoseAlgorithm::Unassigned8),
+            30 => Ok(CoseAlgorithm::AesCcm16_128_128),
+            31 => Ok(CoseAlgorithm::AesCcm16_128_256),
+            32 => Ok(CoseAlgorithm::AesCcm64_128_128),
+            33 => Ok(CoseAlgorithm::AesCcm64_128_256),
+            34 => Ok(CoseAlgorithm::IvGeneration),
+            // If the value doesn't match any variant, return an error
+            _ => Err(serde::de::Error::invalid_value(
+                serde::de::Unexpected::Signed(value),
+                &"a valid COSE algorithm identifier",
+            )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CoseAlgorithm, HashEntry};
+
+    #[test]
+    fn test_hash_entry_serialize() {
+        let expected = [134, 1, 1, 2, 3, 4, 5];
+        let actual: HashEntry = HashEntry {
+            hash_alg_id: CoseAlgorithm::A128GCM,
+            hash_value: vec![1, 2, 3, 4, 5],
+        };
+
+        println!("{expected:02X?}");
+
+        let mut bytes: Vec<u8> = vec![];
+        ciborium::into_writer(&actual, &mut bytes).unwrap();
+        println!("{bytes:02X?}");
+
+        assert_eq!(bytes.as_slice(), expected.as_slice());
+    }
 }
