@@ -40,11 +40,15 @@
 use std::{
     borrow::Cow,
     collections::BTreeMap,
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Index, IndexMut},
 };
 
 use derive_more::{AsMut, AsRef, Constructor, From, TryFrom};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    de::{self, SeqAccess, Visitor},
+    ser::SerializeSeq,
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 
 use crate::{generate_tagged, FixedBytes};
 
@@ -53,10 +57,6 @@ pub type Text<'a> = Cow<'a, str>;
 // pub type Text = String;
 /// Tstr represents a text string value
 pub type Tstr<'a> = Text<'a>;
-/// Bytes represents an un-tagged array of bytes.
-pub type Bytes = Vec<u8>;
-/// Uri represents one or more text values that conform to the URI syntax
-pub type Uri<'a> = OneOrMore<Text<'a>>;
 /// AnyUri represents a URI that can be relative or absolute
 pub type AnyUri<'a> = Uri<'a>;
 /// Time represents an integer value for time measurements
@@ -67,27 +67,112 @@ pub type Role = u8;
 pub type Uint = u32;
 /// Int represents a signed 32-bit integer
 pub type Int = i32;
+/// Boolean represenation.
+pub type Bool = bool;
 /// Integer is an alias for Int type
 pub type Integer = Int;
+/// Floating Point variables.
+pub type Float = f32;
+
+#[derive(Debug, Default, From, PartialEq, Eq, PartialOrd, Ord, Clone, Constructor)]
+pub struct Bytes {
+    bytes: Vec<u8>,
+}
+
+impl From<&[u8]> for Bytes {
+    fn from(value: &[u8]) -> Self {
+        Self {
+            bytes: value.to_vec(),
+        }
+    }
+}
+
+impl AsRef<[u8]> for Bytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl AsMut<[u8]> for Bytes {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.bytes
+    }
+}
+
+impl Deref for Bytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.bytes
+    }
+}
+
+impl DerefMut for Bytes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.bytes
+    }
+}
+
+impl<const N: usize> PartialEq<[u8; N]> for Bytes {
+    fn eq(&self, other: &[u8; N]) -> bool {
+        self.bytes.as_slice() == other.as_slice()
+    }
+}
+
+impl Serialize for Bytes {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&self.bytes.as_slice())
+    }
+}
+
+impl<'de> Deserialize<'de> for Bytes {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = Vec::<u8>::deserialize(deserializer)?;
+        Ok(Bytes { bytes })
+    }
+}
 
 /// ExtensionMap represents the possible types that can be used in extensions
 #[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, From, TryFrom, Clone)]
 #[serde(untagged)]
 pub enum ExtensionMap<'a> {
-    /// A UTF-8 string value
-    Text(Text<'a>),
-    /// A URI value
-    Uri(Uri<'a>),
-    /// A role identifier
-    Role(Role),
-    /// An unsigned integer
-    Uint(Uint),
+    /// No value
+    Null,
+    /// Boolean values
+    Bool(Bool),
     /// A signed integer
     Int(Int),
+    /// A UTF-8 string value
+    Text(Text<'a>),
+    /// An unsigned integer
+    Uint(Uint),
+    /// A bstr
+    Bytes(Bytes),
     /// An array of extension values
-    Array(Vec<Box<ExtensionMap<'a>>>),
+    Array(Vec<ExtensionMap<'a>>),
     /// A map of extension key-value pairs
-    Map(BTreeMap<Box<ExtensionMap<'a>>, Box<ExtensionMap<'a>>>),
+    Map(BTreeMap<Label<'a>, ExtensionMap<'a>>),
+}
+
+impl<'a> ExtensionMap<'a> {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Null => true,
+            Self::Text(value) => value.is_empty(),
+            Self::Bytes(value) => value.bytes.is_empty(),
+            Self::Uint(_) => false,
+            Self::Int(_) => false,
+            Self::Bool(_) => false,
+            Self::Array(value) => value.is_empty(),
+            Self::Map(value) => value.is_empty(),
+        }
+    }
 }
 
 /// UUID type representing a 16-byte unique identifier
@@ -116,14 +201,65 @@ impl TryFrom<&[u8]> for UuidType {
     }
 }
 
+impl Deref for UuidType {
+    type Target = [u8; 16];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for UuidType {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Index<usize> for UuidType {
+    type Output = u8;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl IndexMut<usize> for UuidType {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+}
+
 /// UEID type representing a 33-byte Unique Entity Identifier
 #[derive(
     Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
 )]
 pub struct UeidType(pub FixedBytes<33>);
 
+impl TryFrom<&[u8]> for UeidType {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Ok(Self(FixedBytes(value.try_into()?)))
+    }
+}
+
+impl Index<usize> for UeidType {
+    type Output = u8;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl IndexMut<usize> for UeidType {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+}
+
 generate_tagged!(
     (1, IntegerTime, Int, "A representation of time in integer format using CBOR tag 1"),
+    (32, Uri, Text<'a>, 'a,  "A URI text string with CBOR tag 32"),
     (37, TaggedUuidType, UuidType, "UUID type wrapped with CBOR tag 37"),
     (111, OidType, Bytes, "An Object Identifier (OID) represented as bytes using CBOR tag 111"),
     (550, TaggedUeidType, UeidType, "UEID type wrapped with CBOR tag 550"),
@@ -135,7 +271,7 @@ generate_tagged!(
     (557, ThumbprintType, Digest<'a>, 'a, "A cryptographic thumbprint using CBOR tag 557"),
     (558, CoseKeyType, CoseKeySetOrKey<'a>, 'a, "CBOR tag 558 wrapper for COSE Key Structures"),
     (559, CertThumprintType, Digest<'a>, 'a, "A certificate thumbprint using CBOR tag 559"),
-    (560, TaggedBytes, Vec<u8>, "A generic byte string using CBOR tag 560"),
+    (560, TaggedBytes, Bytes, "A generic byte string using CBOR tag 560"),
     (561, CertPathThumbprintType, Digest<'a>, 'a, "A certificate path thumbprint using CBOR tag 561"),
     (562, PkixAsn1DerCertType, TaggedBytes, "A PKIX certificate in ASN.1 DER format using CBOR tag 562"),
     (563, TaggedMaskedRawValue, MaskedRawValue, "Represents a masked raw value with its mask"),
@@ -158,6 +294,10 @@ impl<T> NonEmptyVec<T> {
 
     pub fn push(&mut self, value: T) {
         self.0.push(value)
+    }
+
+    pub fn empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -199,11 +339,24 @@ impl<T> AsMut<[T]> for NonEmptyVec<T> {
     }
 }
 
+impl<T> Index<usize> for NonEmptyVec<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl<T> IndexMut<usize> for NonEmptyVec<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+}
+
 /// Represents a value that can be either text or bytes
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(untagged)]
-
 pub enum TextOrBytes<'a> {
     /// UTF-8 string value
     Text(Text<'a>),
@@ -245,16 +398,14 @@ impl Serialize for HashEntry {
     {
         use serde::ser::SerializeSeq;
         // The total length is 1 (for hash_alg_id) plus the number of bytes in hash_value
-        let len = 1 + self.hash_value.len();
-        let mut seq = serializer.serialize_seq(Some(len))?;
+
+        let mut seq = serializer.serialize_seq(Some(2))?;
 
         // Serialize hash_alg_id first
         seq.serialize_element(&self.hash_alg_id)?;
 
-        // Serialize each byte in hash_value individually
-        for byte in &self.hash_value {
-            seq.serialize_element(byte)?;
-        }
+        // Serialize the bytes into a bstr
+        seq.serialize_element(&self.hash_value)?;
 
         seq.end()
     }
@@ -296,7 +447,7 @@ impl<'de> Deserialize<'de> for HashEntry {
 
                 Ok(HashEntry {
                     hash_alg_id,
-                    hash_value: bytes,
+                    hash_value: bytes.into(),
                 })
             }
         }
@@ -323,12 +474,117 @@ impl<'a> From<&'a str> for Label<'a> {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, TryFrom)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From, TryFrom)]
 /// Algorithm label that can be either a text string or a COSE algorithm identifier
 pub enum AlgLabel<'a> {
     Text(Text<'a>),
     Int(CoseAlgorithm),
+}
+
+impl<'a> Serialize for AlgLabel<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            AlgLabel::Text(text) => serializer.serialize_str(text),
+            AlgLabel::Int(cose_alg) => cose_alg.serialize(serializer),
+        }
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for AlgLabel<'a> {
+    fn deserialize<D>(deserializer: D) -> Result<AlgLabel<'a>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct AlgLabelVisitor<'a> {
+            _phantom: std::marker::PhantomData<&'a ()>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for AlgLabelVisitor<'a> {
+            type Value = AlgLabel<'a>; // Match Digest<'a>
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("an integer or text for alg")
+            }
+
+            fn visit_i8<E>(self, value: i8) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_i16<E>(self, value: i16) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_i32<E>(self, value: i32) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                let cose_alg =
+                    CoseAlgorithm::deserialize(serde::de::value::I64Deserializer::new(value))?;
+                Ok(AlgLabel::Int(cose_alg))
+            }
+
+            fn visit_u8<E>(self, value: u8) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_u16<E>(self, value: u16) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_u32<E>(self, value: u32) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                if value > i64::MAX as u64 {
+                    Err(serde::de::Error::custom(
+                        "COSE algorithm ID out of i64 range",
+                    ))
+                } else {
+                    self.visit_i64(value as i64)
+                }
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(AlgLabel::Text(Cow::Owned(value))) // Owned data, no lifetime dependency on 'de
+            }
+        }
+
+        deserializer.deserialize_any(AlgLabelVisitor {
+            _phantom: std::marker::PhantomData,
+        })
+    }
 }
 
 /// Represents an unsigned label that can be either text or unsigned integer
@@ -349,6 +605,28 @@ pub enum Ulabel<'a> {
 pub enum OneOrMore<T> {
     One(T),
     Many(Vec<T>),
+}
+
+impl<T> OneOrMore<T> {
+    pub fn len(&self) -> usize {
+        match self {
+            OneOrMore::One(_) => 1usize,
+            OneOrMore::Many(items) => items.len(),
+        }
+    }
+
+    pub fn get(&self, index: usize) -> Option<&T> {
+        match self {
+            OneOrMore::One(item) => {
+                if index == 1 {
+                    Some(item)
+                } else {
+                    None
+                }
+            }
+            OneOrMore::Many(items) => items.get(index),
+        }
+    }
 }
 
 /// Represents an attribute value that can be either text or integer, single or multiple
@@ -425,9 +703,7 @@ pub enum CotlMapRegistry {
 
 /// Represents a digest value with its algorithm identifier
 #[repr(C)]
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Digest<'a> {
     /// Algorithm identifier for the digest
     pub alg: AlgLabel<'a>,
@@ -435,15 +711,241 @@ pub struct Digest<'a> {
     pub val: Bytes,
 }
 
+impl<'a> Serialize for Digest<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        match &self.alg {
+            AlgLabel::Text(text) => seq.serialize_element(text)?,
+            AlgLabel::Int(cose_alg) => seq.serialize_element(cose_alg)?,
+        }
+        seq.serialize_element(&self.val)?;
+        seq.end()
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for Digest<'a> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct DigestVisitor<'a> {
+            _phantom: std::marker::PhantomData<&'a ()>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for DigestVisitor<'a> {
+            type Value = Digest<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str(
+                    "a CBOR sequence of [alg, val] where alg is an int or text and val is bytes",
+                )
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let alg = seq
+                    .next_element_seed(AlgLabelSeed {
+                        _phantom: std::marker::PhantomData,
+                    })?
+                    .ok_or_else(|| serde::de::Error::custom("missing alg field"))?;
+
+                let val = seq
+                    .next_element::<Bytes>()?
+                    .ok_or_else(|| serde::de::Error::custom("missing val field"))?;
+
+                if seq.next_element::<ciborium::value::Value>()?.is_some() {
+                    return Err(serde::de::Error::custom("expected exactly 2 elements"));
+                }
+
+                Ok(Digest { alg, val })
+            }
+        }
+
+        struct AlgLabelSeed<'a> {
+            _phantom: std::marker::PhantomData<&'a ()>,
+        }
+
+        impl<'de, 'a> serde::de::DeserializeSeed<'de> for AlgLabelSeed<'a> {
+            type Value = AlgLabel<'a>; // Changed from 'de to 'a to match Digest<'a>
+
+            fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                struct AlgLabelVisitor<'a> {
+                    _phantom: std::marker::PhantomData<&'a ()>,
+                }
+
+                impl<'de, 'a> Visitor<'de> for AlgLabelVisitor<'a> {
+                    type Value = AlgLabel<'a>; // Match Digest<'a>
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        formatter.write_str("an integer or text for alg")
+                    }
+
+                    fn visit_i8<E>(self, value: i8) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        self.visit_i64(value as i64)
+                    }
+
+                    fn visit_i16<E>(self, value: i16) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        self.visit_i64(value as i64)
+                    }
+
+                    fn visit_i32<E>(self, value: i32) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        self.visit_i64(value as i64)
+                    }
+
+                    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        let cose_alg = CoseAlgorithm::deserialize(
+                            serde::de::value::I64Deserializer::new(value),
+                        )?;
+                        Ok(AlgLabel::Int(cose_alg))
+                    }
+
+                    fn visit_u8<E>(self, value: u8) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        self.visit_i64(value as i64)
+                    }
+
+                    fn visit_u16<E>(self, value: u16) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        self.visit_i64(value as i64)
+                    }
+
+                    fn visit_u32<E>(self, value: u32) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        self.visit_i64(value as i64)
+                    }
+
+                    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        if value > i64::MAX as u64 {
+                            Err(serde::de::Error::custom(
+                                "COSE algorithm ID out of i64 range",
+                            ))
+                        } else {
+                            self.visit_i64(value as i64)
+                        }
+                    }
+
+                    fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        Ok(AlgLabel::Text(Cow::Owned(value))) // Owned data, no lifetime dependency on 'de
+                    }
+                }
+
+                deserializer.deserialize_any(AlgLabelVisitor {
+                    _phantom: std::marker::PhantomData,
+                })
+            }
+        }
+
+        deserializer.deserialize_seq(DigestVisitor {
+            _phantom: std::marker::PhantomData,
+        })
+    }
+}
 /// Represents either a COSE key set or a single COSE key
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
-#[serde(untagged)]
+#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum CoseKeySetOrKey<'a> {
     /// A set of COSE keys
     KeySet(NonEmptyVec<CoseKey<'a>>),
     /// A single COSE key
     Key(CoseKey<'a>),
+}
+
+impl<'a> Serialize for CoseKeySetOrKey<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            CoseKeySetOrKey::KeySet(key_set) => Ok(key_set.serialize(serializer)?),
+            CoseKeySetOrKey::Key(key) => Ok(key.serialize(serializer)?),
+        }
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for CoseKeySetOrKey<'a> {
+    fn deserialize<D>(deserializer: D) -> Result<CoseKeySetOrKey<'a>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CoseKeySetOrKeyVisitor<'a> {
+            _phantom: std::marker::PhantomData<&'a ()>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for CoseKeySetOrKeyVisitor<'a> {
+            type Value = CoseKeySetOrKey<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a COSE key (map) or key set (array of keys)")
+            }
+
+            // Handle array case - this should be a key set
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                // Read multiple keys into a vector
+                let mut keys = Vec::new();
+                while let Some(key) = seq.next_element::<CoseKey<'a>>()? {
+                    keys.push(key);
+                }
+
+                if keys.is_empty() {
+                    return Err(serde::de::Error::custom("empty key set"));
+                }
+
+                // Convert to NonEmptyVec
+                let non_empty_keys = NonEmptyVec::from(keys);
+                Ok(CoseKeySetOrKey::KeySet(non_empty_keys))
+            }
+
+            // Handle map case - this should be a single key
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                // Deserialize the map as a CoseKey
+                let key = CoseKey::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(CoseKeySetOrKey::Key(key))
+            }
+        }
+
+        // Use deserialize_any to let serde determine the input type
+        deserializer.deserialize_any(CoseKeySetOrKeyVisitor {
+            _phantom: std::marker::PhantomData,
+        })
+    }
 }
 
 /// Represents a COSE key structure as defined in RFC 8152
@@ -473,14 +975,63 @@ pub struct CoseKey<'a> {
     pub extension: Option<ExtensionMap<'a>>,
 }
 
-#[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 /// Raw value data structure with associated mask
 pub struct MaskedRawValue {
     pub value: Bytes,
     pub mask: Bytes,
+}
+
+impl Serialize for MaskedRawValue {
+    // Should serialize to the following CDDL:
+    //
+    // tagged-masked-raw-value = #6.563([
+    //   value: bytes
+    //   mask : bytes
+    // ])
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeSeq;
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&self.value)?;
+        seq.serialize_element(&self.mask)?;
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for MaskedRawValue {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct MaskedRawValueVisitor;
+
+        impl<'de> Visitor<'de> for MaskedRawValueVisitor {
+            type Value = MaskedRawValue;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a sequence with exactly two elements (value, mask)")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let value = seq
+                    .next_element::<Bytes>()?
+                    .ok_or_else(|| de::Error::custom("missing value"))?;
+                let mask = seq
+                    .next_element::<Bytes>()?
+                    .ok_or_else(|| de::Error::custom("missing mask"))?;
+                Ok(MaskedRawValue { value, mask })
+            }
+        }
+
+        deserializer.deserialize_seq(MaskedRawValueVisitor)
+    }
 }
 
 #[derive(
@@ -499,12 +1050,77 @@ pub struct RawValueType {
 /// Type alias for raw value masks
 pub type RawValueMaskType = Bytes;
 
-#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
-#[serde(untagged)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 /// Represents different types of raw values
 pub enum RawValueTypeChoice {
     TaggedBytes(TaggedBytes),
     TaggedMaskedRawValue(TaggedMaskedRawValue),
+}
+
+impl Serialize for RawValueTypeChoice {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+
+        match self {
+            Self::TaggedBytes(tagged) => {
+                seq.serialize_element(&560u16)?; // Tag 560 for TaggedBytes.
+                seq.serialize_element(&tagged.0 .0)?;
+            }
+            Self::TaggedMaskedRawValue(tagged) => {
+                seq.serialize_element(&563u16)?; // Tag 563 for TaggedMaskedRawValue.
+                seq.serialize_element(&tagged.0 .0)?;
+            }
+        }
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for RawValueTypeChoice {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TagVisitor;
+
+        impl<'de> Visitor<'de> for TagVisitor {
+            type Value = RawValueTypeChoice;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter
+                    .write_str("a RawValueTypeChoice variant distinguished by CBOR tag (560, 563)")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let tag: u16 = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::custom("missing tag"))?;
+
+                match tag {
+                    560 => {
+                        let value: TaggedBytes = seq
+                            .next_element()?
+                            .ok_or_else(|| de::Error::custom("missing tagged value"))?;
+                        Ok(RawValueTypeChoice::TaggedBytes(value))
+                    }
+                    563 => {
+                        let value: TaggedMaskedRawValue = seq
+                            .next_element()?
+                            .ok_or_else(|| de::Error::custom("missing tagged value"))?;
+                        Ok(RawValueTypeChoice::TaggedMaskedRawValue(value))
+                    }
+                    _ => Err(de::Error::custom(format!("unsupported CBOR tag: {}", tag))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(TagVisitor)
+    }
 }
 
 /// Version scheme enumeration as defined in the specification
@@ -558,7 +1174,7 @@ pub enum VersionScheme {
 /// let alg = CoseAlgorithm::ES256;  // ECDSA with SHA-256
 /// let hash_alg = CoseAlgorithm::Sha256;  // SHA-256 hash function
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
 #[repr(i64)]
 pub enum CoseAlgorithm {
     /// Reserved for private use (-65536)
@@ -728,7 +1344,91 @@ impl Serialize for CoseAlgorithm {
     where
         S: Serializer,
     {
-        serializer.serialize_i64(self.clone() as i64)
+        // Match each variant to its exact discriminant value
+        let value = match self {
+            Self::Unassigned0 => -65536,
+            Self::RS1 => -65535,
+            Self::A128CTR => -65534,
+            Self::A192CTR => -65533,
+            Self::A256CTR => -65532,
+            Self::A128CBC => -65531,
+            Self::A192CBC => -65530,
+            Self::A256CBC => -65529,
+            Self::Unassigned1 => -65528,
+            Self::WalnutDSA => -260,
+            Self::RS512 => -259,
+            Self::RS384 => -258,
+            Self::RS256 => -257,
+            Self::Unassigned2 => -256,
+            Self::ES256K => -47,
+            Self::HssLms => -46,
+            Self::SHAKE256 => -45,
+            Self::Sha512 => -44,
+            Self::Sha384 => -43,
+            Self::RsaesOaepSha512 => -42,
+            Self::RsaesOaepSha256 => -41,
+            Self::RsaesOaepRfc => 8017,
+            Self::PS512 => -39,
+            Self::PS384 => -38,
+            Self::PS256 => -37,
+            Self::ES512 => -36,
+            Self::ES384 => -35,
+            Self::EcdhSsA256kw => -34,
+            Self::EcdhSsA192kw => -33,
+            Self::EcdhSsA128kw => -32,
+            Self::EcdhEsA256kw => -31,
+            Self::EcdhEsA192kw => -30,
+            Self::EcdhEsA128kw => -29,
+            Self::EcdhSsHkdf512 => -28,
+            Self::EcdhSsHkdf256 => -27,
+            Self::EcdhEsHkdf512 => -26,
+            Self::EcdhEsHkdf256 => -25,
+            Self::Unassigned3 => -24,
+            Self::SHAKE128 => -18,
+            Self::Sha512_256 => -17,
+            Self::Sha256 => -16,
+            Self::Sha256_64 => -15,
+            Self::Sha1 => -14,
+            Self::DirectHkdfAes256 => -13,
+            Self::DirectHkdfAes128 => -12,
+            Self::DirectHkdfSha512 => -11,
+            Self::DirectHkdfSha256 => -10,
+            Self::Unassigned4 => -9,
+            Self::EdDSA => -8,
+            Self::ES256 => -7,
+            Self::Direct => -6,
+            Self::A256KW => -5,
+            Self::A192KW => -4,
+            Self::A128KW => -3,
+            Self::Unassigned5 => -2,
+            Self::Reserved => 0,
+            Self::A128GCM => 1,
+            Self::A192GCM => 2,
+            Self::A256GCM => 3,
+            Self::Hmac256_64 => 4,
+            Self::Hmac256_256 => 5,
+            Self::Hmac384_384 => 6,
+            Self::Hmac512_512 => 7,
+            Self::Unassigned6 => 8,
+            Self::AesCcm16_64_128 => 10,
+            Self::AesCcm16_64_256 => 11,
+            Self::AesCcm64_64_128 => 12,
+            Self::AesCcm64_64_256 => 13,
+            Self::AesMac128_64 => 14,
+            Self::AesMac256_64 => 15,
+            Self::Unassigned7 => 16,
+            Self::ChaCha20Poly1305 => 24,
+            Self::AesMac128 => 128,
+            Self::AesMac256 => 256,
+            Self::Unassigned8 => 27,
+            Self::AesCcm16_128_128 => 30,
+            Self::AesCcm16_128_256 => 31,
+            Self::AesCcm64_128_128 => 32,
+            Self::AesCcm64_128_256 => 33,
+            Self::IvGeneration => 34,
+        };
+
+        serializer.serialize_i64(value)
     }
 }
 impl<'de> Deserialize<'de> for CoseAlgorithm {
@@ -832,22 +1532,589 @@ impl<'de> Deserialize<'de> for CoseAlgorithm {
 
 #[cfg(test)]
 mod tests {
-    use super::{CoseAlgorithm, HashEntry};
+    use super::*;
+    mod hash_entry {
+        use super::{CoseAlgorithm, HashEntry};
+        #[test]
+        fn test_hash_entry_serialize() {
+            /*********************************************************************
+             * Explanation of Expected Bytes:
+             * 0x82: CBOR array with 2 elements
+             * 0x01: COSE algorithm identifier A128GCM
+             * 0x45: CBOR byte string with 5 bytes
+             * 0x01, 0x02, 0x03, 0x04, 0x05: 5 bytes of hash value
+             *********************************************************************/
+            let expected = [0x82, 0x01, 0x45, 0x01, 0x02, 0x03, 0x04, 0x05];
 
-    #[test]
-    fn test_hash_entry_serialize() {
-        let expected = [134, 1, 1, 2, 3, 4, 5];
-        let actual: HashEntry = HashEntry {
-            hash_alg_id: CoseAlgorithm::A128GCM,
-            hash_value: vec![1, 2, 3, 4, 5],
-        };
+            let hash_entry: HashEntry = HashEntry {
+                hash_alg_id: CoseAlgorithm::A128GCM,
+                hash_value: vec![1, 2, 3, 4, 5].into(),
+            };
 
-        println!("{expected:02X?}");
+            let mut actual: Vec<u8> = vec![];
+            ciborium::into_writer(&hash_entry, &mut actual).unwrap();
 
-        let mut bytes: Vec<u8> = vec![];
-        ciborium::into_writer(&actual, &mut bytes).unwrap();
-        println!("{bytes:02X?}");
+            assert_eq!(actual.as_slice(), expected.as_slice());
+        }
+    }
 
-        assert_eq!(bytes.as_slice(), expected.as_slice());
+    mod bytes {
+        #[test]
+        fn test_bytes_ciborium_serialize() {
+            /*********************************************************************
+             * Explanation of Expected Bytes:
+             * 0x45: CBOR byte string with 5 bytes
+             * 0x01, 0x02, 0x03, 0x04, 0x05: 5 bytes of hash value
+             *********************************************************************/
+            let expected = [0x45, 0x01, 0x02, 0x03, 0x04, 0x05];
+
+            let bytes: super::Bytes = vec![1, 2, 3, 4, 5].into();
+
+            let mut actual: Vec<u8> = vec![];
+            ciborium::into_writer(&bytes, &mut actual).unwrap();
+
+            assert_eq!(actual.as_slice(), expected.as_slice());
+        }
+
+        #[test]
+        fn test_bytes_ciborium_deserialize() {
+            /*********************************************************************
+             * Explanation of Input Bytes:
+             * 0x45: CBOR byte string with 5 bytes
+             * 0x01, 0x02, 0x03, 0x04, 0x05: 5 bytes of hash value
+             *********************************************************************/
+            let input = [0x45, 0x01, 0x02, 0x03, 0x04, 0x05];
+
+            let expected: super::Bytes = vec![1, 2, 3, 4, 5].into();
+
+            let actual: super::Bytes = ciborium::from_reader(&input[..]).unwrap();
+
+            assert_eq!(actual, expected);
+        }
+    }
+
+    mod generated_tags {
+        use super::*;
+
+        macro_rules! _compare {
+            ($expected:expr, $actual:expr) => {
+                print!("Expected: ");
+                for byte in $expected {
+                    print!("0x{:02X?}, ", byte);
+                }
+                println!();
+                print!("Actual: ");
+                for byte in $actual {
+                    print!("0x{:02X?}, ", byte);
+                }
+                println!();
+            };
+        }
+
+        #[test]
+        fn test_deserialize_integer_time() {
+            let value: Int = 1580000000;
+            let expected = IntegerTime::from(value);
+            let bytes: [u8; 6] = [0xC1, 0x1A, 0x5E, 0x2C, 0xE3, 0x00]; // C1 1A 0x5E, 0x2C, 0xE3, 0x00 = Tag 1, 1580000000
+                                                                       // Deserialize
+            let actual: IntegerTime = ciborium::from_reader(bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual);
+            // Serialize (note: might use shorter encoding)
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+        }
+        // 2 bytes total: Tag 1 (C1) + 1-byte integer (Major Type 0)
+        #[test]
+        fn test_deserialize_integer_time_1_bytes() {
+            let value: Int = 23; // Max for 1-byte encoding
+            let expected = IntegerTime::from(value);
+            let bytes: [u8; 2] = [0xC1, 0x17]; // C1 17 = Tag 1, 23
+                                               // Deserialize
+            let actual: IntegerTime = ciborium::from_reader(bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual);
+            // Serialize
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, bytes);
+        }
+
+        // 3 bytes total: Tag 1 (C1) + 2-byte integer (Major Type 0, 0x18)
+        #[test]
+        fn test_deserialize_integer_time_2_bytes() {
+            let value: Int = 255; // Max for 2-byte encoding
+            let expected = IntegerTime::from(value);
+            let bytes: [u8; 3] = [0xC1, 0x18, 0xFF]; // C1 18 FF = Tag 1, 255
+                                                     // Deserialize
+            let actual: IntegerTime = ciborium::from_reader(bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual);
+            // Serialize
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, bytes);
+        }
+
+        #[test]
+        fn test_deserialize_integer_time_3_bytes() {
+            let expected = IntegerTime::from(1000i32);
+            let bytes: [u8; 4] = [0xC1, 0x19, 0x03, 0xE8]; // 1000 = 0x03E8
+            let actual: IntegerTime = ciborium::from_reader(bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual);
+        }
+
+        // 5 bytes total: Tag 1 (C1) + 4-byte integer (Major Type 0, 0x1A)
+        #[test]
+        fn test_deserialize_integer_time_4_bytes() {
+            let value: Int = 1000; // Fits in 2 bytes, but we force 4-byte encoding
+            let expected = IntegerTime::from(value);
+            let bytes: [u8; 6] = [0xC1, 0x1A, 0x00, 0x00, 0x03, 0xE8]; // C1 1A 00 03 E8 = Tag 1, 1000
+                                                                       // Deserialize
+            let actual: IntegerTime = ciborium::from_reader(bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual);
+            // Serialize (note: might use shorter encoding)
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, &[0xC1, 0x19, 0x03, 0xE8]);
+        }
+
+        // 5 bytes total: Tag 1 (C1) + 4-byte integer (Major Type 0, 0x1A)
+        #[test]
+        fn test_deserialize_integer_time_4_bytes_larger() {
+            let value: Int = 1580000000;
+            let expected = IntegerTime::from(value);
+            let bytes: [u8; 6] = [0xC1, 0x1A, 0x5E, 0x2C, 0xE3, 0x00]; // C1 1A 00 03 E8 = Tag 1, 1000
+                                                                       // Deserialize
+            let actual: IntegerTime = ciborium::from_reader(bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual);
+            // Serialize (note: might use shorter encoding)
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+        }
+
+        #[test]
+        fn test_uri_serialize_deserialize() {
+            // Test value
+            let uri_str = "https://example.com";
+            let expected = Uri::from(Cow::Borrowed(uri_str));
+
+            // Expected CBOR bytes: Tag 32 (D820) + Text string (63 + 19 bytes)
+            let expected_bytes = [
+                0xD8, 0x20, // Tag 32
+                0x73, // Major Type 3, length 19 (0x60 + 0x13)
+                0x68, 0x74, 0x74, 0x70, 0x73, 0x3A, 0x2F, 0x2F, // "https://"
+                0x65, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65, // "example"
+                0x2E, 0x63, 0x6F, 0x6D, // ".com"
+            ];
+
+            // Serialize
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            // Deserialize
+            let actual: Uri = ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+
+            // Verify inner value
+            assert_eq!(*actual, uri_str, "Inner string mismatch");
+        }
+
+        #[test]
+        fn test_tagged_uuid_type_serialize_deserialize() {
+            let uuid_bytes: [u8; 16] = [
+                0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16, 0x44, 0x66, 0x55, 0x44,
+                0x00, 0x00,
+            ];
+            // Test value
+            let expected = TaggedUuidType::from(UuidType::from(FixedBytes::from(uuid_bytes)));
+
+            // Expected CBOR bytes: Tag 37 (D825) + Byte string (0x16 bytes)
+            let expected_bytes = [
+                0xD8, 0x25, // Tag 37
+                0x50, // Major Type 2, length 16 bytes.
+                0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, // UUID bytes
+                0xA7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00,
+            ];
+
+            // Serialize
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            // Deserialize
+            let actual: TaggedUuidType = ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+
+            // Verify inner value
+            assert_eq!(**actual, uuid_bytes, "Inner UUID mismatch");
+        }
+
+        #[test]
+        fn test_oid_type_serialize_deserialize() {
+            // Test OID bytes for 2.5.4.3 (Common Name)
+            let oid_bytes = [0x55, 0x04, 0x03]; // OID 2.5.4.3 (Common Name)
+            let expected = OidType::from(Bytes::from(oid_bytes.as_slice()));
+
+            // Expected CBOR bytes: Tag 111 (D86F) + Byte string (3 bytes)
+            let expected_bytes = [
+                0xD8, 0x6F, // Tag 111
+                0x43, // Byte string of length 3
+                0x55, 0x04, 0x03, // OID bytes
+            ];
+
+            // Serialize
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            // Deserialize
+            let actual: OidType = ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+
+            // Verify inner value
+            assert_eq!(*actual.as_ref(), oid_bytes, "Inner OID bytes mismatch");
+        }
+
+        #[test]
+        fn test_tagged_ueid_type_serialize_deserialize() {
+            let ueid_bytes: [u8; 33] = [
+                0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16, 0x44, 0x66, 0x55, 0x44,
+                0x00, 0x00, 0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16, 0x44, 0x66,
+                0x55, 0x44, 0x00, 0x00, 0x00,
+            ];
+            // Test value
+            let expected = TaggedUeidType::from(UeidType::from(FixedBytes::from(ueid_bytes)));
+
+            // Expected CBOR bytes: Tag 550 (D826) + Byte string 33 bytes
+            let expected_bytes = [
+                0xD9, 0x02, 0x26, // Tag 550
+                0x58, 0x21, // Byte String (33 bytes)
+                0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, // UEID bytes
+                0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00, 0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41,
+                0xD4, 0xA7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00, 0x00,
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: TaggedUeidType = ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+        }
+
+        #[test]
+        fn test_svn_type_serialize_deserialize() {
+            let expected = SvnType::from(1u32);
+
+            // Expected CBOR bytes: Tag 550 (D826) + Byte string 33 bytes
+            let expected_bytes = [
+                0xD9, 0x02, 0x28, // Tag 552
+                0x01, // Value 1
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: SvnType = ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+        }
+
+        #[test]
+        fn test_min_svn_type_serialize_deserialize() {
+            let expected = MinSvnType::from(0u32);
+
+            let expected_bytes = [
+                0xD9, 0x02, 0x29, // Tag 553
+                0x00, // Value 0
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: MinSvnType = ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+        }
+
+        #[test]
+        fn test_pkix_base64_key_type_serialize_deserialize() {
+            let key = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwJQ8";
+            let expected = PkixBase64KeyType::from(Cow::Borrowed(key));
+
+            let expected_bytes = [
+                0xD9, 0x02, 0x2A, // Tag 554
+                0x78, 0x30, // String of 48 characters.
+                0x4D, 0x49, 0x49, 0x42, 0x49, 0x6A, 0x41, 0x4E, 0x42, 0x67, 0x6B, 0x71, 0x68, 0x6B,
+                0x69, 0x47, 0x39, 0x77, 0x30, 0x42, 0x41, 0x51, 0x45, 0x46, 0x41, 0x41, 0x4F, 0x43,
+                0x41, 0x51, 0x38, 0x41, 0x4D, 0x49, 0x49, 0x42, 0x43, 0x67, 0x4B, 0x43, 0x41, 0x51,
+                0x45, 0x41, 0x77, 0x4A, 0x51, 0x38,
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: PkixBase64KeyType =
+                ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+        }
+
+        #[test]
+        fn test_pkix_base64_cert_type_serialize_deserialize() {
+            let key = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwJQ8";
+            let expected = PkixBase64CertType::from(Cow::Borrowed(key));
+
+            let expected_bytes = [
+                0xD9, 0x02, 0x2B, // Tag 555
+                0x78, 0x30, // String of 48 characters.
+                0x4D, 0x49, 0x49, 0x42, 0x49, 0x6A, 0x41, 0x4E, 0x42, 0x67, 0x6B, 0x71, 0x68, 0x6B,
+                0x69, 0x47, 0x39, 0x77, 0x30, 0x42, 0x41, 0x51, 0x45, 0x46, 0x41, 0x41, 0x4F, 0x43,
+                0x41, 0x51, 0x38, 0x41, 0x4D, 0x49, 0x49, 0x42, 0x43, 0x67, 0x4B, 0x43, 0x41, 0x51,
+                0x45, 0x41, 0x77, 0x4A, 0x51, 0x38,
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: PkixBase64CertType =
+                ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+        }
+
+        #[test]
+        fn test_pkix_base64_cert_path_type_serialize_deserialize() {
+            let key = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwJQ8";
+            let expected = PkixBase64CertPathType::from(Cow::Borrowed(key));
+
+            let expected_bytes = [
+                0xD9, 0x02, 0x2C, // Tag 556
+                0x78, 0x30, // String of 48 characters.
+                0x4D, 0x49, 0x49, 0x42, 0x49, 0x6A, 0x41, 0x4E, 0x42, 0x67, 0x6B, 0x71, 0x68, 0x6B,
+                0x69, 0x47, 0x39, 0x77, 0x30, 0x42, 0x41, 0x51, 0x45, 0x46, 0x41, 0x41, 0x4F, 0x43,
+                0x41, 0x51, 0x38, 0x41, 0x4D, 0x49, 0x49, 0x42, 0x43, 0x67, 0x4B, 0x43, 0x41, 0x51,
+                0x45, 0x41, 0x77, 0x4A, 0x51, 0x38,
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: PkixBase64CertPathType =
+                ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+        }
+
+        #[test]
+        fn test_thumbprint_type_serialize_deserialize() {
+            let thumbprint_bytes = [0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16];
+            let digest = Digest {
+                alg: CoseAlgorithm::Sha256.into(),
+                val: Bytes::from(thumbprint_bytes.to_vec()),
+            };
+            let expected = ThumbprintType::from(digest);
+
+            let expected_bytes = [
+                0xD9, 0x02, 0x2D, // Tag 557
+                0x82, // Array of 2 elements
+                0x2F, // Algorithm (-16)
+                0x4A, // Bstr of length 10
+                0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16,
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: ThumbprintType = ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+        }
+
+        #[test]
+        fn test_cose_key_type_serialize_deserialize() {
+            // Create a basic COSE key
+            let key = CoseKey {
+                kty: Label::Int(1), // EC2 key type
+                kid: TaggedBytes::from(Bytes::from(vec![0x01, 0x02, 0x03])),
+                alg: AlgLabel::Int(CoseAlgorithm::ES256),
+                key_ops: NonEmptyVec::from(Label::Int(1)), // sign operation
+                base_iv: TaggedBytes::from(Bytes::from(vec![0x04, 0x05, 0x06])),
+                extension: None,
+            };
+            let expected = CoseKeyType::from(CoseKeySetOrKey::Key(key));
+
+            let expected_bytes = [
+                0xD9, 0x02, 0x2E, // Tag 558
+                0xBF, // Map *
+                0x61, // (key) Text of one character
+                0x31, // '1'
+                0x01, // (value) unsigned integer 1
+                0x61, // (key) Text of one character
+                0x32, // '2'
+                0xD9, 0x02, 0x30, // Tag 560
+                0x43, // (value) Bstr with length of 3
+                0x01, 0x02, 0x03, // "\u0001\u0002\u0003"
+                0x61, // (key) Text of one character
+                0x33, // '3' (algorithm)
+                0x26, // (value) -6 (ES256)
+                0x61, // (key) Text of one character
+                0x34, // '4'
+                0x81, // (value) Array of 1 element
+                0x01, // Unsigned integer 1
+                0x61, // (key) Text of one character
+                0x35, // '5'
+                0xD9, 0x02, 0x30, // Tag 560
+                0x43, // (value) Bstr with length of 3
+                0x04, 0x05, 0x06, // "\u0004\u0005\u0006"
+                0xFF, // Primitive
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: CoseKeyType = ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+        }
+
+        #[test]
+        fn test_cert_thumbprint_type_serialize_deserialize() {
+            let thumbprint_bytes = [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80];
+            let digest = Digest {
+                alg: CoseAlgorithm::Sha384.into(),
+                val: Bytes::from(thumbprint_bytes.to_vec()),
+            };
+            let expected = CertThumprintType::from(digest);
+
+            let expected_bytes = [
+                0xD9, 0x02, 0x2F, // Tag 559
+                0x82, // Array of 2 elements
+                0x38, 0x2A, // Algorithm (-43 for Sha384)
+                0x48, // Bstr of length 8
+                0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, // Thumbprint bytes
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: CertThumprintType =
+                ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+        }
+
+        #[test]
+        fn test_tagged_bytes_serialize_deserialize() {
+            let bytes_data = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE];
+            let expected = TaggedBytes::from(Bytes::from(bytes_data.to_vec()));
+
+            let expected_bytes = [
+                0xD9, 0x02, 0x30, // Tag 560
+                0x45, // Bstr of length 5
+                0xAA, 0xBB, 0xCC, 0xDD, 0xEE, // Byte data
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: TaggedBytes = ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+
+            // Verify inner value
+            assert_eq!(*actual.as_ref(), bytes_data, "Inner bytes mismatch");
+        }
+
+        #[test]
+        fn test_cert_path_thumbprint_type_serialize_deserialize() {
+            let thumbprint_bytes = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99];
+            let digest = Digest {
+                alg: CoseAlgorithm::Sha512.into(),
+                val: Bytes::from(thumbprint_bytes.to_vec()),
+            };
+            let expected = CertPathThumbprintType::from(digest);
+
+            let expected_bytes = [
+                0xD9, 0x02, 0x31, // Tag 561
+                0x82, // Array of 2 elements
+                0x38, 0x2B, // Algorithm (-44 for Sha512)
+                0x49, // Bstr of length 9
+                0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, // Thumbprint bytes
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: CertPathThumbprintType =
+                ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+        }
+
+        #[test]
+        fn test_pkix_asn1_der_cert_type_serialize_deserialize() {
+            // Create a sample DER certificate (using placeholder bytes)
+            let cert_bytes = [0x30, 0x82, 0x01, 0xF1, 0x02, 0x01, 0x01, 0x30, 0x0D];
+            let tagged_bytes = TaggedBytes::from(Bytes::from(cert_bytes.to_vec()));
+            let expected = PkixAsn1DerCertType::from(tagged_bytes);
+
+            let expected_bytes = [
+                0xD9, 0x02, 0x32, // Tag 562
+                0xD9, 0x02, 0x30, // Tag 560 (for TaggedBytes)
+                0x49, // Bstr of length 9
+                0x30, 0x82, 0x01, 0xF1, 0x02, 0x01, 0x01, 0x30, 0x0D, // Certificate bytes
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: PkixAsn1DerCertType =
+                ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+        }
+
+        #[test]
+        fn test_tagged_masked_raw_value_serialize_deserialize() {
+            // Create a masked raw value with value and mask
+            let value_bytes = [0x01, 0x02, 0x03, 0x04];
+            let mask_bytes = [0xFF, 0xFF, 0x00, 0x00];
+
+            let masked_value = MaskedRawValue {
+                value: Bytes::from(value_bytes.to_vec()),
+                mask: Bytes::from(mask_bytes.to_vec()),
+            };
+
+            let expected = TaggedMaskedRawValue::from(masked_value);
+
+            let expected_bytes = [
+                0xD9, 0x02, 0x33, // Tag 563
+                0x82, // Array (2)
+                0x44, // Bstr of length 4
+                0x01, 0x02, 0x03, 0x04, // "\u0001\u0002\u0003\u0004"
+                0x44, // Bstr of length 4
+                0xFF, 0xFF, 0x00, 0x00, // "\u00FF\u00FF\u0000\u0000"
+            ];
+
+            let mut buffer = vec![];
+            ciborium::into_writer(&expected, &mut buffer).unwrap();
+            assert_eq!(buffer, expected_bytes, "Serialization mismatch");
+
+            let actual: TaggedMaskedRawValue =
+                ciborium::from_reader(expected_bytes.as_slice()).unwrap();
+            assert_eq!(expected, actual, "Deserialization mismatch");
+
+            // Verify inner values
+            assert_eq!(
+                *actual.value.as_ref(),
+                value_bytes,
+                "Inner value bytes mismatch"
+            );
+            assert_eq!(
+                *actual.mask.as_ref(),
+                mask_bytes,
+                "Inner mask bytes mismatch"
+            );
+        }
     }
 }

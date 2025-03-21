@@ -270,6 +270,19 @@ pub enum ClassIdTypeChoice {
     Bytes(Bytes),
 }
 
+// impl Serialize for ClassIdTypeChoice {
+//     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         match self {
+//             ClassIdTypeChoice::Oid(value) => value.serialize(serializer),
+//             ClassIdTypeChoice::Uuid(value) => value.serialize(serializer),
+//             ClassIdTypeChoice::Bytes(value) => value.serialize(serializer),
+//         }
+//     }
+// }
+
 /// Possible types for instance identifiers
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
@@ -287,7 +300,7 @@ pub enum InstanceIdTypeChoice<'a> {
 
 impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
     fn from(value: &'a [u8]) -> Self {
-        Self::Bytes(value.to_vec())
+        Self::Bytes(value.to_vec().into())
     }
 }
 

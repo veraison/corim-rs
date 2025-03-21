@@ -32,9 +32,12 @@
 //! - Implements common traits like `Deref`, `AsRef`, etc.
 //! - Efficient zero-copy deserialization when possible
 //! - Clear error messages for size mismatches
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    ops::{Deref, DerefMut, Index, IndexMut},
+};
 
-use derive_more::{AsMut, AsRef, Deref, DerefMut, From};
+use derive_more::From;
 use serde::{
     de::{Error, Visitor},
     Deserialize, Serialize, Serializer,
@@ -72,7 +75,7 @@ impl<'de, const N: usize> Visitor<'de> for FixedBytesVisitor<'de, N> {
     }
 }
 
-#[derive(From, AsMut, AsRef, Deref, DerefMut, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 /// A fixed-length byte array wrapper with serialization support
 ///
 /// This type wraps a byte array of size `N` and provides serialization/deserialization
@@ -119,6 +122,55 @@ impl<const N: usize> Default for FixedBytes<N> {
     }
 }
 
+impl<const N: usize> Index<usize> for FixedBytes<N> {
+    type Output = u8;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl<const N: usize> IndexMut<usize> for FixedBytes<N> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+}
+
+impl<const N: usize> AsMut<[u8]> for FixedBytes<N> {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.0
+    }
+}
+
+impl<const N: usize> AsRef<[u8]> for FixedBytes<N> {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl<const N: usize> Deref for FixedBytes<N> {
+    type Target = [u8; N];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T, const N: usize> AsMut<T> for FixedBytes<N>
+where
+    <FixedBytes<N> as Deref>::Target: AsMut<T>,
+{
+    fn as_mut(&mut self) -> &mut T {
+        self.deref_mut().as_mut()
+    }
+}
+
+impl<const N: usize> DerefMut for FixedBytes<N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,13 +178,13 @@ mod tests {
     #[test]
     fn test_fixed_bytes_creation() {
         let bytes: FixedBytes<4> = FixedBytes([1, 2, 3, 4]);
-        assert_eq!(&bytes[..], &[1, 2, 3, 4]);
+        assert_eq!(&*bytes, &[1, 2, 3, 4]);
     }
 
     #[test]
     fn test_fixed_bytes_as_ref() {
         let bytes: FixedBytes<3> = FixedBytes([5, 6, 7]);
-        let array: &[u8; 3] = bytes.as_ref();
+        let array: &[u8; 3] = &bytes;
         assert_eq!(array, &[5, 6, 7]);
     }
 
@@ -153,5 +205,23 @@ mod tests {
         let mut bytes: FixedBytes<2> = FixedBytes([1, 2]);
         bytes[0] = 3;
         assert_eq!(*bytes, [3, 2]);
+    }
+
+    #[test]
+    fn test_fixed_bytes_ciborium_serialize() {
+        let expected = [0x45, 0x01, 0x02, 0x03, 0x04, 0x05];
+        let bytes: FixedBytes<5> = FixedBytes([1, 2, 3, 4, 5]);
+        let mut serialized_bytes = vec![];
+        ciborium::into_writer(&bytes, &mut serialized_bytes).unwrap();
+        assert_eq!(&serialized_bytes, &expected);
+    }
+
+    #[test]
+    fn test_fixed_bytes_ciborium_deserialize() {
+        let expected = FixedBytes([1, 2, 3, 4, 5]);
+        let serialized_bytes: [u8; 6] = [0x45, 0x01, 0x02, 0x03, 0x04, 0x05];
+        let deserialized_bytes: FixedBytes<5> =
+            ciborium::from_reader(serialized_bytes.as_slice()).unwrap();
+        assert_eq!(deserialized_bytes, expected);
     }
 }

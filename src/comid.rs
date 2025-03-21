@@ -206,7 +206,7 @@ impl<'a> ConciseMidTag<'a> {
         let mut raw_bytes = vec![];
         ciborium::into_writer(value, &mut raw_bytes)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-        let raw_value = TaggedBytes::new(raw_bytes);
+        let raw_value = TaggedBytes::new(raw_bytes.into());
 
         let measurement = MeasurementMap {
             mkey: Some(mkey),
@@ -254,7 +254,7 @@ impl<'a> ConciseMidTag<'a> {
         let mut raw_bytes = vec![];
         ciborium::into_writer(value, &mut raw_bytes)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-        let raw_value = TaggedBytes::new(raw_bytes);
+        let raw_value = TaggedBytes::new(raw_bytes.into());
 
         let measurement = MeasurementMap {
             mkey: Some(mkey),
@@ -318,6 +318,7 @@ pub enum TagIdTypeChoice<'a> {
     /// UUID identifier
     Uuid(UuidType),
 }
+
 
 impl<'a> From<&'a str> for TagIdTypeChoice<'a> {
     fn from(value: &'a str) -> Self {

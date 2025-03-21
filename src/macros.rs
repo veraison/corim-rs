@@ -78,7 +78,7 @@ macro_rules! generate_tagged {
             #[doc = $doc_comments]
             #[derive(Debug, ::serde::Serialize, ::serde::Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
             #[repr(C)]
-            pub struct $title $(< $($lt),* >)? (::ciborium::tag::Accepted<$type, $tag_num>);
+            pub struct $title $(< $($lt),* >)? (pub ::ciborium::tag::Accepted<$type, $tag_num>);
 
             impl $(< $($lt),* >)? $title $(< $($lt),* >)? {
                 /// Creates a new wrapped instance from the provided value
