@@ -89,7 +89,10 @@
 //! - [`StatefulEnvironmentRecord`]: For tracking environment state
 //! - [`ConditionalSeriesRecord`]: For defining measurement changes
 
-use std::ops::{Deref, DerefMut};
+use std::{
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 use crate::{
     core::{NonEmptyVec, PkixBase64CertPathType},
@@ -99,12 +102,14 @@ use crate::{
     UeidType, Uint, Ulabel, UuidType, VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{SeqAccess, Visitor},
+    ser::SerializeSeq,
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 
 /// A reference triple record containing environment and measurement claims
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct ReferenceTripleRecord<'a> {
     /// The environment being referenced
@@ -113,6 +118,52 @@ pub struct ReferenceTripleRecord<'a> {
     pub ref_claims: NonEmptyVec<MeasurementMap<'a>>,
 }
 
+impl<'a> Serialize for ReferenceTripleRecord<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&self.ref_env)?;
+        seq.serialize_element(&self.ref_claims)?;
+        seq.end()
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for ReferenceTripleRecord<'a> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ReferenceTripleRecordVisitor<'a>(std::marker::PhantomData<&'a ()>);
+
+        impl<'de, 'a> serde::de::Visitor<'de> for ReferenceTripleRecordVisitor<'a> {
+            type Value = ReferenceTripleRecord<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a reference triple record")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let ref_env = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let ref_claims = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                Ok(ReferenceTripleRecord {
+                    ref_env,
+                    ref_claims,
+                })
+            }
+        }
+
+        deserializer.deserialize_seq(ReferenceTripleRecordVisitor(std::marker::PhantomData))
+    }
+}
 /// Map describing an environment's characteristics
 #[derive(
     Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
@@ -452,7 +503,7 @@ pub struct MeasurementValuesMap<'a> {
     /// Optional cryptographic digest
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
-    pub digest: Option<DigestType<'a>>,
+    pub digest: Option<DigestsType<'a>>,
     /// Optional status flags
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "3")]
@@ -505,7 +556,7 @@ pub struct MeasurementValuesMapBuilder<'a> {
     /// Optional security version number
     pub svn: Option<SvnTypeChoice>,
     /// Optional cryptographic digest
-    pub digest: Option<DigestType<'a>>,
+    pub digest: Option<DigestsType<'a>>,
     /// Optional status flags
     pub flags: Option<FlagsMap<'a>>,
     /// Optional raw measurement value
@@ -539,7 +590,7 @@ impl<'a> MeasurementValuesMapBuilder<'a> {
         self.svn = Some(value);
         self
     }
-    pub fn digest(mut self, value: DigestType<'a>) -> Self {
+    pub fn digest(mut self, value: DigestsType<'a>) -> Self {
         self.digest = Some(value);
         self
     }
@@ -652,7 +703,7 @@ pub enum SvnTypeChoice {
 }
 
 /// Collection of one or more cryptographic digests
-pub type DigestType<'a> = NonEmptyVec<Digest<'a>>;
+pub type DigestsType<'a> = NonEmptyVec<Digest<'a>>;
 
 /// Status flags indicating various security and configuration states
 #[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -875,9 +926,7 @@ pub type Ipv6AddrType = [u8; 16];
 pub struct IntegrityRegisters<'a>(pub OneOrMore<Ulabel<'a>>);
 
 /// Record containing an endorsement for a specific environmental condition
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct EndorsedTripleRecord<'a> {
     /// Environmental condition being endorsed
@@ -886,10 +935,59 @@ pub struct EndorsedTripleRecord<'a> {
     pub endorsement: NonEmptyVec<MeasurementMap<'a>>,
 }
 
+impl<'a> Serialize for EndorsedTripleRecord<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&self.condition)?;
+        seq.serialize_element(&self.endorsement)?;
+        seq.end()
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for EndorsedTripleRecord<'a> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<EndorsedTripleRecord<'a>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct EndorsedTripleRecordVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for EndorsedTripleRecordVisitor<'a> {
+            type Value = EndorsedTripleRecord<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a sequence of [EnvironmentMap, NonEmptyVec<MeasurementMap>]")
+            }
+
+            fn visit_seq<A>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<EndorsedTripleRecord<'a>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let condition = seq
+                    .next_element::<EnvironmentMap>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let endorsement = seq
+                    .next_element::<NonEmptyVec<MeasurementMap>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                Ok(EndorsedTripleRecord::new(condition, endorsement))
+            }
+        }
+
+        deserializer.deserialize_seq(EndorsedTripleRecordVisitor {
+            marker: PhantomData,
+        })
+    }
+}
+
 /// Record containing identity information for an environment
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct IdentityTripleRecord<'a> {
     /// Environment being identified
@@ -897,8 +995,72 @@ pub struct IdentityTripleRecord<'a> {
     /// List of cryptographic keys associated with the identity
     pub key_list: NonEmptyVec<CryptoKeyTypeChoice<'a>>,
     /// Optional conditions for the identity
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<TriplesRecordCondition<'a>>,
+}
+
+impl<'a> Serialize for IdentityTripleRecord<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.conditions.is_none() {
+            let mut seq = serializer.serialize_seq(Some(2))?;
+            seq.serialize_element(&self.environment)?;
+            seq.serialize_element(&self.key_list)?;
+            seq.end()
+        } else {
+            let mut seq = serializer.serialize_seq(Some(3))?;
+            seq.serialize_element(&self.environment)?;
+            seq.serialize_element(&self.key_list)?;
+            seq.serialize_element(&self.conditions)?;
+            seq.end()
+        }
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for IdentityTripleRecord<'a> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<IdentityTripleRecord<'a>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct IdentityTripleRecordVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for IdentityTripleRecordVisitor<'a> {
+            type Value = IdentityTripleRecord<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("A sequence of [EnvironmentMap, NonEmptyVec<CryptoKeyTypeChoice>, Option<TriplesRecordCondition>]")
+            }
+
+            fn visit_seq<A>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<IdentityTripleRecord<'a>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let environment = seq
+                    .next_element::<EnvironmentMap>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let key_list = seq
+                    .next_element::<NonEmptyVec<CryptoKeyTypeChoice>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                let conditions = seq.next_element::<Option<TriplesRecordCondition>>()?;
+
+                if let Some(conditions) = conditions {
+                    return Ok(IdentityTripleRecord::new(environment, key_list, conditions));
+                } else {
+                    return Ok(IdentityTripleRecord::new(environment, key_list, None));
+                }
+            }
+        }
+
+        deserializer.deserialize_seq(IdentityTripleRecordVisitor {
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Conditions that must be met for a triple record to be valid.It is
@@ -947,9 +1109,7 @@ impl<'a> TriplesRecordConditionBuilder<'a> {
 }
 
 /// Record containing attestation key information for an environment
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct AttestKeyTripleRecord<'a> {
     /// Environment the keys belong to
@@ -957,22 +1117,141 @@ pub struct AttestKeyTripleRecord<'a> {
     /// List of attestation keys
     pub key_list: NonEmptyVec<CryptoKeyTypeChoice<'a>>,
     /// Optional conditions for key usage
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<TriplesRecordCondition<'a>>,
 }
 
+impl<'a> Serialize for AttestKeyTripleRecord<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.conditions.is_none() {
+            let mut seq = serializer.serialize_seq(Some(2))?;
+            seq.serialize_element(&self.environment)?;
+            seq.serialize_element(&self.key_list)?;
+            seq.end()
+        } else {
+            let mut seq = serializer.serialize_seq(Some(3))?;
+            seq.serialize_element(&self.environment)?;
+            seq.serialize_element(&self.key_list)?;
+            seq.serialize_element(&self.conditions)?;
+            seq.end()
+        }
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for AttestKeyTripleRecord<'a> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<AttestKeyTripleRecord<'a>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct AttestKeyTripleRecordVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for AttestKeyTripleRecordVisitor<'a> {
+            type Value = AttestKeyTripleRecord<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("A sequence of [EnvironmentMap, NonEmptyVec<CryptoKeyTypeChoice>, Option<TriplesRecordCondition>]")
+            }
+
+            fn visit_seq<A>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<AttestKeyTripleRecord<'a>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let environment = seq
+                    .next_element::<EnvironmentMap>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let key_list = seq
+                    .next_element::<NonEmptyVec<CryptoKeyTypeChoice>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                let conditions = seq.next_element::<Option<TriplesRecordCondition>>()?;
+
+                if let Some(conditions) = conditions {
+                    return Ok(AttestKeyTripleRecord::new(
+                        environment,
+                        key_list,
+                        conditions,
+                    ));
+                } else {
+                    return Ok(AttestKeyTripleRecord::new(environment, key_list, None));
+                }
+            }
+        }
+
+        deserializer.deserialize_seq(AttestKeyTripleRecordVisitor {
+            marker: PhantomData,
+        })
+    }
+}
+
 /// Record describing dependencies between domains and environments
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct DomainDependencyTripleRecord<'a> {
     /// Domain identifier
-    #[serde(flatten)]
     pub domain_choice: DomainTypeChoice<'a>,
     /// One or more dependent environments
-    #[serde(flatten)]
     pub environment_map: NonEmptyVec<EnvironmentMap<'a>>,
+}
+
+// Need to implement Serialize / Deserialize here.
+impl<'a> Serialize for DomainDependencyTripleRecord<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&self.domain_choice)?;
+        seq.serialize_element(&self.environment_map)?;
+        seq.end()
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for DomainDependencyTripleRecord<'a> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct DomainDependencyTripleRecordVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for DomainDependencyTripleRecordVisitor<'a> {
+            type Value = DomainDependencyTripleRecord<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("A sequence of [DomainTypeChoice, NonEmptyVec<EnvironmentMap>]")
+            }
+
+            fn visit_seq<A>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<DomainDependencyTripleRecord<'a>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let domain_choice = seq
+                    .next_element::<DomainTypeChoice>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let environment_map = seq
+                    .next_element::<NonEmptyVec<EnvironmentMap>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                Ok(DomainDependencyTripleRecord::new(
+                    domain_choice,
+                    environment_map,
+                ))
+            }
+        }
+
+        deserializer.deserialize_seq(DomainDependencyTripleRecordVisitor {
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Types of domain identifiers
@@ -990,31 +1269,130 @@ pub enum DomainTypeChoice<'a> {
 }
 
 /// Record describing domain membership associations
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct DomainMembershipTripleRecord<'a> {
     /// Domain identifier
-    #[serde(flatten)]
     pub domain_choice: DomainTypeChoice<'a>,
     /// One or more member environments
-    #[serde(flatten)]
     pub environment_map: NonEmptyVec<EnvironmentMap<'a>>,
 }
 
+impl<'a> Serialize for DomainMembershipTripleRecord<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&self.domain_choice)?;
+        seq.serialize_element(&self.environment_map)?;
+        seq.end()
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for DomainMembershipTripleRecord<'a> {
+    fn deserialize<D>(
+        deserializer: D,
+    ) -> std::result::Result<DomainMembershipTripleRecord<'a>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct DomainMembershipTripleRecordVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for DomainMembershipTripleRecordVisitor<'a> {
+            type Value = DomainMembershipTripleRecord<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("A sequence of [DomainTypeChoice, NonEmptyVec<EnvironmentMap>]")
+            }
+
+            fn visit_seq<A>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<DomainMembershipTripleRecord<'a>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let domain_choice = seq
+                    .next_element::<DomainTypeChoice>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let environment_map = seq
+                    .next_element::<NonEmptyVec<EnvironmentMap>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                Ok(DomainMembershipTripleRecord::new(
+                    domain_choice,
+                    environment_map,
+                ))
+            }
+        }
+
+        deserializer.deserialize_seq(DomainMembershipTripleRecordVisitor {
+            marker: PhantomData,
+        })
+    }
+}
+
 /// Record linking environments to CoSWID tags
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct CoswidTripleRecord<'a> {
     /// Environment the CoSWID tags belong to
-    #[serde(flatten)]
     pub environment_map: EnvironmentMap<'a>,
     /// List of associated CoSWID tag identifiers
-    #[serde(flatten)]
     pub coswid_tags: NonEmptyVec<ConciseSwidTagId<'a>>,
+}
+
+impl<'a> Serialize for CoswidTripleRecord<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&self.environment_map)?;
+        seq.serialize_element(&self.coswid_tags)?;
+        seq.end()
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for CoswidTripleRecord<'a> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<CoswidTripleRecord<'a>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CoswidTripleRecordVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for CoswidTripleRecordVisitor<'a> {
+            type Value = CoswidTripleRecord<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("A sequence of [EnvironmentMap, NonEmptyVec<ConciseSwidTagId>]")
+            }
+
+            fn visit_seq<A>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<CoswidTripleRecord<'a>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let environment_map = seq
+                    .next_element::<EnvironmentMap>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let coswid_tags = seq
+                    .next_element::<NonEmptyVec<ConciseSwidTagId>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                Ok(CoswidTripleRecord::new(environment_map, coswid_tags))
+            }
+        }
+
+        deserializer.deserialize_seq(CoswidTripleRecordVisitor {
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Record describing a series of conditional endorsements
@@ -1032,9 +1410,7 @@ pub struct CoswidTripleRecord<'a> {
 /// - Each change requires matching the selection criteria
 /// - New measurements are added only when selections match
 /// - Previous measurements remain valid unless replaced
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct ConditionalEndorsementSeriesTripleRecord<'a> {
     /// Initial environmental condition
@@ -1043,10 +1419,63 @@ pub struct ConditionalEndorsementSeriesTripleRecord<'a> {
     pub series: NonEmptyVec<ConditionalSeriesRecord<'a>>,
 }
 
+impl<'a> Serialize for ConditionalEndorsementSeriesTripleRecord<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&self.condition)?;
+        seq.serialize_element(&self.series)?;
+        seq.end()
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementSeriesTripleRecord<'a> {
+    fn deserialize<D>(
+        deserializer: D,
+    ) -> std::result::Result<ConditionalEndorsementSeriesTripleRecord<'a>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ConditionalEndorsementSeriesTripleRecordVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for ConditionalEndorsementSeriesTripleRecordVisitor<'a> {
+            type Value = ConditionalEndorsementSeriesTripleRecord<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("A sequence of [StatefulEnvironmentRecord, NonEmptyVec<ConditionalSeriesRecord>]")
+            }
+
+            fn visit_seq<A>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<ConditionalEndorsementSeriesTripleRecord<'a>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let condition = seq
+                    .next_element::<StatefulEnvironmentRecord>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let series = seq
+                    .next_element::<NonEmptyVec<ConditionalSeriesRecord>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                Ok(ConditionalEndorsementSeriesTripleRecord::new(
+                    condition, series,
+                ))
+            }
+        }
+
+        deserializer.deserialize_seq(ConditionalEndorsementSeriesTripleRecordVisitor {
+            marker: PhantomData,
+        })
+    }
+}
+
 /// Record containing environment state and measurement claims
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct StatefulEnvironmentRecord<'a> {
     /// Environment being described
@@ -1055,10 +1484,61 @@ pub struct StatefulEnvironmentRecord<'a> {
     pub claims_list: NonEmptyVec<MeasurementMap<'a>>,
 }
 
+impl<'a> Serialize for StatefulEnvironmentRecord<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&self.environment)?;
+        seq.serialize_element(&self.claims_list)?;
+        seq.end()
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for StatefulEnvironmentRecord<'a> {
+    fn deserialize<D>(
+        deserializer: D,
+    ) -> std::result::Result<StatefulEnvironmentRecord<'a>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct StatefulEnvironmentRecordVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for StatefulEnvironmentRecordVisitor<'a> {
+            type Value = StatefulEnvironmentRecord<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("A sequence of [EnvironmentMap, [+ MeasurementMap]]")
+            }
+
+            fn visit_seq<A>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<StatefulEnvironmentRecord<'a>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let environment = seq
+                    .next_element::<EnvironmentMap>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let claims_list = seq
+                    .next_element::<NonEmptyVec<MeasurementMap>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                Ok(StatefulEnvironmentRecord::new(environment, claims_list))
+            }
+        }
+
+        deserializer.deserialize_seq(StatefulEnvironmentRecordVisitor {
+            marker: PhantomData,
+        })
+    }
+}
+
 /// Record describing conditional changes to measurements
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct ConditionalSeriesRecord<'a> {
     /// Measurements that must match for changes to apply
@@ -1067,14 +1547,121 @@ pub struct ConditionalSeriesRecord<'a> {
     pub addition: NonEmptyVec<MeasurementMap<'a>>,
 }
 
+impl<'a> Serialize for ConditionalSeriesRecord<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&self.selection)?;
+        seq.serialize_element(&self.addition)?;
+        seq.end()
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for ConditionalSeriesRecord<'a> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<ConditionalSeriesRecord<'a>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ConditionalSeriesRecordVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for ConditionalSeriesRecordVisitor<'a> {
+            type Value = ConditionalSeriesRecord<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str(
+                    "A sequence of [NonEmptyVec<MeasurementMap>, NonEmptyVec<MeasurementMap>]",
+                )
+            }
+
+            fn visit_seq<A>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<ConditionalSeriesRecord<'a>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let selection = seq
+                    .next_element::<NonEmptyVec<MeasurementMap>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let addition = seq
+                    .next_element::<NonEmptyVec<MeasurementMap>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                Ok(ConditionalSeriesRecord::new(selection, addition))
+            }
+        }
+
+        deserializer.deserialize_seq(ConditionalSeriesRecordVisitor {
+            marker: PhantomData,
+        })
+    }
+}
+
 /// Record containing conditional endorsements
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct ConditionalEndorsementTripleRecord<'a> {
     /// List of environmental conditions
     pub conditions: NonEmptyVec<StatefulEnvironmentRecord<'a>>,
     /// List of endorsements that apply when conditions are met
     pub endorsements: NonEmptyVec<EndorsedTripleRecord<'a>>,
+}
+
+impl<'a> Serialize for ConditionalEndorsementTripleRecord<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        seq.serialize_element(&self.conditions)?;
+        seq.serialize_element(&self.endorsements)?;
+        seq.end()
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementTripleRecord<'a> {
+    fn deserialize<D>(
+        deserializer: D,
+    ) -> std::result::Result<ConditionalEndorsementTripleRecord<'a>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ConditionalEndorsementTripleRecordVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for ConditionalEndorsementTripleRecordVisitor<'a> {
+            type Value = ConditionalEndorsementTripleRecord<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("A sequence of [NonEmptyVec<StatefulEnvironmentRecord>, NonEmptyVec<EndorsedTripleRecord>]")
+            }
+
+            fn visit_seq<A>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<ConditionalEndorsementTripleRecord<'a>, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let conditions = seq
+                    .next_element::<NonEmptyVec<StatefulEnvironmentRecord>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let endorsements = seq
+                    .next_element::<NonEmptyVec<EndorsedTripleRecord>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                Ok(ConditionalEndorsementTripleRecord::new(
+                    conditions,
+                    endorsements,
+                ))
+            }
+        }
+
+        deserializer.deserialize_seq(ConditionalEndorsementTripleRecordVisitor {
+            marker: PhantomData,
+        })
+    }
 }
