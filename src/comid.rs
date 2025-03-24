@@ -85,7 +85,7 @@
 //! All components support optional extensions through [`ExtensionMap`] for future expandability.
 
 use crate::{
-    core::{NonEmptyVec, RawValueType, TaggedBytes},
+    core::{RawValueType, TaggedBytes},
     generate_tagged,
     triples::{EnvironmentMap, MeasuredElementTypeChoice, MeasurementMap, MeasurementValuesMap},
     AttestKeyTripleRecord, ComidError, ConditionalEndorsementSeriesTripleRecord,
@@ -122,11 +122,11 @@ pub struct ConciseMidTag<'a> {
     /// List of entities associated with this tag
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
-    pub entities: Option<NonEmptyVec<ComidEntityMap<'a>>>,
+    pub entities: Option<Vec<ComidEntityMap<'a>>>,
     /// Optional references to other related tags
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "3")]
-    pub linked_tags: Option<NonEmptyVec<LinkedTagMap<'a>>>,
+    pub linked_tags: Option<Vec<LinkedTagMap<'a>>>,
     /// Collection of triples describing the module
     #[serde(rename = "4")]
     pub triples: TriplesMap<'a>,
@@ -448,49 +448,48 @@ pub struct TriplesMap<'a> {
     /// Optional reference triples that link to external references
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "0")]
-    pub reference_triples: Option<NonEmptyVec<ReferenceTripleRecord<'a>>>,
+    pub reference_triples: Option<Vec<ReferenceTripleRecord<'a>>>,
 
     /// Optional endorsement triples that contain verification information
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "1")]
-    pub endorsed_triples: Option<NonEmptyVec<EndorsedTripleRecord<'a>>>,
+    pub endorsed_triples: Option<Vec<EndorsedTripleRecord<'a>>>,
 
     /// Optional identity triples that provide identity information
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
-    pub identity_triples: Option<NonEmptyVec<IdentityTripleRecord<'a>>>,
+    pub identity_triples: Option<Vec<IdentityTripleRecord<'a>>>,
 
     /// Optional attestation key triples containing cryptographic keys
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "3")]
-    pub attest_key_triples: Option<NonEmptyVec<AttestKeyTripleRecord<'a>>>,
+    pub attest_key_triples: Option<Vec<AttestKeyTripleRecord<'a>>>,
 
     /// Optional domain dependency triples describing relationships between domains
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "4")]
-    pub dependency_triples: Option<NonEmptyVec<DomainDependencyTripleRecord<'a>>>,
+    pub dependency_triples: Option<Vec<DomainDependencyTripleRecord<'a>>>,
 
     /// Optional domain membership triples describing domain associations
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "5")]
-    pub membership_triples: Option<NonEmptyVec<DomainMembershipTripleRecord<'a>>>,
+    pub membership_triples: Option<Vec<DomainMembershipTripleRecord<'a>>>,
 
     /// Optional SWID triples containing software identification data
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "6")]
-    pub coswid_triples: Option<NonEmptyVec<CoswidTripleRecord<'a>>>,
+    pub coswid_triples: Option<Vec<CoswidTripleRecord<'a>>>,
 
     /// Optional conditional endorsement series triples for complex endorsement chains
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "8")]
     pub conditional_endorsement_series_triples:
-        Option<NonEmptyVec<ConditionalEndorsementSeriesTripleRecord<'a>>>,
+        Option<Vec<ConditionalEndorsementSeriesTripleRecord<'a>>>,
 
     /// Optional conditional endorsement triples for conditional verification
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "10")]
-    pub conditional_endorsement_triples:
-        Option<NonEmptyVec<ConditionalEndorsementTripleRecord<'a>>>,
+    pub conditional_endorsement_triples: Option<Vec<ConditionalEndorsementTripleRecord<'a>>>,
 
     /// Optional extensible attributes for future expansion
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -500,65 +499,59 @@ pub struct TriplesMap<'a> {
 
 #[derive(Default)]
 pub struct TriplesMapBuilder<'a> {
-    reference_triples: Option<NonEmptyVec<ReferenceTripleRecord<'a>>>,
-    endorsed_triples: Option<NonEmptyVec<EndorsedTripleRecord<'a>>>,
-    identity_triples: Option<NonEmptyVec<IdentityTripleRecord<'a>>>,
-    attest_key_triples: Option<NonEmptyVec<AttestKeyTripleRecord<'a>>>,
-    dependency_triples: Option<NonEmptyVec<DomainDependencyTripleRecord<'a>>>,
-    membership_triples: Option<NonEmptyVec<DomainMembershipTripleRecord<'a>>>,
-    coswid_triples: Option<NonEmptyVec<CoswidTripleRecord<'a>>>,
+    reference_triples: Option<Vec<ReferenceTripleRecord<'a>>>,
+    endorsed_triples: Option<Vec<EndorsedTripleRecord<'a>>>,
+    identity_triples: Option<Vec<IdentityTripleRecord<'a>>>,
+    attest_key_triples: Option<Vec<AttestKeyTripleRecord<'a>>>,
+    dependency_triples: Option<Vec<DomainDependencyTripleRecord<'a>>>,
+    membership_triples: Option<Vec<DomainMembershipTripleRecord<'a>>>,
+    coswid_triples: Option<Vec<CoswidTripleRecord<'a>>>,
     conditional_endorsement_series_triples:
-        Option<NonEmptyVec<ConditionalEndorsementSeriesTripleRecord<'a>>>,
-    conditional_endorsement_triples: Option<NonEmptyVec<ConditionalEndorsementTripleRecord<'a>>>,
+        Option<Vec<ConditionalEndorsementSeriesTripleRecord<'a>>>,
+    conditional_endorsement_triples: Option<Vec<ConditionalEndorsementTripleRecord<'a>>>,
     extension: Option<ExtensionMap<'a>>,
 }
 
 impl<'a> TriplesMapBuilder<'a> {
     // Setter methods for each field
-    pub fn reference_triples(mut self, value: NonEmptyVec<ReferenceTripleRecord<'a>>) -> Self {
+    pub fn reference_triples(mut self, value: Vec<ReferenceTripleRecord<'a>>) -> Self {
         self.reference_triples = Some(value);
         self
     }
 
-    pub fn endorsed_triples(mut self, value: NonEmptyVec<EndorsedTripleRecord<'a>>) -> Self {
+    pub fn endorsed_triples(mut self, value: Vec<EndorsedTripleRecord<'a>>) -> Self {
         self.endorsed_triples = Some(value);
         self
     }
 
-    pub fn identity_triples(mut self, value: NonEmptyVec<IdentityTripleRecord<'a>>) -> Self {
+    pub fn identity_triples(mut self, value: Vec<IdentityTripleRecord<'a>>) -> Self {
         self.identity_triples = Some(value);
         self
     }
 
-    pub fn attest_key_triples(mut self, value: NonEmptyVec<AttestKeyTripleRecord<'a>>) -> Self {
+    pub fn attest_key_triples(mut self, value: Vec<AttestKeyTripleRecord<'a>>) -> Self {
         self.attest_key_triples = Some(value);
         self
     }
 
-    pub fn dependency_triples(
-        mut self,
-        value: NonEmptyVec<DomainDependencyTripleRecord<'a>>,
-    ) -> Self {
+    pub fn dependency_triples(mut self, value: Vec<DomainDependencyTripleRecord<'a>>) -> Self {
         self.dependency_triples = Some(value);
         self
     }
 
-    pub fn membership_triples(
-        mut self,
-        value: NonEmptyVec<DomainMembershipTripleRecord<'a>>,
-    ) -> Self {
+    pub fn membership_triples(mut self, value: Vec<DomainMembershipTripleRecord<'a>>) -> Self {
         self.membership_triples = Some(value);
         self
     }
 
-    pub fn coswid_triples(mut self, value: NonEmptyVec<CoswidTripleRecord<'a>>) -> Self {
+    pub fn coswid_triples(mut self, value: Vec<CoswidTripleRecord<'a>>) -> Self {
         self.coswid_triples = Some(value);
         self
     }
 
     pub fn conditional_endorsement_series_triples(
         mut self,
-        value: NonEmptyVec<ConditionalEndorsementSeriesTripleRecord<'a>>,
+        value: Vec<ConditionalEndorsementSeriesTripleRecord<'a>>,
     ) -> Self {
         self.conditional_endorsement_series_triples = Some(value);
         self
@@ -566,7 +559,7 @@ impl<'a> TriplesMapBuilder<'a> {
 
     pub fn conditional_endorsement_triples(
         mut self,
-        value: NonEmptyVec<ConditionalEndorsementTripleRecord<'a>>,
+        value: Vec<ConditionalEndorsementTripleRecord<'a>>,
     ) -> Self {
         self.conditional_endorsement_triples = Some(value);
         self

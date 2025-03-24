@@ -11,6 +11,8 @@
 //! - CoTL tags (Concise Trust Lists)
 //!
 //! The implementation follows the CoRIM specification and uses CBOR for serialization.
+//!
+//! Anywhere a `Vec<T>` is used in this implementation of the CoRIM Specificaiton should never be empty.
 
 /// Module containing CoMID tag types and structures
 pub mod comid;

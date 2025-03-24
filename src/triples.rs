@@ -96,11 +96,10 @@ use std::{
 };
 
 use crate::{
-    core::{NonEmptyVec, PkixBase64CertPathType},
-    Bytes, CertPathThumbprintType, CertThumprintType, ConciseSwidTagId, CoseKeyType, Digest,
-    ExtensionMap, MinSvnType, OidType, OneOrMore, PkixAsn1DerCertType, PkixBase64CertType,
-    PkixBase64KeyType, RawValueType, Result, SvnType, Text, ThumbprintType, TriplesError, Tstr,
-    UeidType, Uint, Ulabel, UuidType, VersionScheme,
+    core::PkixBase64CertPathType, Bytes, CertPathThumbprintType, CertThumprintType,
+    ConciseSwidTagId, CoseKeyType, Digest, ExtensionMap, MinSvnType, OidType, OneOrMore,
+    PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, Result, SvnType,
+    Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint, Ulabel, UuidType, VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
@@ -116,7 +115,7 @@ pub struct ReferenceTripleRecord<'a> {
     /// The environment being referenced
     pub ref_env: EnvironmentMap<'a>,
     /// One or more measurement claims about the environment
-    pub ref_claims: NonEmptyVec<MeasurementMap<'a>>,
+    pub ref_claims: Vec<MeasurementMap<'a>>,
 }
 
 impl<'a> Serialize for ReferenceTripleRecord<'a> {
@@ -154,7 +153,7 @@ impl<'de, 'a> Deserialize<'de> for ReferenceTripleRecord<'a> {
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let ref_claims = seq
                     .next_element()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 Ok(ReferenceTripleRecord {
                     ref_env,
                     ref_claims,
@@ -530,7 +529,7 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 ///
 /// ```rust
 /// use corim_rs::triples::CryptoKeyTypeChoice;
-/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, AlgLabel, Label, CoseAlgorithm, NonEmptyVec};
+/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, AlgLabel, Label, CoseAlgorithm, Vec};
 ///
 /// // Base64 encoded certificate
 /// let cert = CryptoKeyTypeChoice::PkixBase64Cert(
@@ -748,7 +747,7 @@ pub struct MeasurementMap<'a> {
     /// Optional list of authorizing keys
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
-    pub authorized_by: Option<NonEmptyVec<CryptoKeyTypeChoice<'a>>>,
+    pub authorized_by: Option<Vec<CryptoKeyTypeChoice<'a>>>,
 }
 
 /// Types of measured element identifiers
@@ -872,7 +871,7 @@ pub struct MeasurementValuesMap<'a> {
     /// Optional cryptographic keys
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "13")]
-    pub cryptokeys: Option<NonEmptyVec<CryptoKeyTypeChoice<'a>>>,
+    pub cryptokeys: Option<Vec<CryptoKeyTypeChoice<'a>>>,
     /// Optional integrity register values
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "14")]
@@ -907,7 +906,7 @@ pub struct MeasurementValuesMapBuilder<'a> {
     /// Optional name
     pub name: Option<Text<'a>>,
     /// Optional cryptographic keys
-    pub cryptokeys: Option<NonEmptyVec<CryptoKeyTypeChoice<'a>>>,
+    pub cryptokeys: Option<Vec<CryptoKeyTypeChoice<'a>>>,
     /// Optional integrity register values
     pub integrity_registers: Option<IntegrityRegisters<'a>>,
     /// Optional extensible attributes
@@ -959,7 +958,7 @@ impl<'a> MeasurementValuesMapBuilder<'a> {
         self.name = Some(value);
         self
     }
-    pub fn cryptokeys(mut self, value: NonEmptyVec<CryptoKeyTypeChoice<'a>>) -> Self {
+    pub fn cryptokeys(mut self, value: Vec<CryptoKeyTypeChoice<'a>>) -> Self {
         self.cryptokeys = Some(value);
         self
     }
@@ -1059,7 +1058,7 @@ impl SvnTypeChoice {
 }
 
 /// Collection of one or more cryptographic digests
-pub type DigestsType<'a> = NonEmptyVec<Digest<'a>>;
+pub type DigestsType<'a> = Vec<Digest<'a>>;
 
 /// Status flags indicating various security and configuration states
 #[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -1334,7 +1333,7 @@ pub struct EndorsedTripleRecord<'a> {
     /// Environmental condition being endorsed
     pub condition: EnvironmentMap<'a>,
     /// One or more measurement endorsements
-    pub endorsement: NonEmptyVec<MeasurementMap<'a>>,
+    pub endorsement: Vec<MeasurementMap<'a>>,
 }
 
 impl<'a> Serialize for EndorsedTripleRecord<'a> {
@@ -1362,7 +1361,7 @@ impl<'de, 'a> Deserialize<'de> for EndorsedTripleRecord<'a> {
             type Value = EndorsedTripleRecord<'a>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a sequence of [EnvironmentMap, NonEmptyVec<MeasurementMap>]")
+                formatter.write_str("a sequence of [EnvironmentMap, Vec<MeasurementMap>]")
             }
 
             fn visit_seq<A>(
@@ -1376,8 +1375,8 @@ impl<'de, 'a> Deserialize<'de> for EndorsedTripleRecord<'a> {
                     .next_element::<EnvironmentMap>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let endorsement = seq
-                    .next_element::<NonEmptyVec<MeasurementMap>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                    .next_element::<Vec<MeasurementMap>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 Ok(EndorsedTripleRecord::new(condition, endorsement))
             }
         }
@@ -1395,7 +1394,7 @@ pub struct IdentityTripleRecord<'a> {
     /// Environment being identified
     pub environment: EnvironmentMap<'a>,
     /// List of cryptographic keys associated with the identity
-    pub key_list: NonEmptyVec<CryptoKeyTypeChoice<'a>>,
+    pub key_list: Vec<CryptoKeyTypeChoice<'a>>,
     /// Optional conditions for the identity
     pub conditions: Option<TriplesRecordCondition<'a>>,
 }
@@ -1433,7 +1432,7 @@ impl<'de, 'a> Deserialize<'de> for IdentityTripleRecord<'a> {
             type Value = IdentityTripleRecord<'a>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("A sequence of [EnvironmentMap, NonEmptyVec<CryptoKeyTypeChoice>, Option<TriplesRecordCondition>]")
+                formatter.write_str("A sequence of [EnvironmentMap, Vec<CryptoKeyTypeChoice>, Option<TriplesRecordCondition>]")
             }
 
             fn visit_seq<A>(
@@ -1447,8 +1446,8 @@ impl<'de, 'a> Deserialize<'de> for IdentityTripleRecord<'a> {
                     .next_element::<EnvironmentMap>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let key_list = seq
-                    .next_element::<NonEmptyVec<CryptoKeyTypeChoice>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                    .next_element::<Vec<CryptoKeyTypeChoice>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let conditions = seq.next_element::<Option<TriplesRecordCondition>>()?;
 
                 if let Some(conditions) = conditions {
@@ -1478,14 +1477,14 @@ pub struct TriplesRecordCondition<'a> {
     /// Keys authorized to verify the condition
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "1")]
-    pub authorized_by: Option<NonEmptyVec<CryptoKeyTypeChoice<'a>>>,
+    pub authorized_by: Option<Vec<CryptoKeyTypeChoice<'a>>>,
 }
 
 pub struct TriplesRecordConditionBuilder<'a> {
     /// Optional measurement key identifier
     pub mkey: Option<MeasuredElementTypeChoice<'a>>,
     /// Keys authorized to verify the condition
-    pub authorized_by: Option<NonEmptyVec<CryptoKeyTypeChoice<'a>>>,
+    pub authorized_by: Option<Vec<CryptoKeyTypeChoice<'a>>>,
 }
 
 impl<'a> TriplesRecordConditionBuilder<'a> {
@@ -1494,7 +1493,7 @@ impl<'a> TriplesRecordConditionBuilder<'a> {
         self
     }
 
-    pub fn authorized_by(mut self, value: NonEmptyVec<CryptoKeyTypeChoice<'a>>) -> Self {
+    pub fn authorized_by(mut self, value: Vec<CryptoKeyTypeChoice<'a>>) -> Self {
         self.authorized_by = Some(value);
         self
     }
@@ -1517,7 +1516,7 @@ pub struct AttestKeyTripleRecord<'a> {
     /// Environment the keys belong to
     pub environment: EnvironmentMap<'a>,
     /// List of attestation keys
-    pub key_list: NonEmptyVec<CryptoKeyTypeChoice<'a>>,
+    pub key_list: Vec<CryptoKeyTypeChoice<'a>>,
     /// Optional conditions for key usage
     pub conditions: Option<TriplesRecordCondition<'a>>,
 }
@@ -1555,7 +1554,7 @@ impl<'de, 'a> Deserialize<'de> for AttestKeyTripleRecord<'a> {
             type Value = AttestKeyTripleRecord<'a>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("A sequence of [EnvironmentMap, NonEmptyVec<CryptoKeyTypeChoice>, Option<TriplesRecordCondition>]")
+                formatter.write_str("A sequence of [EnvironmentMap, Vec<CryptoKeyTypeChoice>, Option<TriplesRecordCondition>]")
             }
 
             fn visit_seq<A>(
@@ -1569,8 +1568,8 @@ impl<'de, 'a> Deserialize<'de> for AttestKeyTripleRecord<'a> {
                     .next_element::<EnvironmentMap>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let key_list = seq
-                    .next_element::<NonEmptyVec<CryptoKeyTypeChoice>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                    .next_element::<Vec<CryptoKeyTypeChoice>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let conditions = seq.next_element::<Option<TriplesRecordCondition>>()?;
 
                 if let Some(conditions) = conditions {
@@ -1598,7 +1597,7 @@ pub struct DomainDependencyTripleRecord<'a> {
     /// Domain identifier
     pub domain_choice: DomainTypeChoice<'a>,
     /// One or more dependent environments
-    pub environment_map: NonEmptyVec<EnvironmentMap<'a>>,
+    pub environment_map: Vec<EnvironmentMap<'a>>,
 }
 
 // Need to implement Serialize / Deserialize here.
@@ -1627,7 +1626,7 @@ impl<'de, 'a> Deserialize<'de> for DomainDependencyTripleRecord<'a> {
             type Value = DomainDependencyTripleRecord<'a>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("A sequence of [DomainTypeChoice, NonEmptyVec<EnvironmentMap>]")
+                formatter.write_str("A sequence of [DomainTypeChoice, Vec<EnvironmentMap>]")
             }
 
             fn visit_seq<A>(
@@ -1641,8 +1640,8 @@ impl<'de, 'a> Deserialize<'de> for DomainDependencyTripleRecord<'a> {
                     .next_element::<DomainTypeChoice>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let environment_map = seq
-                    .next_element::<NonEmptyVec<EnvironmentMap>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                    .next_element::<Vec<EnvironmentMap>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 Ok(DomainDependencyTripleRecord::new(
                     domain_choice,
                     environment_map,
@@ -1707,7 +1706,7 @@ pub struct DomainMembershipTripleRecord<'a> {
     /// Domain identifier
     pub domain_choice: DomainTypeChoice<'a>,
     /// One or more member environments
-    pub environment_map: NonEmptyVec<EnvironmentMap<'a>>,
+    pub environment_map: Vec<EnvironmentMap<'a>>,
 }
 
 impl<'a> Serialize for DomainMembershipTripleRecord<'a> {
@@ -1737,7 +1736,7 @@ impl<'de, 'a> Deserialize<'de> for DomainMembershipTripleRecord<'a> {
             type Value = DomainMembershipTripleRecord<'a>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("A sequence of [DomainTypeChoice, NonEmptyVec<EnvironmentMap>]")
+                formatter.write_str("A sequence of [DomainTypeChoice, Vec<EnvironmentMap>]")
             }
 
             fn visit_seq<A>(
@@ -1751,8 +1750,8 @@ impl<'de, 'a> Deserialize<'de> for DomainMembershipTripleRecord<'a> {
                     .next_element::<DomainTypeChoice>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let environment_map = seq
-                    .next_element::<NonEmptyVec<EnvironmentMap>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                    .next_element::<Vec<EnvironmentMap>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 Ok(DomainMembershipTripleRecord::new(
                     domain_choice,
                     environment_map,
@@ -1773,7 +1772,7 @@ pub struct CoswidTripleRecord<'a> {
     /// Environment the CoSWID tags belong to
     pub environment_map: EnvironmentMap<'a>,
     /// List of associated CoSWID tag identifiers
-    pub coswid_tags: NonEmptyVec<ConciseSwidTagId<'a>>,
+    pub coswid_tags: Vec<ConciseSwidTagId<'a>>,
 }
 
 impl<'a> Serialize for CoswidTripleRecord<'a> {
@@ -1801,7 +1800,7 @@ impl<'de, 'a> Deserialize<'de> for CoswidTripleRecord<'a> {
             type Value = CoswidTripleRecord<'a>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("A sequence of [EnvironmentMap, NonEmptyVec<ConciseSwidTagId>]")
+                formatter.write_str("A sequence of [EnvironmentMap, Vec<ConciseSwidTagId>]")
             }
 
             fn visit_seq<A>(
@@ -1815,8 +1814,8 @@ impl<'de, 'a> Deserialize<'de> for CoswidTripleRecord<'a> {
                     .next_element::<EnvironmentMap>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let coswid_tags = seq
-                    .next_element::<NonEmptyVec<ConciseSwidTagId>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                    .next_element::<Vec<ConciseSwidTagId>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 Ok(CoswidTripleRecord::new(environment_map, coswid_tags))
             }
         }
@@ -1848,7 +1847,7 @@ pub struct ConditionalEndorsementSeriesTripleRecord<'a> {
     /// Initial environmental condition
     pub condition: StatefulEnvironmentRecord<'a>,
     /// Series of conditional changes
-    pub series: NonEmptyVec<ConditionalSeriesRecord<'a>>,
+    pub series: Vec<ConditionalSeriesRecord<'a>>,
 }
 
 impl<'a> Serialize for ConditionalEndorsementSeriesTripleRecord<'a> {
@@ -1878,7 +1877,9 @@ impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementSeriesTripleRecord<'a> 
             type Value = ConditionalEndorsementSeriesTripleRecord<'a>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("A sequence of [StatefulEnvironmentRecord, NonEmptyVec<ConditionalSeriesRecord>]")
+                formatter.write_str(
+                    "A sequence of [StatefulEnvironmentRecord, Vec<ConditionalSeriesRecord>]",
+                )
             }
 
             fn visit_seq<A>(
@@ -1892,8 +1893,8 @@ impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementSeriesTripleRecord<'a> 
                     .next_element::<StatefulEnvironmentRecord>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let series = seq
-                    .next_element::<NonEmptyVec<ConditionalSeriesRecord>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                    .next_element::<Vec<ConditionalSeriesRecord>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 Ok(ConditionalEndorsementSeriesTripleRecord::new(
                     condition, series,
                 ))
@@ -1913,7 +1914,7 @@ pub struct StatefulEnvironmentRecord<'a> {
     /// Environment being described
     pub environment: EnvironmentMap<'a>,
     /// List of measurement claims about the environment
-    pub claims_list: NonEmptyVec<MeasurementMap<'a>>,
+    pub claims_list: Vec<MeasurementMap<'a>>,
 }
 
 impl<'a> Serialize for StatefulEnvironmentRecord<'a> {
@@ -1957,8 +1958,8 @@ impl<'de, 'a> Deserialize<'de> for StatefulEnvironmentRecord<'a> {
                     .next_element::<EnvironmentMap>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let claims_list = seq
-                    .next_element::<NonEmptyVec<MeasurementMap>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                    .next_element::<Vec<MeasurementMap>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 Ok(StatefulEnvironmentRecord::new(environment, claims_list))
             }
         }
@@ -1974,9 +1975,9 @@ impl<'de, 'a> Deserialize<'de> for StatefulEnvironmentRecord<'a> {
 #[repr(C)]
 pub struct ConditionalSeriesRecord<'a> {
     /// Measurements that must match for changes to apply
-    pub selection: NonEmptyVec<MeasurementMap<'a>>,
+    pub selection: Vec<MeasurementMap<'a>>,
     /// Measurements to add when selection matches
-    pub addition: NonEmptyVec<MeasurementMap<'a>>,
+    pub addition: Vec<MeasurementMap<'a>>,
 }
 
 impl<'a> Serialize for ConditionalSeriesRecord<'a> {
@@ -2004,9 +2005,7 @@ impl<'de, 'a> Deserialize<'de> for ConditionalSeriesRecord<'a> {
             type Value = ConditionalSeriesRecord<'a>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str(
-                    "A sequence of [NonEmptyVec<MeasurementMap>, NonEmptyVec<MeasurementMap>]",
-                )
+                formatter.write_str("A sequence of [Vec<MeasurementMap>, Vec<MeasurementMap>]")
             }
 
             fn visit_seq<A>(
@@ -2017,11 +2016,11 @@ impl<'de, 'a> Deserialize<'de> for ConditionalSeriesRecord<'a> {
                 A: SeqAccess<'de>,
             {
                 let selection = seq
-                    .next_element::<NonEmptyVec<MeasurementMap>>()?
+                    .next_element::<Vec<MeasurementMap>>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let addition = seq
-                    .next_element::<NonEmptyVec<MeasurementMap>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                    .next_element::<Vec<MeasurementMap>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 Ok(ConditionalSeriesRecord::new(selection, addition))
             }
         }
@@ -2037,9 +2036,9 @@ impl<'de, 'a> Deserialize<'de> for ConditionalSeriesRecord<'a> {
 #[repr(C)]
 pub struct ConditionalEndorsementTripleRecord<'a> {
     /// List of environmental conditions
-    pub conditions: NonEmptyVec<StatefulEnvironmentRecord<'a>>,
+    pub conditions: Vec<StatefulEnvironmentRecord<'a>>,
     /// List of endorsements that apply when conditions are met
-    pub endorsements: NonEmptyVec<EndorsedTripleRecord<'a>>,
+    pub endorsements: Vec<EndorsedTripleRecord<'a>>,
 }
 
 impl<'a> Serialize for ConditionalEndorsementTripleRecord<'a> {
@@ -2069,7 +2068,9 @@ impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementTripleRecord<'a> {
             type Value = ConditionalEndorsementTripleRecord<'a>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("A sequence of [NonEmptyVec<StatefulEnvironmentRecord>, NonEmptyVec<EndorsedTripleRecord>]")
+                formatter.write_str(
+                    "A sequence of [Vec<StatefulEnvironmentRecord>, Vec<EndorsedTripleRecord>]",
+                )
             }
 
             fn visit_seq<A>(
@@ -2080,11 +2081,11 @@ impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementTripleRecord<'a> {
                 A: SeqAccess<'de>,
             {
                 let conditions = seq
-                    .next_element::<NonEmptyVec<StatefulEnvironmentRecord>>()?
+                    .next_element::<Vec<StatefulEnvironmentRecord>>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 let endorsements = seq
-                    .next_element::<NonEmptyVec<EndorsedTripleRecord>>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                    .next_element::<Vec<EndorsedTripleRecord>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
                 Ok(ConditionalEndorsementTripleRecord::new(
                     conditions,
                     endorsements,

@@ -193,8 +193,8 @@ impl<'a> ExtensionMap<'a> {
             Self::Null => 0,
             Self::Text(value) => value.len(),
             Self::Bytes(value) => value.bytes.len(),
-            Self::Uint(_) => 1,
-            Self::Int(_) => 1,
+            Self::Uint(_) => 4,
+            Self::Int(_) => 4,
             Self::Bool(_) => 1,
             Self::Array(value) => value.len(),
             Self::Map(value) => value.len(),
@@ -398,82 +398,6 @@ generate_tagged!(
     (562, PkixAsn1DerCertType, TaggedBytes, "A PKIX certificate in ASN.1 DER format using CBOR tag 562"),
     (563, TaggedMaskedRawValue, MaskedRawValue, "Represents a masked raw value with its mask"),
 );
-
-#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct NonEmptyVec<T>(Vec<T>);
-
-impl<T> NonEmptyVec<T> {
-    pub fn new(one: T, more: Vec<T>) -> Self {
-        let mut items = Vec::with_capacity(1 + more.len());
-        items.push(one);
-        items.extend(more);
-        Self(items)
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn push(&mut self, value: T) {
-        self.0.push(value)
-    }
-
-    pub fn empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl<T> From<T> for NonEmptyVec<T> {
-    fn from(value: T) -> Self {
-        Self(vec![value])
-    }
-}
-
-impl<T: Clone> From<&[T]> for NonEmptyVec<T> {
-    fn from(value: &[T]) -> Self {
-        Self(value.to_vec())
-    }
-}
-
-impl<T> Deref for NonEmptyVec<T> {
-    type Target = [T];
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T> DerefMut for NonEmptyVec<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl<T> AsRef<[T]> for NonEmptyVec<T> {
-    fn as_ref(&self) -> &[T] {
-        &self.0
-    }
-}
-
-impl<T> AsMut<[T]> for NonEmptyVec<T> {
-    fn as_mut(&mut self) -> &mut [T] {
-        &mut self.0
-    }
-}
-
-impl<T> Index<usize> for NonEmptyVec<T> {
-    type Output = T;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
-    }
-}
-
-impl<T> IndexMut<usize> for NonEmptyVec<T> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0[index]
-    }
-}
 
 /// Represents a value that can be either text or bytes
 #[repr(C)]
@@ -876,7 +800,17 @@ impl<'a> Ulabel<'a> {
 #[repr(C)]
 pub enum OneOrMore<T> {
     One(T),
-    Many(Vec<T>),
+    More(Vec<T>),
+}
+
+impl<T: Clone> From<&[T]> for OneOrMore<T> {
+    fn from(value: &[T]) -> Self {
+        if value.len() == 1 {
+            Self::One(value[0].clone())
+        } else {
+            Self::More(value.to_vec())
+        }
+    }
 }
 
 impl<T: Clone> OneOrMore<T> {
@@ -887,9 +821,9 @@ impl<T: Clone> OneOrMore<T> {
         }
     }
 
-    pub fn as_many(&self) -> Option<Vec<T>> {
+    pub fn as_many(&self) -> Option<&[T]> {
         match self {
-            Self::Many(val) => Some(val.clone()),
+            Self::More(val) => Some(&*val),
             _ => None,
         }
     }
@@ -899,14 +833,14 @@ impl<T> OneOrMore<T> {
     pub fn is_empty(&self) -> bool {
         match self {
             OneOrMore::One(_) => false,
-            OneOrMore::Many(items) => items.is_empty(),
+            OneOrMore::More(items) => items.is_empty(),
         }
     }
 
     pub fn len(&self) -> usize {
         match self {
             OneOrMore::One(_) => 1usize,
-            OneOrMore::Many(items) => items.len(),
+            OneOrMore::More(items) => items.len(),
         }
     }
 
@@ -919,7 +853,7 @@ impl<T> OneOrMore<T> {
                     None
                 }
             }
-            OneOrMore::Many(items) => items.get(index),
+            OneOrMore::More(items) => items.get(index),
         }
     }
 }
@@ -962,14 +896,14 @@ impl<'a> AttributeValue<'a> {
         }
     }
 
-    pub fn as_many_text(&self) -> Option<Vec<Text<'a>>> {
+    pub fn as_many_text(&self) -> Option<&[Text<'a>]> {
         match self {
             AttributeValue::Text(value) => value.as_many(),
             _ => None,
         }
     }
 
-    pub fn as_many_int(&self) -> Option<Vec<Int>> {
+    pub fn as_many_int(&self) -> Option<&[Int]> {
         match self {
             AttributeValue::Int(value) => value.as_many(),
             _ => None,
@@ -1216,7 +1150,7 @@ impl<'de, 'a> Deserialize<'de> for Digest<'a> {
 #[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum CoseKeySetOrKey<'a> {
     /// A set of COSE keys
-    KeySet(NonEmptyVec<CoseKey<'a>>),
+    KeySet(Vec<CoseKey<'a>>),
     /// A single COSE key
     Key(CoseKey<'a>),
 }
@@ -1236,7 +1170,7 @@ impl<'a> CoseKeySetOrKey<'a> {
         }
     }
 
-    pub fn as_key_set(&self) -> Option<&NonEmptyVec<CoseKey<'a>>> {
+    pub fn as_key_set(&self) -> Option<&Vec<CoseKey<'a>>> {
         match self {
             CoseKeySetOrKey::KeySet(keys) => Some(keys),
             _ => None,
@@ -1294,8 +1228,8 @@ impl<'de, 'a> Deserialize<'de> for CoseKeySetOrKey<'a> {
                     return Err(serde::de::Error::custom("empty key set"));
                 }
 
-                // Convert to NonEmptyVec
-                let non_empty_keys = NonEmptyVec::from(keys);
+                // Convert to Vec
+                let non_empty_keys = Vec::from(keys);
                 Ok(CoseKeySetOrKey::KeySet(non_empty_keys))
             }
 
@@ -1334,7 +1268,7 @@ pub struct CoseKey<'a> {
     pub alg: AlgLabel<'a>,
     /// Allowed operations for this key
     #[serde(rename = "4")]
-    pub key_ops: NonEmptyVec<Label<'a>>,
+    pub key_ops: Vec<Label<'a>>,
     /// Base initialization vector
     #[serde(rename = "5")]
     pub base_iv: TaggedBytes,
@@ -2315,7 +2249,7 @@ mod tests {
                 kty: Label::Int(1), // EC2 key type
                 kid: TaggedBytes::from(Bytes::from(vec![0x01, 0x02, 0x03])),
                 alg: AlgLabel::Int(CoseAlgorithm::ES256),
-                key_ops: NonEmptyVec::from(Label::Int(1)), // sign operation
+                key_ops: vec![Label::Int(1)], // sign operation
                 base_iv: TaggedBytes::from(Bytes::from(vec![0x04, 0x05, 0x06])),
                 extension: None,
             };
