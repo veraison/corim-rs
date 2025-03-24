@@ -137,6 +137,26 @@ pub struct ConciseMidTag<'a> {
 }
 
 impl<'a> ConciseMidTag<'a> {
+    /// Creates a new default ConciseMidTag instance
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use corim_rs::comid::ConciseMidTag;
+    /// use corim_rs::comid::TagIdentityMap;
+    /// use corim_rs::comid::TagIdTypeChoice;
+    /// use corim_rs::core::Tstr;
+    ///
+    /// let mut comid = ConciseMidTag::default();
+    ///
+    /// // Set required tag identity
+    /// comid.tag_identity = TagIdentityMap {
+    ///     tag_id: TagIdTypeChoice::Tstr(Tstr::from("example-id")),
+    ///     tag_version: Some(1),
+    /// };
+    /// ```
+    // The Default trait provides an implementation already
+
     /// Adds a reference value to the CoMID tag's reference triples.
     ///
     /// This method serializes the provided value to CBOR bytes and adds it as a raw measurement value
@@ -146,7 +166,7 @@ impl<'a> ConciseMidTag<'a> {
     /// # Arguments
     ///
     /// * `environment` - The environment map that describes the context for this reference value
-    /// * `mkey` - Optional measurement element type that identifies what is being measured
+    /// * `mkey` - Measurement element type that identifies what is being measured
     /// * `value` - The value to serialize and store as the reference value
     ///
     /// # Returns
@@ -155,45 +175,26 @@ impl<'a> ConciseMidTag<'a> {
     ///
     /// # Example
     ///
-    /// ``` ignore
+    /// ```ignore
     /// use corim_rs::{
-    ///     comid::{ConciseMidTag, TagIdentityMap, ComidEntityMap, TriplesMap, TagIdTypeChoice},
-    ///     core::{OneOrMore, Text, Tstr},
+    ///     comid::{ConciseMidTag, TagIdentityMap, TagIdTypeChoice},
     ///     triples::{EnvironmentMap, MeasuredElementTypeChoice},
     /// };
+    /// use corim_rs::core::Tstr;
     ///
-    /// let mut comid = ConciseMidTag {
-    ///     language: None,
-    ///     tag_identity: TagIdentityMap {
-    ///         tag_id: TagIdTypeChoice::Tstr(Tstr::from("example-id")),
-    ///         tag_version: Some(1),
-    ///     },
-    ///     entities: OneOrMore::One(ComidEntityMap {
-    ///         entity_name: Text::from("Example Corp"),
-    ///         reg_id: None,
-    ///         role: OneOrMore::One(corim_rs::comid::ComidRoleTypeChoice::TagCreator),
-    ///         extension: None,
-    ///     }),
-    ///     linked_tags: None,
-    ///     triples: TriplesMap::default(),
-    ///     extension: None,
+    /// let mut comid = ConciseMidTag::default();
+    /// comid.tag_identity = TagIdentityMap {
+    ///     tag_id: TagIdTypeChoice::Tstr(Tstr::from("example-id")),
+    ///     tag_version: Some(1),
     /// };
     ///
     /// // Add a reference value
     /// let env = EnvironmentMap::default();
+    /// let mkey = MeasuredElementTypeChoice::from("measured-component");
     /// let reference_data = "example reference value";
-    /// comid.add_reference_value(env, None, &reference_data).expect("Failed to add reference value");
+    /// comid.add_reference_raw_value(&env, mkey, &reference_data)
+    ///     .expect("Failed to add reference value");
     /// ```
-    ///
-    /// # How It Works
-    ///
-    /// 1. The value is serialized to CBOR bytes using the `ciborium` library
-    /// 2. The bytes are wrapped in a `TaggedBytes` structure
-    /// 3. A `MeasurementMap` is created with the provided measurement key and the raw value
-    /// 4. The method then updates the CoMID's reference triples based on existing data:
-    ///    - If no reference triples exist, a new one is created
-    ///    - If a reference triple with the matching environment exists, the measurement is added to it
-    ///    - If reference triples exist but none match the environment, a new triple is added
     pub fn add_reference_raw_value<T>(
         &mut self,
         environment: &EnvironmentMap<'a>,
@@ -248,6 +249,9 @@ impl<'a> ConciseMidTag<'a> {
     /// within an endorsed triple. If an endorsed triple with the same environment already exists,
     /// the measurement is added to that triple. Otherwise, a new endorsed triple is created.
     ///
+    /// Endorsed triples represent expected measurements that should be used to validate
+    /// actual measurements during verification.
+    ///
     /// # Arguments
     ///
     /// * `environment` - The environment map that describes the context for this endorsement value
@@ -262,13 +266,20 @@ impl<'a> ConciseMidTag<'a> {
     ///
     /// ```ignore
     /// use corim_rs::{
-    ///     comid::ConciseMidTag,
+    ///     comid::{ConciseMidTag, TagIdentityMap, TagIdTypeChoice},
     ///     triples::{EnvironmentMap, MeasuredElementTypeChoice},
     /// };
+    /// use corim_rs::core::Tstr;
     ///
     /// let mut comid = ConciseMidTag::default();
+    /// comid.tag_identity = TagIdentityMap {
+    ///     tag_id: TagIdTypeChoice::Tstr(Tstr::from("example-id")),
+    ///     tag_version: Some(1),
+    /// };
+    ///
+    /// // Add an endorsement value
     /// let env = EnvironmentMap::default();
-    /// let mkey = MeasuredElementTypeChoice::SoftwareComponent;
+    /// let mkey = MeasuredElementTypeChoice::from("software-component");
     /// let endorsement_data = "example endorsement value";
     /// comid.add_endorsement_raw_value(&env, mkey, &endorsement_data)
     ///     .expect("Failed to add endorsement value");
@@ -363,6 +374,31 @@ impl<'a> TagIdTypeChoice<'a> {
         }
     }
 
+    /// Returns a clone of the UUID if this is a UUID type identifier
+    ///
+    /// # Returns
+    ///
+    /// * `Some(UuidType)` - If this is a UUID identifier, returns a clone of the UUID
+    /// * `None` - If this is a text string identifier
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use corim_rs::{
+    ///     comid::TagIdTypeChoice,
+    ///     core::UuidType,
+    /// };
+    /// use corim_rs::fixed_bytes::FixedBytes;
+    ///
+    /// // Create a UUID type tag ID
+    /// let uuid_bytes = [0; 16]; // All zeros for example
+    /// let uuid = UuidType::from(FixedBytes::from(uuid_bytes));
+    /// let tag_id = TagIdTypeChoice::Uuid(uuid);
+    ///
+    /// // Extract the UUID
+    /// let extracted_uuid = tag_id.as_uuid();
+    /// assert!(extracted_uuid.is_some());
+    /// ```
     pub fn as_uuid(&self) -> Option<UuidType> {
         match self {
             Self::Uuid(uuid) => Some((*uuid).clone()),
@@ -400,15 +436,27 @@ pub struct ComidEntityMap<'a> {
 }
 
 /// Role types that can be assigned to entities
+///
+/// Each role type represents a specific responsibility that an entity
+/// may have in relation to a module or tag.
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum ComidRoleTypeChoice {
     /// Entity that created the tag (value: 0)
+    ///
+    /// This role indicates the entity responsible for creating and
+    /// signing the CoMID tag itself, not necessarily the module it describes.
     TagCreator = 0,
     /// Entity that created the module (value: 1)
+    ///
+    /// This role indicates the entity responsible for developing or
+    /// manufacturing the module described by the tag.
     Creator = 1,
     /// Entity that maintains the module (value: 2)
+    ///
+    /// This role indicates the entity responsible for ongoing maintenance,
+    /// updates, and support for the module described by the tag.
     Maintainer = 2,
 }
 
@@ -427,15 +475,23 @@ pub struct LinkedTagMap<'a> {
 }
 
 /// Types of relationships between tags
+///
+/// This enum defines how tags can be related to each other,
+/// supporting versioning and supplemental information scenarios.
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum TagRelTypeChoice {
     /// This tag supplements the linked tag by providing additional information
     /// without replacing or invalidating the linked tag's content
+    ///
+    /// Use this relationship type when adding complementary information to an existing tag.
     Supplements,
     /// This tag completely replaces the linked tag, indicating that the linked
     /// tag should no longer be considered valid or current
+    ///
+    /// Use this relationship type when creating a new version of a tag that supersedes
+    /// an older version.
     Replaces,
 }
 
@@ -513,42 +569,162 @@ pub struct TriplesMapBuilder<'a> {
 }
 
 impl<'a> TriplesMapBuilder<'a> {
-    // Setter methods for each field
+    /// Creates an empty TriplesMapBuilder
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use corim_rs::comid::TriplesMapBuilder;
+    ///
+    /// let builder = TriplesMapBuilder::default();
+    /// ```
+    // Default impl is already provided
+
+    /// Adds reference triples to the builder
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Vector of reference triple records
+    ///
+    /// # Returns
+    ///
+    /// Returns self for method chaining
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use corim_rs::comid::TriplesMapBuilder;
+    /// # use corim_rs::triples::{ReferenceTripleRecord, EnvironmentMap};
+    /// #
+    /// let env = EnvironmentMap::default();
+    /// let triple = ReferenceTripleRecord {
+    ///     ref_env: env,
+    ///     ref_claims: vec![].into(), // Empty for example
+    /// };
+    ///
+    /// let builder = TriplesMapBuilder::default()
+    ///     .reference_triples(vec![triple]);
+    /// ```
     pub fn reference_triples(mut self, value: Vec<ReferenceTripleRecord<'a>>) -> Self {
         self.reference_triples = Some(value);
         self
     }
-
+    /// Adds endorsed triples to the builder
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Vector of endorsed triple records
+    ///
+    /// # Returns
+    ///
+    /// Returns self for method chaining
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use corim_rs::comid::TriplesMapBuilder;
+    /// # use corim_rs::triples::{EndorsedTripleRecord, EnvironmentMap};
+    /// #
+    /// let env = EnvironmentMap::default();
+    /// let triple = EndorsedTripleRecord {
+    ///     condition: env,
+    ///     endorsement: vec![].into(), // Empty for example
+    /// };
+    ///
+    /// let builder = TriplesMapBuilder::default()
+    ///     .endorsed_triples(vec![triple]);
+    /// ```
     pub fn endorsed_triples(mut self, value: Vec<EndorsedTripleRecord<'a>>) -> Self {
         self.endorsed_triples = Some(value);
         self
     }
-
+    /// Adds identity triples to the builder
+    ///
+    /// Identity triples associate cryptographic keys with environments.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Vector of identity triple records
+    ///
+    /// # Returns
+    ///
+    /// Returns self for method chaining
     pub fn identity_triples(mut self, value: Vec<IdentityTripleRecord<'a>>) -> Self {
         self.identity_triples = Some(value);
         self
     }
-
+    /// Adds attestation key triples to the builder
+    ///
+    /// Attestation key triples define keys used for attestation purposes.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Vector of attestation key triple records
+    ///
+    /// # Returns
+    ///
+    /// Returns self for method chaining
     pub fn attest_key_triples(mut self, value: Vec<AttestKeyTripleRecord<'a>>) -> Self {
         self.attest_key_triples = Some(value);
         self
     }
-
+    /// Adds domain dependency triples to the builder
+    ///
+    /// Domain dependency triples express relationships between different domains.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Vector of domain dependency triple records
+    ///
+    /// # Returns
+    ///
+    /// Returns self for method chaining
     pub fn dependency_triples(mut self, value: Vec<DomainDependencyTripleRecord<'a>>) -> Self {
         self.dependency_triples = Some(value);
         self
     }
-
+    /// Adds domain membership triples to the builder
+    ///
+    /// Domain membership triples define which entities belong to which domains.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Vector of domain membership triple records
+    ///
+    /// # Returns
+    ///
+    /// Returns self for method chaining
     pub fn membership_triples(mut self, value: Vec<DomainMembershipTripleRecord<'a>>) -> Self {
         self.membership_triples = Some(value);
         self
     }
-
+    /// Adds CoSWID triples to the builder
+    ///
+    /// CoSWID triples link to software identification tags.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Vector of CoSWID triple records
+    ///
+    /// # Returns
+    ///
+    /// Returns self for method chaining
     pub fn coswid_triples(mut self, value: Vec<CoswidTripleRecord<'a>>) -> Self {
         self.coswid_triples = Some(value);
         self
     }
-
+    /// Adds conditional endorsement series triples to the builder
+    ///
+    /// These triples define a series of conditional endorsements for complex
+    /// verification scenarios.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Vector of conditional endorsement series triple records
+    ///
+    /// # Returns
+    ///
+    /// Returns self for method chaining
     pub fn conditional_endorsement_series_triples(
         mut self,
         value: Vec<ConditionalEndorsementSeriesTripleRecord<'a>>,
@@ -556,7 +732,18 @@ impl<'a> TriplesMapBuilder<'a> {
         self.conditional_endorsement_series_triples = Some(value);
         self
     }
-
+    /// Adds conditional endorsement triples to the builder
+    ///
+    /// Conditional endorsement triples express verification requirements that
+    /// must be satisfied under specific conditions.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Vector of conditional endorsement triple records
+    ///
+    /// # Returns
+    ///
+    /// Returns self for method chaining
     pub fn conditional_endorsement_triples(
         mut self,
         value: Vec<ConditionalEndorsementTripleRecord<'a>>,
@@ -564,13 +751,49 @@ impl<'a> TriplesMapBuilder<'a> {
         self.conditional_endorsement_triples = Some(value);
         self
     }
-
+    /// Adds extension data to the builder
+    ///
+    /// Extensions allow for future expandability of the triples map.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - Extension map containing additional data
+    ///
+    /// # Returns
+    ///
+    /// Returns self for method chaining
     pub fn extension(mut self, value: ExtensionMap<'a>) -> Self {
         self.extension = Some(value);
         self
     }
 
-    /// Builds the TriplesMap, returning an error if no fields are set
+    /// Builds the TriplesMap, ensuring at least one field is set
+    ///
+    /// According to the CoRIM specification, a TriplesMap must contain at least
+    /// one type of triple. This method enforces that requirement.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(TriplesMap)` - If at least one field is set
+    /// * `Err(ComidError::EmptyTriplesMap)` - If no fields are set
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use corim_rs::comid::TriplesMapBuilder;
+    /// # use corim_rs::triples::{ReferenceTripleRecord, EnvironmentMap};
+    /// #
+    /// let env = EnvironmentMap::default();
+    /// let triple = ReferenceTripleRecord {
+    ///     ref_env: env,
+    ///     ref_claims: vec![].into(),
+    /// };
+    ///
+    /// let triples_map = TriplesMapBuilder::default()
+    ///     .reference_triples(vec![triple])
+    ///     .build()
+    ///     .expect("Failed to build TriplesMap");
+    /// ```
     pub fn build(self) -> Result<TriplesMap<'a>> {
         if self.reference_triples.is_none()
             && self.endorsed_triples.is_none()
