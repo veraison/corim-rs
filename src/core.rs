@@ -43,7 +43,7 @@ use std::{
     ops::{Deref, DerefMut, Index, IndexMut},
 };
 
-use derive_more::{AsMut, AsRef, Constructor, From, TryFrom};
+use derive_more::{Constructor, From, TryFrom};
 use serde::{
     de::{self, SeqAccess, Visitor},
     ser::SerializeSeq,
@@ -119,6 +119,20 @@ impl<const N: usize> PartialEq<[u8; N]> for Bytes {
     }
 }
 
+impl Index<usize> for Bytes {
+    type Output = u8;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.bytes[index]
+    }
+}
+
+impl IndexMut<usize> for Bytes {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.bytes[index]
+    }
+}
+
 impl Serialize for Bytes {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -173,23 +187,93 @@ impl<'a> ExtensionMap<'a> {
             Self::Map(value) => value.is_empty(),
         }
     }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Null => 0,
+            Self::Text(value) => value.len(),
+            Self::Bytes(value) => value.bytes.len(),
+            Self::Uint(_) => 1,
+            Self::Int(_) => 1,
+            Self::Bool(_) => 1,
+            Self::Array(value) => value.len(),
+            Self::Map(value) => value.len(),
+        }
+    }
+
+    /// Returns `true` if the variant is `Null`, `false` otherwise.
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
+    }
+
+    /// Attempts to extract a `Bool` value.
+    pub fn as_bool(&self) -> Option<Bool> {
+        match self {
+            Self::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    /// Attempts to extract an `Int` value.
+    pub fn as_int(&self) -> Option<Int> {
+        match self {
+            Self::Int(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    /// Attempts to extract a `Uint` value.
+    pub fn as_uint(&self) -> Option<Uint> {
+        match self {
+            Self::Uint(u) => Some(*u),
+            _ => None,
+        }
+    }
+
+    /// Attempts to extract a `Text` value as a string slice.
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Text(t) => Some(t.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// Attempts to extract a `Text` value as an owned string.
+    pub fn as_string(&self) -> Option<String> {
+        match self {
+            Self::Text(text) => Some(text.to_string()),
+            _ => None,
+        }
+    }
+
+    /// Attempts to extract a `Bytes` value as a byte slice.
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Bytes(b) => Some(b.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// Attempts to extract an `Array` value as a reference to the vector.
+    pub fn as_array(&self) -> Option<&Vec<ExtensionMap<'a>>> {
+        match self {
+            Self::Array(a) => Some(a),
+            _ => None,
+        }
+    }
+
+    /// Attempts to extract a `Map` value as a reference to the map.
+    pub fn as_map(&self) -> Option<&BTreeMap<Label<'a>, ExtensionMap<'a>>> {
+        match self {
+            Self::Map(m) => Some(m),
+            _ => None,
+        }
+    }
 }
 
 /// UUID type representing a 16-byte unique identifier
 #[derive(
-    Default,
-    Debug,
-    Serialize,
-    Deserialize,
-    From,
-    AsRef,
-    AsMut,
-    Constructor,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Clone,
+    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
 )]
 pub struct UuidType(pub FixedBytes<16>);
 
@@ -215,17 +299,29 @@ impl DerefMut for UuidType {
     }
 }
 
+impl AsRef<[u8]> for UuidType {
+    fn as_ref(&self) -> &[u8] {
+        &self.0 .0
+    }
+}
+
+impl AsMut<[u8]> for UuidType {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.0 .0
+    }
+}
+
 impl Index<usize> for UuidType {
     type Output = u8;
 
     fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
+        &self.0 .0[index]
     }
 }
 
 impl IndexMut<usize> for UuidType {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0[index]
+        &mut self.0 .0[index]
     }
 }
 
@@ -243,17 +339,43 @@ impl TryFrom<&[u8]> for UeidType {
     }
 }
 
+impl AsRef<[u8]> for UeidType {
+    fn as_ref(&self) -> &[u8] {
+        &self.0 .0
+    }
+}
+
+impl AsMut<[u8]> for UeidType {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.0 .0
+    }
+}
+
+impl Deref for UeidType {
+    type Target = [u8; 33];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for UeidType {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl Index<usize> for UeidType {
     type Output = u8;
 
     fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
+        &self.0 .0[index]
     }
 }
 
 impl IndexMut<usize> for UeidType {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0[index]
+        &mut self.0 .0[index]
     }
 }
 
@@ -364,6 +486,36 @@ pub enum TextOrBytes<'a> {
     Bytes(TaggedBytes),
 }
 
+impl<'a> TextOrBytes<'a> {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Text(value) => value.is_empty(),
+            Self::Bytes(value) => value.is_empty(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Text(value) => value.len(),
+            Self::Bytes(value) => value.len(),
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Text(value) => Some(value.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Bytes(value) => Some(value.as_ref()),
+            _ => None,
+        }
+    }
+}
+
 impl<'a> From<&'a str> for TextOrBytes<'a> {
     fn from(value: &'a str) -> Self {
         Self::Text(std::borrow::Cow::Borrowed(value))
@@ -379,6 +531,36 @@ pub enum TextOrBytesSized<'a, const N: usize> {
     Text(Text<'a>),
     /// Fixed-size byte array
     Bytes(FixedBytes<N>),
+}
+
+impl<'a, const N: usize> TextOrBytesSized<'a, N> {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Text(value) => value.is_empty(),
+            Self::Bytes(value) => value.is_empty(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Text(value) => value.len(),
+            Self::Bytes(value) => value.len(),
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Text(value) => Some(value.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Bytes(value) => Some(value.as_ref()),
+            _ => None,
+        }
+    }
 }
 
 /// Represents a hash entry with algorithm ID and hash value
@@ -467,6 +649,36 @@ pub enum Label<'a> {
     Int(Int),
 }
 
+impl<'a> Label<'a> {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Label::Text(value) => value.is_empty(),
+            Label::Int(_) => false,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Label::Text(value) => value.len(),
+            Label::Int(_) => 1,
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Label::Text(value) => Some(value.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_int(&self) -> Option<Int> {
+        match self {
+            Label::Int(value) => Some(*value),
+            _ => None,
+        }
+    }
+}
+
 impl<'a> From<&'a str> for Label<'a> {
     fn from(value: &'a str) -> Self {
         Self::Text(std::borrow::Cow::Borrowed(value))
@@ -479,6 +691,36 @@ impl<'a> From<&'a str> for Label<'a> {
 pub enum AlgLabel<'a> {
     Text(Text<'a>),
     Int(CoseAlgorithm),
+}
+
+impl<'a> AlgLabel<'a> {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            AlgLabel::Text(value) => value.is_empty(),
+            AlgLabel::Int(_) => false,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            AlgLabel::Text(value) => value.len(),
+            AlgLabel::Int(_) => 1,
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            AlgLabel::Text(value) => Some(value.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_int(&self) -> Option<CoseAlgorithm> {
+        match self {
+            AlgLabel::Int(value) => Some(value.clone()),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> Serialize for AlgLabel<'a> {
@@ -598,6 +840,36 @@ pub enum Ulabel<'a> {
     Uint(Uint),
 }
 
+impl<'a> Ulabel<'a> {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Ulabel::Text(value) => value.is_empty(),
+            Ulabel::Uint(_) => false,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Ulabel::Text(value) => value.len(),
+            Ulabel::Uint(_) => 1,
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Ulabel::Text(value) => Some(value.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_uint(&self) -> Option<Uint> {
+        match self {
+            Ulabel::Uint(value) => Some(*value),
+            _ => None,
+        }
+    }
+}
+
 /// Represents one or more values that can be either text or integers
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, PartialOrd, Ord, From, TryFrom)]
 #[serde(untagged)]
@@ -607,7 +879,30 @@ pub enum OneOrMore<T> {
     Many(Vec<T>),
 }
 
+impl<T: Clone> OneOrMore<T> {
+    pub fn as_one(&self) -> Option<T> {
+        match self {
+            Self::One(val) => Some(val.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_many(&self) -> Option<Vec<T>> {
+        match self {
+            Self::Many(val) => Some(val.clone()),
+            _ => None,
+        }
+    }
+}
+
 impl<T> OneOrMore<T> {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            OneOrMore::One(_) => false,
+            OneOrMore::Many(items) => items.is_empty(),
+        }
+    }
+
     pub fn len(&self) -> usize {
         match self {
             OneOrMore::One(_) => 1usize,
@@ -636,6 +931,50 @@ impl<T> OneOrMore<T> {
 pub enum AttributeValue<'a> {
     Text(OneOrMore<Text<'a>>),
     Int(OneOrMore<Int>),
+}
+
+impl<'a> AttributeValue<'a> {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            AttributeValue::Text(value) => value.is_empty(),
+            AttributeValue::Int(value) => value.is_empty(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            AttributeValue::Text(value) => value.len(),
+            AttributeValue::Int(value) => value.len(),
+        }
+    }
+
+    pub fn as_one_text(&self) -> Option<Text<'a>> {
+        match self {
+            AttributeValue::Text(value) => value.as_one(),
+            _ => None,
+        }
+    }
+
+    pub fn as_one_int(&self) -> Option<Int> {
+        match self {
+            AttributeValue::Int(value) => value.as_one(),
+            _ => None,
+        }
+    }
+
+    pub fn as_many_text(&self) -> Option<Vec<Text<'a>>> {
+        match self {
+            AttributeValue::Text(value) => value.as_many(),
+            _ => None,
+        }
+    }
+
+    pub fn as_many_int(&self) -> Option<Vec<Int>> {
+        match self {
+            AttributeValue::Int(value) => value.as_many(),
+            _ => None,
+        }
+    }
 }
 
 /// Represents global attributes with optional language tag and arbitrary attributes
@@ -882,6 +1221,36 @@ pub enum CoseKeySetOrKey<'a> {
     Key(CoseKey<'a>),
 }
 
+impl<'a> CoseKeySetOrKey<'a> {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            CoseKeySetOrKey::KeySet(keys) => keys.is_empty(),
+            CoseKeySetOrKey::Key(_) => false,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            CoseKeySetOrKey::KeySet(keys) => keys.len(),
+            CoseKeySetOrKey::Key(_) => 1,
+        }
+    }
+
+    pub fn as_key_set(&self) -> Option<&NonEmptyVec<CoseKey<'a>>> {
+        match self {
+            CoseKeySetOrKey::KeySet(keys) => Some(keys),
+            _ => None,
+        }
+    }
+
+    pub fn as_key(&self) -> Option<&CoseKey<'a>> {
+        match self {
+            CoseKeySetOrKey::Key(key) => Some(key),
+            _ => None,
+        }
+    }
+}
+
 impl<'a> Serialize for CoseKeySetOrKey<'a> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -1055,6 +1424,22 @@ pub type RawValueMaskType = Bytes;
 pub enum RawValueTypeChoice {
     TaggedBytes(TaggedBytes),
     TaggedMaskedRawValue(TaggedMaskedRawValue),
+}
+
+impl RawValueTypeChoice {
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::TaggedBytes(tagged_bytes) => Some(tagged_bytes.as_ref().as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_raw_mask_value(&self) -> Option<(&[u8], &[u8])> {
+        match self {
+            Self::TaggedMaskedRawValue(tmrv) => Some((&tmrv.as_ref().value, &tmrv.as_ref().mask)),
+            _ => None,
+        }
+    }
 }
 
 impl Serialize for RawValueTypeChoice {

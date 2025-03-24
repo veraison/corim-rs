@@ -242,6 +242,37 @@ impl<'a> ConciseMidTag<'a> {
         }
         Ok(())
     }
+    /// Adds an endorsement value to the CoMID tag's endorsed triples.
+    ///
+    /// This method serializes the provided value to CBOR bytes and adds it as a raw measurement value
+    /// within an endorsed triple. If an endorsed triple with the same environment already exists,
+    /// the measurement is added to that triple. Otherwise, a new endorsed triple is created.
+    ///
+    /// # Arguments
+    ///
+    /// * `environment` - The environment map that describes the context for this endorsement value
+    /// * `mkey` - Measurement element type that identifies what is being measured
+    /// * `value` - The value to serialize and store as the endorsement value
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if successful, or an `std::io::Error` if serialization fails.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use corim_rs::{
+    ///     comid::ConciseMidTag,
+    ///     triples::{EnvironmentMap, MeasuredElementTypeChoice},
+    /// };
+    ///
+    /// let mut comid = ConciseMidTag::default();
+    /// let env = EnvironmentMap::default();
+    /// let mkey = MeasuredElementTypeChoice::SoftwareComponent;
+    /// let endorsement_data = "example endorsement value";
+    /// comid.add_endorsement_raw_value(&env, mkey, &endorsement_data)
+    ///     .expect("Failed to add endorsement value");
+    /// ```
     pub fn add_endorsement_raw_value<T>(
         &mut self,
         environment: &EnvironmentMap<'a>,
@@ -309,6 +340,10 @@ pub struct TagIdentityMap<'a> {
 }
 
 /// Represents either a string or UUID tag identifier
+///
+/// This enum allows CoMID tags to be identified by either a text string
+/// or a UUID, following the schema definition in the CoRIM specification.
+/// Tag identifiers are used in the tag identity map and for linking between tags.
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
@@ -319,6 +354,22 @@ pub enum TagIdTypeChoice<'a> {
     Uuid(UuidType),
 }
 
+impl<'a> TagIdTypeChoice<'a> {
+    /// Returns the tag identifier as a string, if it is a text value
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Tstr(tstr) => Some(tstr),
+            _ => None,
+        }
+    }
+
+    pub fn as_uuid(&self) -> Option<UuidType> {
+        match self {
+            Self::Uuid(uuid) => Some((*uuid).clone()),
+            _ => None,
+        }
+    }
+}
 
 impl<'a> From<&'a str> for TagIdTypeChoice<'a> {
     fn from(value: &'a str) -> Self {

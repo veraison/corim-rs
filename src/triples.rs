@@ -91,6 +91,7 @@
 
 use std::{
     marker::PhantomData,
+    net::{Ipv4Addr, Ipv6Addr},
     ops::{Deref, DerefMut},
 };
 
@@ -321,18 +322,128 @@ pub enum ClassIdTypeChoice {
     Bytes(Bytes),
 }
 
-// impl Serialize for ClassIdTypeChoice {
-//     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         match self {
-//             ClassIdTypeChoice::Oid(value) => value.serialize(serializer),
-//             ClassIdTypeChoice::Uuid(value) => value.serialize(serializer),
-//             ClassIdTypeChoice::Bytes(value) => value.serialize(serializer),
-//         }
-//     }
-// }
+impl ClassIdTypeChoice {
+    /// Returns a byte slice reference to the underlying data regardless of variant type
+    ///
+    /// This method provides uniform access to the internal bytes of a ClassIdTypeChoice,
+    /// normalizing access across the different variant types.
+    ///
+    /// # Returns
+    ///
+    /// A slice of bytes (`&[u8]`) representing the raw data of the identifier
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use corim_rs::triples::ClassIdTypeChoice;
+    /// use corim_rs::Bytes;
+    ///
+    /// let id = ClassIdTypeChoice::Bytes(Bytes::from(vec![1, 2, 3, 4]));
+    /// let bytes = id.as_bytes();
+    /// assert_eq!(bytes, &[1, 2, 3, 4]);
+    /// ```
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            Self::Oid(oid_type) => oid_type.as_ref(),
+            Self::Uuid(uuid_type) => uuid_type.as_ref().as_ref(),
+            Self::Bytes(bytes) => bytes.as_ref(),
+        }
+    }
+
+    /// Returns the byte representation if this is an OID variant, or None otherwise
+    ///
+    /// This method is useful when you specifically need to work with OID data
+    /// and want to verify the variant type before accessing.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&[u8])` containing the OID bytes if this is an OID variant
+    /// - `None` if this is any other variant
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use corim_rs::triples::ClassIdTypeChoice;
+    /// use corim_rs::{OidType, Bytes};
+    ///
+    /// // An OID variant
+    /// let oid_id = ClassIdTypeChoice::Oid(OidType::from(vec![1, 2, 840, 113741, 1, 2]));
+    /// assert!(oid_id.as_oid_bytes().is_some());
+    ///
+    /// // Not an OID variant
+    /// let bytes_id = ClassIdTypeChoice::Bytes(Bytes::from(vec![1, 2, 3, 4]));
+    /// assert!(bytes_id.as_oid_bytes().is_none());
+    /// ```
+    pub fn as_oid_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Oid(_) => Some(Self::as_bytes(self)),
+            _ => None,
+        }
+    }
+
+    /// Returns the byte representation if this is a UUID variant, or None otherwise
+    ///
+    /// This method is useful when you specifically need to work with UUID data
+    /// and want to verify the variant type before accessing.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&[u8])` containing the UUID bytes if this is a UUID variant
+    /// - `None` if this is any other variant
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use corim_rs::triples::ClassIdTypeChoice;
+    /// use corim_rs::{UuidType, FixedBytes, Bytes};
+    ///
+    /// // A UUID variant
+    /// let uuid_bytes = [0; 16];
+    /// let uuid_id = ClassIdTypeChoice::Uuid(UuidType(FixedBytes::from(uuid_bytes)));
+    /// assert!(uuid_id.as_uuid_bytes().is_some());
+    ///
+    /// // Not a UUID variant
+    /// let bytes_id = ClassIdTypeChoice::Bytes(Bytes::from(vec![1, 2, 3, 4]));
+    /// assert!(bytes_id.as_uuid_bytes().is_none());
+    /// ```
+    pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Uuid(_) => Some(Self::as_bytes(self)),
+            _ => None,
+        }
+    }
+
+    /// Returns the byte representation if this is a raw Bytes variant, or None otherwise
+    ///
+    /// This method is useful when you specifically need to work with raw byte data
+    /// and want to verify the variant type before accessing.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&[u8])` containing the raw bytes if this is a Bytes variant
+    /// - `None` if this is any other variant
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use corim_rs::triples::ClassIdTypeChoice;
+    /// use corim_rs::{OidType, Bytes};
+    ///
+    /// // A Bytes variant
+    /// let bytes_id = ClassIdTypeChoice::Bytes(Bytes::from(vec![1, 2, 3, 4]));
+    /// assert!(bytes_id.as_raw_bytes().is_some());
+    ///
+    /// // Not a Bytes variant
+    /// let oid_id = ClassIdTypeChoice::Oid(OidType::from(vec![1, 2, 840, 113741, 1, 2]));
+    /// assert!(oid_id.as_raw_bytes().is_none());
+    /// ```
+    pub fn as_raw_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Bytes(_) => Some(Self::as_bytes(self)),
+            _ => None,
+        }
+    }
+}
 
 /// Possible types for instance identifiers
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -347,6 +458,43 @@ pub enum InstanceIdTypeChoice<'a> {
     CryptoKey(CryptoKeyTypeChoice<'a>),
     /// Raw bytes
     Bytes(Bytes),
+}
+
+impl<'a> InstanceIdTypeChoice<'a> {
+    pub fn as_ueid_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Ueid(ueid) => Some(ueid.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Uuid(uuid) => Some(uuid.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_crypto_key(&self) -> Option<CryptoKeyTypeChoice> {
+        match self {
+            Self::CryptoKey(key) => Some(key.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_crypto_key(&self) -> Option<&CryptoKeyTypeChoice> {
+        match self {
+            Self::CryptoKey(key) => Some(key),
+            _ => None,
+        }
+    }
+
+    pub fn as_raw_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Bytes(bytes) => Some(bytes.as_ref()),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
@@ -436,6 +584,127 @@ pub enum CryptoKeyTypeChoice<'a> {
     Bytes(Bytes),
 }
 
+impl<'a> CryptoKeyTypeChoice<'a> {
+    pub fn as_pkix_key(&self) -> Option<PkixBase64KeyType> {
+        match self {
+            Self::PkixBase64Key(key) => Some(key.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_pkix_key(&self) -> Option<&PkixBase64KeyType> {
+        match self {
+            Self::PkixBase64Key(key) => Some(key),
+            _ => None,
+        }
+    }
+
+    pub fn as_pkix_cert(&self) -> Option<PkixBase64CertType> {
+        match self {
+            Self::PkixBase64Cert(cert) => Some(cert.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_pkix_cert(&self) -> Option<&PkixBase64CertType> {
+        match self {
+            Self::PkixBase64Cert(cert) => Some(cert),
+            _ => None,
+        }
+    }
+
+    pub fn as_pkix_cert_path(&self) -> Option<PkixBase64CertPathType> {
+        match self {
+            Self::PkixBase64CertPath(cert_path) => Some(cert_path.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_pkix_cert_path(&self) -> Option<&PkixBase64CertPathType> {
+        match self {
+            Self::PkixBase64CertPath(cert_path) => Some(cert_path),
+            _ => None,
+        }
+    }
+
+    pub fn as_cose_key(&self) -> Option<CoseKeyType> {
+        match self {
+            Self::CoseKey(key) => Some(key.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_cose_key(&self) -> Option<&CoseKeyType> {
+        match self {
+            Self::CoseKey(key) => Some(key),
+            _ => None,
+        }
+    }
+
+    pub fn as_thumbprint(&self) -> Option<ThumbprintType> {
+        match self {
+            Self::Thumbprint(thumbprint) => Some(thumbprint.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_thumbprint(&self) -> Option<&ThumbprintType> {
+        match self {
+            Self::Thumbprint(thumbprint) => Some(thumbprint),
+            _ => None,
+        }
+    }
+
+    pub fn as_cert_thumbprint(&self) -> Option<CertThumprintType> {
+        match self {
+            Self::CertThumbprint(thumbprint) => Some(thumbprint.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_cert_thumbprint(&self) -> Option<&CertThumprintType> {
+        match self {
+            Self::CertThumbprint(thumbprint) => Some(thumbprint),
+            _ => None,
+        }
+    }
+
+    pub fn as_cert_path_thumbprint(&self) -> Option<CertPathThumbprintType> {
+        match self {
+            Self::CertPathThumbprint(thumbprint) => Some(thumbprint.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_cert_path_thumbprint(&self) -> Option<&CertPathThumbprintType> {
+        match self {
+            Self::CertPathThumbprint(thumbprint) => Some(thumbprint),
+            _ => None,
+        }
+    }
+
+    pub fn as_pkix_asn1_der_cert(&self) -> Option<PkixAsn1DerCertType> {
+        match self {
+            Self::PkixAsn1DerCert(cert) => Some(cert.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_pkix_asn1_der_cert(&self) -> Option<&PkixAsn1DerCertType> {
+        match self {
+            Self::PkixAsn1DerCert(cert) => Some(cert),
+            _ => None,
+        }
+    }
+
+    pub fn as_raw_bytes(&self) -> &[u8] {
+        match self {
+            Self::Bytes(bytes) => bytes.as_ref(),
+            _ => &[],
+        }
+    }
+}
+
 /// Types of group identifiers
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
@@ -445,6 +714,22 @@ pub enum GroupIdTypeChoice {
     Uuid(UuidType),
     /// Raw bytes
     Bytes(Bytes),
+}
+
+impl GroupIdTypeChoice {
+    pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Uuid(uuid) => Some(uuid.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_raw_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Bytes(bytes) => Some(bytes.as_ref()),
+            _ => None,
+        }
+    }
 }
 
 /// Map containing measurement values and metadata
@@ -479,6 +764,54 @@ pub enum MeasuredElementTypeChoice<'a> {
     UInt(Uint),
     /// Text string
     Tstr(Tstr<'a>),
+}
+
+impl<'a> MeasuredElementTypeChoice<'a> {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Oid(oid) => oid.is_empty(),
+            Self::Uuid(uuid) => uuid.is_empty(),
+            Self::UInt(_) => false,
+            Self::Tstr(tstr) => tstr.is_empty(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Oid(oid) => oid.len(),
+            Self::Uuid(uuid) => uuid.len(),
+            Self::UInt(_) => 4,
+            Self::Tstr(tstr) => tstr.len(),
+        }
+    }
+
+    pub fn as_oid_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Oid(oid) => Some(oid.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Uuid(uuid) => Some(uuid.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_uint(&self) -> Option<u32> {
+        match self {
+            Self::UInt(uint) => Some(*uint),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Tstr(tstr) => Some(tstr),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> From<&'a str> for MeasuredElementTypeChoice<'a> {
@@ -702,6 +1035,29 @@ pub enum SvnTypeChoice {
     TaggedMinSvn(MinSvnType),
 }
 
+impl SvnTypeChoice {
+    pub fn as_svn(&self) -> Option<u32> {
+        match self {
+            Self::Svn(svn) => Some(*svn),
+            _ => None,
+        }
+    }
+
+    pub fn as_tagged_svn(&self) -> Option<u32> {
+        match self {
+            Self::TaggedSvn(svn) => Some(*svn.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_tagged_min_svn(&self) -> Option<u32> {
+        match self {
+            Self::TaggedMinSvn(svn) => Some(*svn.as_ref()),
+            _ => None,
+        }
+    }
+}
+
 /// Collection of one or more cryptographic digests
 pub type DigestsType<'a> = NonEmptyVec<Digest<'a>>;
 
@@ -770,6 +1126,22 @@ pub enum MacAddrTypeChoice {
     Eui48Addr(Eui48AddrType),
     /// 64-bit EUI address
     Eui64Addr(Eui64AddrType),
+}
+
+impl MacAddrTypeChoice {
+    pub fn as_eui48_addr(&self) -> Option<&[u8]> {
+        match self {
+            Self::Eui48Addr(addr) => Some(addr),
+            _ => None,
+        }
+    }
+
+    pub fn as_eui64_addr(&self) -> Option<&[u8]> {
+        match self {
+            Self::Eui64Addr(addr) => Some(addr),
+            _ => None,
+        }
+    }
 }
 
 impl From<Eui48AddrType> for MacAddrTypeChoice {
@@ -851,6 +1223,36 @@ pub enum IpAddrTypeChoice {
     Ipv4(Ipv4AddrType),
     /// IPv6 address
     Ipv6(Ipv6AddrType),
+}
+
+impl IpAddrTypeChoice {
+    pub fn as_ipv4_addr(&self) -> Option<&[u8]> {
+        match self {
+            Self::Ipv4(addr) => Some(addr),
+            _ => None,
+        }
+    }
+
+    pub fn as_ipv4(&self) -> Option<Ipv4Addr> {
+        match self {
+            Self::Ipv4(addr) => Some(Ipv4Addr::from(*addr)),
+            _ => None,
+        }
+    }
+
+    pub fn as_ipv6_addr(&self) -> Option<&[u8]> {
+        match self {
+            Self::Ipv6(addr) => Some(addr),
+            _ => None,
+        }
+    }
+
+    pub fn as_ipv6(&self) -> Option<Ipv6Addr> {
+        match self {
+            Self::Ipv6(addr) => Some(Ipv6Addr::from(*addr)),
+            _ => None,
+        }
+    }
 }
 
 impl From<Ipv4AddrType> for IpAddrTypeChoice {
@@ -1266,6 +1668,36 @@ pub enum DomainTypeChoice<'a> {
     Uuid(UuidType),
     /// Object Identifier (OID)
     Oid(OidType),
+}
+
+impl<'a> DomainTypeChoice<'a> {
+    pub fn as_uint(&self) -> Option<u32> {
+        match self {
+            Self::Uint(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            Self::Text(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Uuid(value) => Some(value.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_oid_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Oid(value) => Some(value.as_ref()),
+            _ => None,
+        }
+    }
 }
 
 /// Record describing domain membership associations

@@ -6,6 +6,7 @@ pub enum TriplesError {
     EmptyClassMap,
     EmptyEnvironmentMap,
     EmptyMeasurementValuesMap,
+    InvalidIpAddrType,
     Unknown,
 }
 
@@ -14,6 +15,7 @@ impl std::error::Error for TriplesError {}
 impl std::fmt::Display for TriplesError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::InvalidIpAddrType => write!(f, "invalid IP address type"),
             Self::EmptyMeasurementValuesMap => {
                 write!(
                     f,

@@ -366,6 +366,33 @@ pub enum PayloadOrEvidence<'a> {
     Evidence(Evidence<'a>),
 }
 
+impl<'a> PayloadOrEvidence<'a> {
+    pub fn as_payload(&self) -> Option<Payload> {
+        match self {
+            Self::Payload(payload) => Some(payload.clone()),
+            _ => None,
+        }
+    }
+    pub fn as_ref_payload(&self) -> Option<&Payload> {
+        match self {
+            Self::Payload(payload) => Some(payload),
+            _ => None,
+        }
+    }
+    pub fn as_evidence(&self) -> Option<Evidence> {
+        match self {
+            Self::Evidence(evidence) => Some(evidence.clone()),
+            _ => None,
+        }
+    }
+    pub fn as_ref_evidence(&self) -> Option<&Evidence> {
+        match self {
+            Self::Evidence(evidence) => Some(evidence),
+            _ => None,
+        }
+    }
+}
+
 /// Container for payload information
 #[derive(
     Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,

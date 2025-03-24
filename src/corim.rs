@@ -109,6 +109,22 @@ pub enum ConciseRimTypeChoice<'a> {
     SignedCorim(SignedCorim<'a>),
 }
 
+impl<'a> ConciseRimTypeChoice<'a> {
+    pub fn as_unsigned_corim_map(&self) -> Option<CorimMap> {
+        match self {
+            Self::TaggedUnsignedCorimMap(val) => Some(val.as_ref().clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_signed_corim(&self) -> Option<COSESign1Corim> {
+        match self {
+            Self::SignedCorim(val) => Some(val.as_ref().clone()),
+            _ => None,
+        }
+    }
+}
+
 impl<'a> Serialize for ConciseRimTypeChoice<'a> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -239,6 +255,22 @@ pub enum CorimIdTypeChoice<'a> {
     Uuid(UuidType),
 }
 
+impl<'a> CorimIdTypeChoice<'a> {
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Tstr(cow) => Some(cow),
+            _ => None,
+        }
+    }
+
+    pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Uuid(val) => Some(val.as_ref().as_ref()),
+            _ => None,
+        }
+    }
+}
+
 impl<'a> From<&'a str> for CorimIdTypeChoice<'a> {
     fn from(s: &'a str) -> Self {
         CorimIdTypeChoice::Tstr(s.into())
@@ -256,6 +288,51 @@ pub enum ConciseTagTypeChoice<'a> {
     /// A Concise Trust List (CoTL) tag
     Tl(TaggedConciseTlTag<'a>),
 }
+
+impl<'a> ConciseTagTypeChoice<'a> {
+    pub fn as_coswid(&self) -> Option<ConciseSwidTag> {
+        match self {
+            Self::Swid(coswid) => Some(coswid.as_ref().clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_comid(&self) -> Option<ConciseMidTag> {
+        match self {
+            Self::Mid(comid) => Some(comid.as_ref().clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_cotl(&self) -> Option<ConciseTlTag> {
+        match self {
+            Self::Tl(cotl) => Some(cotl.as_ref().clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_coswid(&self) -> Option<&ConciseSwidTag> {
+        match self {
+            Self::Swid(coswid) => Some(coswid.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_comid(&self) -> Option<&ConciseMidTag> {
+        match self {
+            Self::Mid(comid) => Some(comid.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_cotl(&self) -> Option<&ConciseTlTag> {
+        match self {
+            Self::Tl(cotl) => Some(cotl.as_ref()),
+            _ => None,
+        }
+    }
+}
+
 impl<'a> Serialize for ConciseTagTypeChoice<'a> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -419,6 +496,29 @@ pub enum ProfileTypeChoice<'a> {
     Uri(Uri<'a>),
     /// OID-based profile identifier
     OidType(OidType),
+}
+
+impl<'a> ProfileTypeChoice<'a> {
+    pub fn as_uri(&self) -> Option<Uri> {
+        match self {
+            Self::Uri(uri) => Some(uri.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_uri(&self) -> Option<&Uri> {
+        match self {
+            Self::Uri(uri) => Some(uri),
+            _ => None,
+        }
+    }
+
+    pub fn as_oid_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::OidType(oid) => Some(oid.as_ref().as_ref()),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> Serialize for ProfileTypeChoice<'a> {
