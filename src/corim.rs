@@ -89,7 +89,6 @@ use crate::{
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
     de::{self, Visitor},
-    ser::SerializeSeq,
     Deserialize, Deserializer, Serialize, Serializer,
 };
 /// Represents a Concise Reference Integrity Manifest (CoRIM)
@@ -130,20 +129,10 @@ impl<'a> Serialize for ConciseRimTypeChoice<'a> {
     where
         S: Serializer,
     {
-        let mut seq = serializer.serialize_seq(Some(2))?;
-
         match self {
-            Self::TaggedUnsignedCorimMap(tagged) => {
-                seq.serialize_element(&501u16)?; // Tag 501 for TaggedUnsignedCorimMap
-                seq.serialize_element(&tagged.0 .0)?;
-            }
-            Self::SignedCorim(tagged) => {
-                seq.serialize_element(&18u16)?; // Tag 18 for TaggedCOSESign1Corim or SignedCorim
-                seq.serialize_element(&tagged.0 .0)?;
-            }
+            Self::TaggedUnsignedCorimMap(tagged) => tagged.serialize(serializer),
+            Self::SignedCorim(tagged) => tagged.serialize(serializer),
         }
-
-        seq.end()
     }
 }
 
@@ -338,25 +327,11 @@ impl<'a> Serialize for ConciseTagTypeChoice<'a> {
     where
         S: Serializer,
     {
-        // CBOR tags are represented as a 2-element sequence: [tag, value]
-        let mut seq = serializer.serialize_seq(Some(2))?;
-
         match self {
-            ConciseTagTypeChoice::Swid(tagged) => {
-                seq.serialize_element(&505u16)?; // Tag 505 for Swid
-                seq.serialize_element(&tagged.0 .0)?; // Inner ConciseSwidTag
-            }
-            ConciseTagTypeChoice::Mid(tagged) => {
-                seq.serialize_element(&506u16)?; // Tag 506 for Mid
-                seq.serialize_element(&tagged.0 .0)?; // Inner ConciseMidTag
-            }
-            ConciseTagTypeChoice::Tl(tagged) => {
-                seq.serialize_element(&507u16)?; // Tag 507 for Tl
-                seq.serialize_element(&tagged.0 .0)?; // Inner ConciseTlTag
-            }
+            Self::Swid(tagged_concise_swid_tag) => tagged_concise_swid_tag.serialize(serializer),
+            Self::Mid(tagged_concise_mid_tag) => tagged_concise_mid_tag.serialize(serializer),
+            Self::Tl(tagged_concise_tl_tag) => tagged_concise_tl_tag.serialize(serializer),
         }
-
-        seq.end()
     }
 }
 impl<'de, 'a> Deserialize<'de> for ConciseTagTypeChoice<'a> {
@@ -526,19 +501,10 @@ impl<'a> Serialize for ProfileTypeChoice<'a> {
     where
         S: Serializer,
     {
-        let mut seq = serializer.serialize_seq(Some(2))?;
-
         match self {
-            ProfileTypeChoice::Uri(tagged) => {
-                seq.serialize_element(&32u16)?; // Tag 32 for Uri
-                seq.serialize_element(&tagged.0 .0)?;
-            }
-            ProfileTypeChoice::OidType(tagged) => {
-                seq.serialize_element(&111u16)?; // Tag 111 for OidType
-                seq.serialize_element(&tagged.0 .0)?;
-            }
+            Self::Uri(uri) => uri.serialize(serializer),
+            Self::OidType(oid) => oid.serialize(serializer),
         }
-        seq.end()
     }
 }
 

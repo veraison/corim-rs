@@ -1257,8 +1257,8 @@ impl<'a> Serialize for CoseKeySetOrKey<'a> {
         S: Serializer,
     {
         match self {
-            CoseKeySetOrKey::KeySet(key_set) => Ok(key_set.serialize(serializer)?),
-            CoseKeySetOrKey::Key(key) => Ok(key.serialize(serializer)?),
+            CoseKeySetOrKey::KeySet(key_set) => key_set.serialize(serializer),
+            CoseKeySetOrKey::Key(key) => key.serialize(serializer),
         }
     }
 }
@@ -1447,19 +1447,12 @@ impl Serialize for RawValueTypeChoice {
     where
         S: Serializer,
     {
-        let mut seq = serializer.serialize_seq(Some(2))?;
-
         match self {
-            Self::TaggedBytes(tagged) => {
-                seq.serialize_element(&560u16)?; // Tag 560 for TaggedBytes.
-                seq.serialize_element(&tagged.0 .0)?;
-            }
-            Self::TaggedMaskedRawValue(tagged) => {
-                seq.serialize_element(&563u16)?; // Tag 563 for TaggedMaskedRawValue.
-                seq.serialize_element(&tagged.0 .0)?;
+            Self::TaggedBytes(tagged_bytes) => tagged_bytes.serialize(serializer),
+            Self::TaggedMaskedRawValue(tagged_masked_raw_value) => {
+                tagged_masked_raw_value.serialize(serializer)
             }
         }
-        seq.end()
     }
 }
 
