@@ -82,8 +82,8 @@ use crate::{
     core::{Bytes, Label},
     coswid::ConciseSwidTag,
     cotl::ConciseTlTag,
-    generate_tagged, Digest, ExtensionMap, Int, OidType, TaggedBytes, TaggedConciseMidTag,
-    TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
+    empty_map_as_none, generate_tagged, Digest, ExtensionMap, Int, OidType, TaggedBytes,
+    TaggedConciseMidTag, TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
 };
 
 use derive_more::{Constructor, From, TryFrom};
@@ -268,7 +268,8 @@ impl<'a> From<&'a str> for CorimIdTypeChoice<'a> {
 
 /// Types of tags that can be included in a CoRIM
 #[repr(C)]
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(untagged)]
 pub enum ConciseTagTypeChoice<'a> {
     /// A Concise Software Identity (CoSWID) tag
     Swid(TaggedConciseSwidTag<'a>),
@@ -276,6 +277,73 @@ pub enum ConciseTagTypeChoice<'a> {
     Mid(TaggedConciseMidTag<'a>),
     /// A Concise Trust List (CoTL) tag
     Tl(TaggedConciseTlTag<'a>),
+}
+
+impl<'de, 'a> Deserialize<'de> for ConciseTagTypeChoice<'a> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TagVisitor<'a>(std::marker::PhantomData<&'a ()>);
+        impl<'de, 'a> Visitor<'de> for TagVisitor<'a> {
+            type Value = ConciseTagTypeChoice<'a>;
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a tagged CBOR value (505, 506, 508)")
+            }
+            fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let tagged_value = ciborium::value::Value::deserialize(deserializer)?;
+                match tagged_value {
+                    ciborium::value::Value::Tag(tag, inner) => match tag {
+                        505 => {
+                            let mut bytes: Vec<u8> = Vec::new();
+                            ciborium::ser::into_writer(&inner, &mut bytes).map_err(|_| {
+                                serde::de::Error::custom("Failed to serialize the map")
+                            })?;
+                            let swid: ConciseSwidTag<'a> = ciborium::from_reader(&bytes[..])
+                                .map_err(|_| {
+                                    serde::de::Error::custom("Failed to deserialize bytes")
+                                })?;
+                            Ok(ConciseTagTypeChoice::Swid(TaggedConciseSwidTag::new(swid)))
+                        }
+                        506 => {
+                            let mut bytes = Vec::new();
+                            ciborium::ser::into_writer(&inner, &mut bytes).map_err(|_| {
+                                serde::de::Error::custom("Failure to serialize the map")
+                            })?;
+                            let mid: ConciseMidTag<'a> = ciborium::from_reader(&bytes[..])
+                                .map_err(|_| {
+                                    serde::de::Error::custom("Failed to deserialize bytes")
+                                })?;
+                            Ok(ConciseTagTypeChoice::Mid(TaggedConciseMidTag::new(mid)))
+                        }
+                        508 => {
+                            let mut bytes = Vec::new();
+                            ciborium::ser::into_writer(&inner, &mut bytes).map_err(|_| {
+                                serde::de::Error::custom("Failure to serialize the map")
+                            })?;
+                            let tl: ConciseTlTag<'a> =
+                                ciborium::from_reader(&bytes[..]).map_err(|_| {
+                                    serde::de::Error::custom("Failed to deserialize bytes")
+                                })?;
+                            Ok(ConciseTagTypeChoice::Tl(TaggedConciseTlTag::new(tl)))
+                        }
+                        other => Err(serde::de::Error::custom(format!(
+                            "Unsupported tag: {}, expected 505, 506, or 508",
+                            other
+                        ))),
+                    },
+                    _ => Err(serde::de::Error::custom("Expected a tagged CBOR value")),
+                }
+            }
+        }
+        deserializer.deserialize_newtype_struct(
+            "ConciseTagTypeChoice",
+            TagVisitor(std::marker::PhantomData),
+        )
+    }
 }
 
 impl<'a> ConciseTagTypeChoice<'a> {
@@ -319,69 +387,6 @@ impl<'a> ConciseTagTypeChoice<'a> {
             Self::Tl(cotl) => Some(cotl.as_ref()),
             _ => None,
         }
-    }
-}
-
-impl<'a> Serialize for ConciseTagTypeChoice<'a> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            Self::Swid(tagged_concise_swid_tag) => tagged_concise_swid_tag.serialize(serializer),
-            Self::Mid(tagged_concise_mid_tag) => tagged_concise_mid_tag.serialize(serializer),
-            Self::Tl(tagged_concise_tl_tag) => tagged_concise_tl_tag.serialize(serializer),
-        }
-    }
-}
-impl<'de, 'a> Deserialize<'de> for ConciseTagTypeChoice<'a> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct TagVisitor<'a>(std::marker::PhantomData<&'a ()>);
-
-        impl<'de, 'a> Visitor<'de> for TagVisitor<'a> {
-            type Value = ConciseTagTypeChoice<'a>;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str(
-                    "a ConciseTagTypeChoice variant distinguished by CBOR tag (505, 506, 507)",
-                )
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: de::SeqAccess<'de>,
-            {
-                let tag: u16 = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::custom("missing tag"))?;
-                match tag {
-                    505 => {
-                        let value: ConciseSwidTag<'a> = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::custom("missing tagged value"))?;
-                        Ok(ConciseTagTypeChoice::Swid(TaggedConciseSwidTag::new(value)))
-                    }
-                    506 => {
-                        let value: ConciseMidTag<'a> = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::custom("missing tagged value"))?;
-                        Ok(ConciseTagTypeChoice::Mid(TaggedConciseMidTag::new(value)))
-                    }
-                    507 => {
-                        let value: ConciseTlTag<'a> = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::custom("missing tagged value"))?;
-                        Ok(ConciseTagTypeChoice::Tl(TaggedConciseTlTag::new(value)))
-                    }
-                    _ => Err(de::Error::custom(format!("unsupported CBOR tag: {}", tag))),
-                }
-            }
-        }
-
-        deserializer.deserialize_any(TagVisitor(std::marker::PhantomData))
     }
 }
 
@@ -542,6 +547,7 @@ pub struct CorimEntityMap<'a> {
     /// Optional extensible attributes
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub extension: Option<ExtensionMap<'a>>,
 }
 
@@ -629,7 +635,6 @@ impl<'a> Serialize for COSESign1Corim<'a> {
         seq.end()
     }
 }
-
 impl<'de, 'a> Deserialize<'de> for COSESign1Corim<'a> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -658,7 +663,7 @@ impl<'de, 'a> Deserialize<'de> for COSESign1Corim<'a> {
                     .ok_or_else(|| A::Error::custom("missing protected header"))?;
 
                 // 2. Unprotected header
-                let unprotected: BTreeMap<Label<'a>, ExtensionMap<'a>> = seq
+                let unprotected: UnprotectedCorimHeaderMap<'a> = seq
                     .next_element()?
                     .ok_or_else(|| A::Error::custom("missing unprotected header"))?;
 
@@ -678,15 +683,11 @@ impl<'de, 'a> Deserialize<'de> for COSESign1Corim<'a> {
                         A::Error::custom(format!("Failed to deserialize protected header: {}", e))
                     })?;
 
-                // Deserialize the payload directly
-                // First, deserialize the raw CorimMap
-                let corim_map: CorimMap<'a> = ciborium::de::from_reader(payload_bytes.as_ref())
-                    .map_err(|e| {
+                // Deserialize payload directly into TaggedUnsignedCorimMap
+                let payload: TaggedUnsignedCorimMap<'a> =
+                    ciborium::de::from_reader(payload_bytes.as_ref()).map_err(|e| {
                         A::Error::custom(format!("Failed to deserialize payload: {}", e))
                     })?;
-
-                // Then wrap it in the tagged container
-                let payload = TaggedUnsignedCorimMap::new(corim_map);
 
                 Ok(COSESign1Corim {
                     protected,
@@ -700,7 +701,6 @@ impl<'de, 'a> Deserialize<'de> for COSESign1Corim<'a> {
         deserializer.deserialize_seq(COSESign1Visitor(PhantomData))
     }
 }
-
 /// Protected header for a signed CoRIM
 #[derive(
     Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
@@ -721,6 +721,7 @@ pub struct ProtectedCorimHeaderMap<'a> {
     pub corim_meta: CorimMetaMap<'a>,
     /// Optional COSE header parameters
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub cose_map: Option<CoseMap<'a>>,
 }
@@ -754,6 +755,7 @@ pub struct CorimSignerMap<'a> {
     pub signer_uri: Option<Uri<'a>>,
     /// Optional COSE-specific extensions
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extension: Option<CoseMap<'a>>,
 }
@@ -767,11 +769,15 @@ pub type CoseMap<'a> = ExtensionMap<'a>;
 #[cfg(test)]
 mod tests {
 
-    use crate::core::Bytes;
-    use crate::corim::{
-        COSESign1Corim, ConciseTagTypeChoice, CorimMetaMap, CorimSignerMap, ProtectedCorimHeaderMap,
+    use crate::comid::{
+        ComidEntityMap, ComidRoleTypeChoice, ConciseMidTag, TagIdentityMap, TriplesMapBuilder,
     };
+    use crate::core::Bytes;
+    use crate::corim::{COSESign1Corim, CorimMetaMap, CorimSignerMap, ProtectedCorimHeaderMap};
     use crate::coswid::{ConciseSwidTag, EntityEntry};
+    use crate::triples::{
+        ClassMap, EnvironmentMap, MeasurementMap, MeasurementValuesMap, ReferenceTripleRecord,
+    };
     use std::collections::BTreeMap;
 
     use super::UnsignedCorimMap;
@@ -786,76 +792,59 @@ mod tests {
     /// ]
     /// ```
     ///
-    /// ```text
-    ///  // TOP Level
-    ///  132  // Array of 4 elements (COSE_Sign1 structure)
-    ///
-    ///  // Protected Header (CBOR Bytes)
-    ///  88, 65  // Byte string of length 65
-    ///    191  // Start of map (indefinite length)
-    ///        97, 49  // Text string "1" (map key)
-    ///        38      // -7 (ECDSA with SHA-256, alg value)
-    ///        97, 51  // Text string "3" (map key)
-    ///        116, 97, 112, 112, 108, 105, 99, 97, 116, 105, 111, 110, 47, 114, 105, 109, 43, 99, 98, 111, 114  // "application/rim+cbor" (content_type)
-    ///        97, 52  // Text string "4" (map key)
-    ///        71, 107, 101, 121, 45, 48, 48, 49  // Byte string "key-001" (kid)
-    ///        97, 56  // Text string "8" (map key)
-    ///        161  // Map of 1 element (corim_meta)
-    ///        97, 48  // Text string "0" (map key)
-    ///        191  // Start of map (indefinite length, signer)
-    ///            97, 48  // Text string "0" (map key)
-    ///            110, 69, 120, 97, 109, 112, 108, 101, 32, 83, 105, 103, 110, 101, 114  // "Example Signer" (signer_name)
-    ///            97, 49  // Text string "1" (map key)
-    ///            246  // Null value (signer_uri is None)
-    ///        255  // End of indefinite length map
-    ///    255  // End of indefinite length map
-    ///
-    ///  // Unprotected Header (Empty Map)
-    ///  160  // Empty map
-    ///
-    ///  // Payload (CBOR Bytes)
-    ///  88, 87  // Byte string of length 87
-    ///   217, 1, 245  // Tag 501 (UnsignedCorimMap)
-    ///   191  // Start of map (indefinite length)
-    ///       97, 48  // Text string "0" (map key)
-    ///       105, 99, 111, 114, 105, 109, 45, 48, 48, 49  // "corim-001" (id)
-    ///       97, 49  // Text string "1" (map key)
-    ///       129  // Array of 1 element (tags)
-    ///       130  // Array of 2 elements (tag structure with CBOR tag)
-    ///           25, 1, 249  // Tag 505 (CoSWID)
-    ///           191  // Start of map (indefinite length)
-    ///           97, 48  // Text string "0" (map key)
-    ///           104, 115, 119, 105, 100, 45, 49, 50, 51  // "swid-123" (tag_id)
-    ///           98, 49, 50  // Text string "12" (map key)
-    ///           0  // 0 (tag_version)
-    ///           97, 49  // Text string "1" (map key)
-    ///           112, 69, 120, 97, 109, 112, 108, 101, 32, 83, 111, 102, 116, 119, 97, 114, 101  // "Example Software" (software_name)
-    ///           97, 50  // Text string "2" (map key)
-    ///           191  // Start of map (indefinite length, entity)
-    ///               98, 51, 49  // Text string "31" (map key)
-    ///               110, 69, 120, 97, 109, 112, 108, 101, 32, 69, 110, 116, 105, 116, 121  // "Example Entity" (entity_name)
-    ///               98, 51, 51  // Text string "33" (map key)
-    ///               129, 1  // Array of 1 element with value 1 (role)
-    ///           255  // End of indefinite length map
-    ///           255  // End of indefinite length map
-    ///   255  // End of indefinite length map
-    ///
-    ///  // Signature Bytes
-    ///  217, 2, 48  // Tag 592 (indicating a tagged byte string)
-    ///  65, 0  // Byte string of length 1 with value 0
-    /// ```
-    fn test_cose_sign1_corim_serialization() {
-        let expected: [u8; 163] = [
+    fn test_cose_sign1_corim_serialize_deserialize() {
+        let expected: [u8; 276] = [
             132, 88, 65, 191, 97, 49, 38, 97, 51, 116, 97, 112, 112, 108, 105, 99, 97, 116, 105,
             111, 110, 47, 114, 105, 109, 43, 99, 98, 111, 114, 97, 52, 71, 107, 101, 121, 45, 48,
             48, 49, 97, 56, 161, 97, 48, 191, 97, 48, 110, 69, 120, 97, 109, 112, 108, 101, 32, 83,
-            105, 103, 110, 101, 114, 97, 49, 246, 255, 255, 160, 88, 87, 217, 1, 245, 191, 97, 48,
-            105, 99, 111, 114, 105, 109, 45, 48, 48, 49, 97, 49, 129, 130, 25, 1, 249, 191, 97, 48,
+            105, 103, 110, 101, 114, 97, 49, 246, 255, 255, 160, 88, 200, 217, 1, 245, 191, 97, 48,
+            105, 99, 111, 114, 105, 109, 45, 48, 48, 49, 97, 49, 130, 217, 1, 249, 191, 97, 48,
             104, 115, 119, 105, 100, 45, 49, 50, 51, 98, 49, 50, 0, 97, 49, 112, 69, 120, 97, 109,
             112, 108, 101, 32, 83, 111, 102, 116, 119, 97, 114, 101, 97, 50, 191, 98, 51, 49, 110,
-            69, 120, 97, 109, 112, 108, 101, 32, 69, 110, 116, 105, 116, 121, 98, 51, 51, 129, 1,
-            255, 255, 255, 217, 2, 48, 65, 0,
+            69, 120, 97, 109, 112, 108, 101, 32, 69, 110, 116, 105, 116, 121, 98, 51, 51, 1, 255,
+            255, 217, 1, 250, 191, 97, 48, 101, 101, 110, 95, 85, 83, 97, 49, 161, 97, 48, 107, 83,
+            111, 109, 101, 32, 84, 97, 103, 32, 73, 68, 97, 50, 129, 191, 98, 51, 49, 111, 83, 111,
+            109, 101, 32, 67, 111, 77, 73, 68, 32, 78, 97, 109, 101, 98, 51, 51, 129, 246, 255, 97,
+            52, 191, 97, 48, 129, 130, 161, 97, 48, 161, 97, 49, 107, 83, 111, 109, 101, 32, 86,
+            101, 110, 100, 111, 114, 129, 162, 97, 48, 104, 83, 111, 109, 101, 32, 75, 101, 121,
+            97, 49, 191, 98, 49, 49, 105, 83, 111, 109, 101, 32, 78, 97, 109, 101, 255, 255, 255,
+            255, 217, 2, 48, 65, 0,
         ];
+
+        let triples = TriplesMapBuilder::default()
+            .reference_triples(vec![ReferenceTripleRecord {
+                ref_env: EnvironmentMap {
+                    class: Some(ClassMap {
+                        class_id: None,
+                        vendor: Some("Some Vendor".into()),
+                        ..Default::default()
+                    }),
+                    instance: None,
+                    group: None,
+                },
+                ref_claims: vec![MeasurementMap {
+                    mkey: Some("Some Key".into()),
+                    mval: MeasurementValuesMap {
+                        name: Some("Some Name".into()),
+                        version: None,
+                        svn: None,
+                        digest: None,
+                        flags: None,
+                        raw: None,
+                        mac_addr: None,
+                        ip_addr: None,
+                        serial_number: None,
+                        ueid: None,
+                        uuid: None,
+                        cryptokeys: None,
+                        integrity_registers: None,
+                        extensions: None,
+                    },
+                    authorized_by: None,
+                }],
+            }])
+            .build()
+            .unwrap();
 
         let cose_corim = COSESign1Corim {
             protected: ProtectedCorimHeaderMap {
@@ -874,32 +863,51 @@ mod tests {
             unprotected: BTreeMap::new(),
             payload: UnsignedCorimMap {
                 id: "corim-001".into(),
-                tags: vec![ConciseSwidTag {
-                    tag_id: "swid-123".into(),
-                    tag_version: 0.into(),
-                    software_name: "Example Software".into(),
-                    entity: EntityEntry {
-                        entity_name: "Example Entity".into(),
-                        reg_id: None,
-                        role: 1.into(),
-                        thumbprint: None,
+                tags: vec![
+                    ConciseSwidTag {
+                        tag_id: "swid-123".into(),
+                        tag_version: 0.into(),
+                        software_name: "Example Software".into(),
+                        entity: EntityEntry {
+                            entity_name: "Example Entity".into(),
+                            reg_id: None,
+                            role: 1.into(),
+                            thumbprint: None,
+                            extensions: None,
+                            global_attributes: None,
+                        }
+                        .into(),
+                        corpus: None,
+                        patch: None,
+                        supplemental: None,
+                        software_version: None,
+                        version_scheme: None,
+                        media: None,
+                        software_meta: None,
+                        link: None,
+                        payload_or_evidence: None,
                         extensions: None,
                         global_attributes: None,
                     }
                     .into(),
-                    corpus: None,
-                    patch: None,
-                    supplemental: None,
-                    software_version: None,
-                    version_scheme: None,
-                    media: None,
-                    software_meta: None,
-                    link: None,
-                    payload_or_evidence: None,
-                    extensions: None,
-                    global_attributes: None,
-                }
-                .into()]
+                    ConciseMidTag {
+                        language: Some("en_US".into()),
+                        tag_identity: TagIdentityMap {
+                            tag_id: "Some Tag ID".into(),
+                            tag_version: None,
+                        },
+                        entities: Some(vec![ComidEntityMap {
+                            entity_name: "Some CoMID Name".into(),
+                            reg_id: None,
+                            role: vec![ComidRoleTypeChoice::TagCreator],
+                            extension: None,
+                        }]),
+                        linked_tags: None,
+                        triples: triples,
+                        extension: None,
+                    }
+                    .into(),
+                ]
                 .into(),
                 dependent_rims: None,
                 profile: None,
@@ -910,98 +918,17 @@ mod tests {
             .into(),
             signature: Bytes::from(vec![0]).into(),
         };
-
         let mut actual: Vec<u8> = vec![];
 
         ciborium::into_writer(&cose_corim, &mut actual).unwrap();
 
-        println!("Hex Bytes: {:02X?}", &actual);
+        println!("{actual:02X?}");
 
         assert_eq!(expected.as_slice(), &actual);
-    }
 
-    #[test]
-    fn test_cose_sign1_corim_deserialization() {
-        let serialized_bytes: [u8; 163] = [
-            132, 88, 65, 191, 97, 49, 38, 97, 51, 116, 97, 112, 112, 108, 105, 99, 97, 116, 105,
-            111, 110, 47, 114, 105, 109, 43, 99, 98, 111, 114, 97, 52, 71, 107, 101, 121, 45, 48,
-            48, 49, 97, 56, 161, 97, 48, 191, 97, 48, 110, 69, 120, 97, 109, 112, 108, 101, 32, 83,
-            105, 103, 110, 101, 114, 97, 49, 246, 255, 255, 160, 88, 87, 217, 1, 245, 191, 97, 48,
-            105, 99, 111, 114, 105, 109, 45, 48, 48, 49, 97, 49, 129, 130, 25, 1, 249, 191, 97, 48,
-            104, 115, 119, 105, 100, 45, 49, 50, 51, 98, 49, 50, 0, 97, 49, 112, 69, 120, 97, 109,
-            112, 108, 101, 32, 83, 111, 102, 116, 119, 97, 114, 101, 97, 50, 191, 98, 51, 49, 110,
-            69, 120, 97, 109, 112, 108, 101, 32, 69, 110, 116, 105, 116, 121, 98, 51, 51, 129, 1,
-            255, 255, 255, 217, 2, 48, 65, 0,
-        ];
-
-        // Deserialize the byte array
-        let deserialized: COSESign1Corim = ciborium::de::from_reader(&serialized_bytes[..])
+        let deserialized: COSESign1Corim = ciborium::de::from_reader(actual.as_slice())
             .expect("Failed to deserialize COSE_Sign1 CoRIM");
 
-        // Verify the deserialized object has the expected structure
-        assert_eq!(deserialized.protected.alg, -7);
-        assert_eq!(
-            deserialized.protected.content_type,
-            std::borrow::Cow::Borrowed("application/rim+cbor"),
-        );
-        assert_eq!(
-            deserialized.protected.kid,
-            Bytes::from(vec![0x6B, 0x65, 0x79, 0x2D, 0x30, 0x30, 0x31])
-        );
-        assert_eq!(
-            deserialized.protected.corim_meta.signer.signer_name,
-            std::borrow::Cow::Borrowed("Example Signer")
-        );
-        assert!(deserialized
-            .protected
-            .corim_meta
-            .signature_validity
-            .is_none());
-        assert!(deserialized.protected.cose_map.is_some());
-
-        // Check the unprotected header is empty
-        assert!(deserialized.unprotected.is_empty());
-
-        // Verify payload
-        let payload = &deserialized.payload.0;
-        assert_eq!(payload.0.id, "corim-001".into());
-
-        // Verify tags
-        assert_eq!(payload.0.tags.len(), 1);
-        if let ConciseTagTypeChoice::Swid(swid_tag) = &payload.0.tags[0] {
-            let tag = &swid_tag.0;
-            assert_eq!(tag.0.tag_id, "swid-123".into());
-            assert_eq!(tag.0.tag_version, 0.into());
-            assert_eq!(
-                tag.0.software_name,
-                std::borrow::Cow::Borrowed("Example Software")
-            );
-
-            // Check entity
-            let entity = match &tag.0.entity {
-                crate::core::OneOrMore::One(entity) => entity,
-                crate::core::OneOrMore::More(items) => &items[0],
-            };
-
-            assert_eq!(
-                entity.entity_name,
-                std::borrow::Cow::Borrowed("Example Entity")
-            );
-            assert!(entity.reg_id.is_none());
-            assert_eq!(entity.role.len(), 1);
-            assert_eq!(*entity.role.get(0).unwrap(), 1);
-        } else {
-            panic!("Expected a CoSWID tag");
-        }
-
-        // Verify signature
-        assert_eq!(deserialized.signature, Bytes::from(vec![0]).into());
-
-        // Round-trip test: Serialize, then deserialize again
-        let mut reserialize_buffer: Vec<u8> = vec![];
-        ciborium::into_writer(&deserialized, &mut reserialize_buffer).unwrap();
-
-        // Verify the reserialized bytes match the original
-        assert_eq!(serialized_bytes.as_slice(), &reserialize_buffer);
+        assert_eq!(cose_corim, deserialized);
     }
 }

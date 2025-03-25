@@ -96,10 +96,11 @@ use std::{
 };
 
 use crate::{
-    core::PkixBase64CertPathType, Bytes, CertPathThumbprintType, CertThumprintType,
-    ConciseSwidTagId, CoseKeyType, Digest, ExtensionMap, MinSvnType, OidType, OneOrMore,
-    PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, Result, SvnType,
-    Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint, Ulabel, UuidType, VersionScheme,
+    core::PkixBase64CertPathType, empty_map_as_none, Bytes, CertPathThumbprintType,
+    CertThumprintType, ConciseSwidTagId, CoseKeyType, Digest, ExtensionMap, MinSvnType, OidType,
+    OneOrMore, PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, Result,
+    SvnType, Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint, Ulabel, UuidType,
+    VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
@@ -878,6 +879,7 @@ pub struct MeasurementValuesMap<'a> {
     pub integrity_registers: Option<IntegrityRegisters<'a>>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
 }
@@ -1106,6 +1108,7 @@ pub struct FlagsMap<'a> {
     pub is_confidentiality_protected: Option<bool>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
 }

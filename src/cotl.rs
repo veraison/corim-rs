@@ -10,7 +10,7 @@ generate_tagged!((
     TaggedConciseTlTag,
     ConciseTlTag<'a>,
     'a,
-    r#"A Concise Trust List (CoTL) tag structure tagged with CBOR tag 507
+    r#"A Concise Trust List (CoTL) tag structure tagged with CBOR tag 508
 
 CoTL tags provide a mechanism to maintain lists of trusted CoMID and CoSWID tags. 
 They can be used to establish trust relationships and manage tag distribution."#

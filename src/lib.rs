@@ -44,12 +44,16 @@ pub mod error;
 /// Custom CoRIM Results.
 pub mod result;
 
+/// Provides the Emtpy Trait.
+pub mod empty;
+
 // Use all public items from each module
 use comid::*;
 use core::*;
 use corim::*;
 use coswid::*;
 use cotl::*;
+use empty::*;
 use error::*;
 use fixed_bytes::*;
 use result::*;

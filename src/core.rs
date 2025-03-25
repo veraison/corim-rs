@@ -50,7 +50,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use crate::{generate_tagged, FixedBytes};
+use crate::{empty::Empty, empty_map_as_none, generate_tagged, FixedBytes};
 
 /// Text represents a UTF-8 string value
 pub type Text<'a> = Cow<'a, str>;
@@ -174,8 +174,8 @@ pub enum ExtensionMap<'a> {
     Map(BTreeMap<Label<'a>, ExtensionMap<'a>>),
 }
 
-impl<'a> ExtensionMap<'a> {
-    pub fn is_empty(&self) -> bool {
+impl<'a> Empty for ExtensionMap<'a> {
+    fn is_empty(&self) -> bool {
         match self {
             Self::Null => true,
             Self::Text(value) => value.is_empty(),
@@ -187,7 +187,9 @@ impl<'a> ExtensionMap<'a> {
             Self::Map(value) => value.is_empty(),
         }
     }
+}
 
+impl<'a> ExtensionMap<'a> {
     pub fn len(&self) -> usize {
         match self {
             Self::Null => 0,
@@ -922,7 +924,15 @@ pub struct GlobalAttributes<'a> {
     pub lang: Option<Text<'a>>,
     /// Arbitrary attributes
     #[serde(flatten)]
-    pub attributes: ExtensionMap<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
+    pub attributes: Option<ExtensionMap<'a>>,
+}
+
+impl<'a> Empty for GlobalAttributes<'a> {
+    fn is_empty(&self) -> bool {
+        self.lang.is_none() && self.attributes.is_none()
+    }
 }
 
 /// Registry of valid keys for CoRIM maps according to the specification
@@ -1239,7 +1249,16 @@ impl<'de, 'a> Deserialize<'de> for CoseKeySetOrKey<'a> {
                 M: serde::de::MapAccess<'de>,
             {
                 // Deserialize the map as a CoseKey
-                let key = CoseKey::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                let mut key =
+                    CoseKey::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+
+                // Replace empty extension with None for cleaner representation
+                if let Some(extension) = key.extension.take() {
+                    if !extension.is_empty() {
+                        key.extension = Some(extension);
+                    }
+                }
+
                 Ok(CoseKeySetOrKey::Key(key))
             }
         }
@@ -1275,6 +1294,7 @@ pub struct CoseKey<'a> {
     /// Optional extension fields
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub extension: Option<ExtensionMap<'a>>,
 }
 
@@ -1907,22 +1927,6 @@ mod tests {
 
     mod generated_tags {
         use super::*;
-
-        macro_rules! _compare {
-            ($expected:expr, $actual:expr) => {
-                print!("Expected: ");
-                for byte in $expected {
-                    print!("0x{:02X?}, ", byte);
-                }
-                println!();
-                print!("Actual: ");
-                for byte in $actual {
-                    print!("0x{:02X?}, ", byte);
-                }
-                println!();
-            };
-        }
-
         #[test]
         fn test_deserialize_integer_time() {
             let value: Int = 1580000000;
@@ -2117,7 +2121,6 @@ mod tests {
         fn test_svn_type_serialize_deserialize() {
             let expected = SvnType::from(1u32);
 
-            // Expected CBOR bytes: Tag 550 (D826) + Byte string 33 bytes
             let expected_bytes = [
                 0xD9, 0x02, 0x28, // Tag 552
                 0x01, // Value 1

@@ -86,7 +86,7 @@
 
 use crate::{
     core::{RawValueType, TaggedBytes},
-    generate_tagged,
+    empty_map_as_none, generate_tagged,
     triples::{EnvironmentMap, MeasuredElementTypeChoice, MeasurementMap, MeasurementValuesMap},
     AttestKeyTripleRecord, ComidError, ConditionalEndorsementSeriesTripleRecord,
     ConditionalEndorsementTripleRecord, CoswidTripleRecord, DomainDependencyTripleRecord,
@@ -132,6 +132,7 @@ pub struct ConciseMidTag<'a> {
     pub triples: TriplesMap<'a>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap<'a>>,
 }
@@ -431,6 +432,7 @@ pub struct ComidEntityMap<'a> {
     pub role: Vec<ComidRoleTypeChoice>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap<'a>>,
 }
@@ -498,7 +500,7 @@ pub enum TagRelTypeChoice {
 /// Collection of different types of triples describing the module characteristics. It is
 /// **HIGHLY** recommended to use the TriplesMapBuilder, to ensure the CDDL enforcement of
 /// at least one field being present.
-#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct TriplesMap<'a> {
     /// Optional reference triples that link to external references
@@ -549,6 +551,7 @@ pub struct TriplesMap<'a> {
 
     /// Optional extensible attributes for future expansion
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap<'a>>,
 }
@@ -823,3 +826,18 @@ impl<'a> TriplesMapBuilder<'a> {
         })
     }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     #[test]
+//     fn test_tagged_concise_mid_tag_serialize_deserialize_ciborium() {
+//         let expected_bytes: [u8; 50] = [
+
+//             0xD2, 0x02, 0xFA, // Tag 506
+//             0xBF, // Map *
+//             0x61, // (key) Text of one character
+//             0x31, // '1'
+//             0xBF
+//         ];
+//     }
+// }

@@ -122,3 +122,19 @@ macro_rules! generate_tagged {
         )*
     };
 }
+
+#[cfg_attr(test, macro_export)]
+macro_rules! _compare {
+    ($expected:expr, $actual:expr) => {
+        print!("Expected: ");
+        for byte in $expected {
+            print!("0x{:02X?}, ", byte);
+        }
+        println!();
+        print!("Actual: ");
+        for byte in $actual {
+            print!("0x{:02X?}, ", byte);
+        }
+        println!();
+    };
+}

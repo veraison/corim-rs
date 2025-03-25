@@ -68,8 +68,9 @@
 //! and optional fields defined in the standard.
 
 use crate::{
-    generate_tagged, AnyUri, ExtensionMap, GlobalAttributes, HashEntry, Int, Integer, IntegerTime,
-    Label, OneOrMore, Role, Text, TextOrBytes, TextOrBytesSized, Uint, Uri, VersionScheme,
+    empty_map_as_none, generate_tagged, AnyUri, ExtensionMap, GlobalAttributes, HashEntry, Int,
+    Integer, IntegerTime, Label, OneOrMore, Role, Text, TextOrBytes, TextOrBytesSized, Uint, Uri,
+    VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{Deserialize, Serialize};
@@ -133,11 +134,13 @@ pub struct ConciseSwidTag<'a> {
     pub payload_or_evidence: Option<PayloadOrEvidence<'a>>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to the whole tag
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
@@ -227,11 +230,13 @@ pub struct SoftwareMetaEntry<'a> {
     /// Optional extensible attributes
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub extensions: Option<ExtensionMap<'a>>,
 
     /// Global attributes that apply to this metadata entry
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
@@ -258,10 +263,12 @@ pub struct EntityEntry<'a> {
     /// Optional extensible attributes
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub extensions: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this entity
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
@@ -297,10 +304,12 @@ pub struct LinkEntry<'a> {
     pub r#use: Option<Use<'a>>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub extension: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this link
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
@@ -417,6 +426,7 @@ pub struct PayloadEntry<'a> {
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub extension: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this payload entry
     #[serde(flatten)]
@@ -449,6 +459,7 @@ pub struct ResourceCollection<'a> {
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub extensions: Option<ExtensionMap<'a>>,
 }
 
@@ -482,11 +493,13 @@ pub struct DirectoryEntry<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path_elements: Option<Box<PathElementsGroup<'a>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this directory
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
@@ -537,11 +550,13 @@ pub struct FileEntry<'a> {
     pub hash: Option<HashEntry>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this file
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
@@ -560,11 +575,13 @@ pub struct ProcessEntry<'a> {
     pub pid: Option<Integer>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this process
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
@@ -579,11 +596,13 @@ pub struct ResourceEntry<'a> {
     pub r#type: Text<'a>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this resource
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
@@ -622,11 +641,13 @@ pub struct EvidenceEntry<'a> {
     pub location: Option<Text<'a>>,
     /// Optional extensible attributes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
     pub extension: Option<ExtensionMap<'a>>,
     /// Global attributes that apply to this evidence entry
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "empty_map_as_none")]
     pub global_attributes: Option<GlobalAttributes<'a>>,
 }
 
