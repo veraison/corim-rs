@@ -375,7 +375,7 @@ pub enum PayloadOrEvidence<'a> {
     Evidence(Evidence<'a>),
 }
 
-impl<'a> PayloadOrEvidence<'a> {
+impl PayloadOrEvidence<'_> {
     pub fn as_payload(&self) -> Option<Payload> {
         match self {
             Self::Payload(payload) => Some(payload.clone()),

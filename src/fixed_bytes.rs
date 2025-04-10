@@ -15,7 +15,7 @@
 //! let bytes: FixedBytes<32> = FixedBytes([0u8; 32]);
 //!
 //! // Access underlying array
-//! let array: &[u8; 32] = bytes.as_ref();
+//! let array: &[u8; 32] = &bytes;
 //! ```
 //!
 //! # Serialization
@@ -94,7 +94,7 @@ impl<'de, const N: usize> Visitor<'de> for FixedBytesVisitor<'de, N> {
 /// let bytes = FixedBytes([0u8; 200]);
 ///
 /// // Access as slice
-/// let slice: &[u8] = &bytes[..];
+/// let slice: &[u8] = &*bytes;
 /// ```
 pub struct FixedBytes<const N: usize>(pub [u8; N]);
 

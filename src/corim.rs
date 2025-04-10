@@ -108,7 +108,7 @@ pub enum ConciseRimTypeChoice<'a> {
     SignedCorim(SignedCorim<'a>),
 }
 
-impl<'a> ConciseRimTypeChoice<'a> {
+impl ConciseRimTypeChoice<'_> {
     pub fn as_unsigned_corim_map(&self) -> Option<CorimMap> {
         match self {
             Self::TaggedUnsignedCorimMap(val) => Some(val.as_ref().clone()),
@@ -124,7 +124,7 @@ impl<'a> ConciseRimTypeChoice<'a> {
     }
 }
 
-impl<'a> Serialize for ConciseRimTypeChoice<'a> {
+impl Serialize for ConciseRimTypeChoice<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -136,7 +136,7 @@ impl<'a> Serialize for ConciseRimTypeChoice<'a> {
     }
 }
 
-impl<'de, 'a> Deserialize<'de> for ConciseRimTypeChoice<'a> {
+impl<'de> Deserialize<'de> for ConciseRimTypeChoice<'_> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -236,7 +236,6 @@ pub struct CorimMap<'a> {
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(untagged)]
-
 pub enum CorimIdTypeChoice<'a> {
     /// Text string identifier
     Tstr(Tstr<'a>),
@@ -244,7 +243,7 @@ pub enum CorimIdTypeChoice<'a> {
     Uuid(UuidType),
 }
 
-impl<'a> CorimIdTypeChoice<'a> {
+impl CorimIdTypeChoice<'_> {
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::Tstr(cow) => Some(cow),
@@ -254,7 +253,7 @@ impl<'a> CorimIdTypeChoice<'a> {
 
     pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Uuid(val) => Some(val.as_ref().as_ref()),
+            Self::Uuid(val) => Some(val.as_ref()),
             _ => None,
         }
     }
@@ -279,7 +278,7 @@ pub enum ConciseTagTypeChoice<'a> {
     Tl(TaggedConciseTlTag<'a>),
 }
 
-impl<'de, 'a> Deserialize<'de> for ConciseTagTypeChoice<'a> {
+impl<'de> Deserialize<'de> for ConciseTagTypeChoice<'_> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -346,7 +345,7 @@ impl<'de, 'a> Deserialize<'de> for ConciseTagTypeChoice<'a> {
     }
 }
 
-impl<'a> ConciseTagTypeChoice<'a> {
+impl ConciseTagTypeChoice<'_> {
     pub fn as_coswid(&self) -> Option<ConciseSwidTag> {
         match self {
             Self::Swid(coswid) => Some(coswid.as_ref().clone()),
@@ -436,7 +435,7 @@ pub enum ProfileTypeChoice<'a> {
     OidType(OidType),
 }
 
-impl<'a> ProfileTypeChoice<'a> {
+impl ProfileTypeChoice<'_> {
     pub fn as_uri(&self) -> Option<Uri> {
         match self {
             Self::Uri(uri) => Some(uri.clone()),
@@ -459,7 +458,7 @@ impl<'a> ProfileTypeChoice<'a> {
     }
 }
 
-impl<'a> Serialize for ProfileTypeChoice<'a> {
+impl Serialize for ProfileTypeChoice<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -471,7 +470,7 @@ impl<'a> Serialize for ProfileTypeChoice<'a> {
     }
 }
 
-impl<'de, 'a> Deserialize<'de> for ProfileTypeChoice<'a> {
+impl<'de> Deserialize<'de> for ProfileTypeChoice<'_> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -595,7 +594,7 @@ pub struct COSESign1Corim<'a> {
 /// Unprotected header for a signed CoRIM
 pub type UnprotectedCorimHeaderMap<'a> = BTreeMap<Label<'a>, ExtensionMap<'a>>;
 
-impl<'a> Serialize for COSESign1Corim<'a> {
+impl Serialize for COSESign1Corim<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -635,7 +634,7 @@ impl<'a> Serialize for COSESign1Corim<'a> {
         seq.end()
     }
 }
-impl<'de, 'a> Deserialize<'de> for COSESign1Corim<'a> {
+impl<'de> Deserialize<'de> for COSESign1Corim<'_> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -866,7 +865,7 @@ mod tests {
                 tags: vec![
                     ConciseSwidTag {
                         tag_id: "swid-123".into(),
-                        tag_version: 0.into(),
+                        tag_version: 0,
                         software_name: "Example Software".into(),
                         entity: EntityEntry {
                             entity_name: "Example Entity".into(),
@@ -903,12 +902,11 @@ mod tests {
                             extension: None,
                         }]),
                         linked_tags: None,
-                        triples: triples,
+                        triples,
                         extension: None,
                     }
                     .into(),
-                ]
-                .into(),
+                ],
                 dependent_rims: None,
                 profile: None,
                 rim_validity: None,

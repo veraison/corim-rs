@@ -119,7 +119,7 @@ pub struct ReferenceTripleRecord<'a> {
     pub ref_claims: Vec<MeasurementMap<'a>>,
 }
 
-impl<'a> Serialize for ReferenceTripleRecord<'a> {
+impl Serialize for ReferenceTripleRecord<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -131,7 +131,7 @@ impl<'a> Serialize for ReferenceTripleRecord<'a> {
     }
 }
 
-impl<'de, 'a> Deserialize<'de> for ReferenceTripleRecord<'a> {
+impl<'de> Deserialize<'de> for ReferenceTripleRecord<'_> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -345,7 +345,7 @@ impl ClassIdTypeChoice {
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             Self::Oid(oid_type) => oid_type.as_ref(),
-            Self::Uuid(uuid_type) => uuid_type.as_ref().as_ref(),
+            Self::Uuid(uuid_type) => uuid_type.as_ref(),
             Self::Bytes(bytes) => bytes.as_ref(),
         }
     }
@@ -460,7 +460,7 @@ pub enum InstanceIdTypeChoice<'a> {
     Bytes(Bytes),
 }
 
-impl<'a> InstanceIdTypeChoice<'a> {
+impl InstanceIdTypeChoice<'_> {
     pub fn as_ueid_bytes(&self) -> Option<&[u8]> {
         match self {
             Self::Ueid(ueid) => Some(ueid.as_ref()),
@@ -530,7 +530,7 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 ///
 /// ```rust
 /// use corim_rs::triples::CryptoKeyTypeChoice;
-/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, AlgLabel, Label, CoseAlgorithm, Vec};
+/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, AlgLabel, Label, CoseAlgorithm};
 ///
 /// // Base64 encoded certificate
 /// let cert = CryptoKeyTypeChoice::PkixBase64Cert(
@@ -541,13 +541,13 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 /// let cose = CryptoKeyTypeChoice::CoseKey(
 ///     CoseKeyType::new(CoseKeySetOrKey::Key(CoseKey {
 ///         kty: Label::Int(1),  // EC2 key type
-///         kid: TaggedBytes::new(vec![1, 2, 3]),  // Key ID
+///         kid: TaggedBytes::new(vec![1, 2, 3].into()),  // Key ID
 ///         alg: AlgLabel::Int(CoseAlgorithm::ES256),  // ES256 algorithm
 ///         key_ops: vec![
 ///             Label::Int(1),  // sign
 ///             Label::Int(2),  // verify
 ///         ].into(),
-///         base_iv: TaggedBytes::new(vec![4, 5, 6]),  // Initialization vector
+///         base_iv: TaggedBytes::new(vec![4, 5, 6].into()),  // Initialization vector
 ///         extension: None,  // No extensions
 ///     }))
 /// );
@@ -584,7 +584,7 @@ pub enum CryptoKeyTypeChoice<'a> {
     Bytes(Bytes),
 }
 
-impl<'a> CryptoKeyTypeChoice<'a> {
+impl CryptoKeyTypeChoice<'_> {
     pub fn as_pkix_key(&self) -> Option<PkixBase64KeyType> {
         match self {
             Self::PkixBase64Key(key) => Some(key.clone()),
@@ -766,7 +766,7 @@ pub enum MeasuredElementTypeChoice<'a> {
     Tstr(Tstr<'a>),
 }
 
-impl<'a> MeasuredElementTypeChoice<'a> {
+impl MeasuredElementTypeChoice<'_> {
     pub fn is_empty(&self) -> bool {
         match self {
             Self::Oid(oid) => oid.is_empty(),
@@ -1339,7 +1339,7 @@ pub struct EndorsedTripleRecord<'a> {
     pub endorsement: Vec<MeasurementMap<'a>>,
 }
 
-impl<'a> Serialize for EndorsedTripleRecord<'a> {
+impl Serialize for EndorsedTripleRecord<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1402,7 +1402,7 @@ pub struct IdentityTripleRecord<'a> {
     pub conditions: Option<TriplesRecordCondition<'a>>,
 }
 
-impl<'a> Serialize for IdentityTripleRecord<'a> {
+impl Serialize for IdentityTripleRecord<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1454,9 +1454,9 @@ impl<'de, 'a> Deserialize<'de> for IdentityTripleRecord<'a> {
                 let conditions = seq.next_element::<Option<TriplesRecordCondition>>()?;
 
                 if let Some(conditions) = conditions {
-                    return Ok(IdentityTripleRecord::new(environment, key_list, conditions));
+                    Ok(IdentityTripleRecord::new(environment, key_list, conditions))
                 } else {
-                    return Ok(IdentityTripleRecord::new(environment, key_list, None));
+                    Ok(IdentityTripleRecord::new(environment, key_list, None))
                 }
             }
         }
@@ -1524,7 +1524,7 @@ pub struct AttestKeyTripleRecord<'a> {
     pub conditions: Option<TriplesRecordCondition<'a>>,
 }
 
-impl<'a> Serialize for AttestKeyTripleRecord<'a> {
+impl Serialize for AttestKeyTripleRecord<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1576,13 +1576,13 @@ impl<'de, 'a> Deserialize<'de> for AttestKeyTripleRecord<'a> {
                 let conditions = seq.next_element::<Option<TriplesRecordCondition>>()?;
 
                 if let Some(conditions) = conditions {
-                    return Ok(AttestKeyTripleRecord::new(
+                    Ok(AttestKeyTripleRecord::new(
                         environment,
                         key_list,
                         conditions,
-                    ));
+                    ))
                 } else {
-                    return Ok(AttestKeyTripleRecord::new(environment, key_list, None));
+                    Ok(AttestKeyTripleRecord::new(environment, key_list, None))
                 }
             }
         }
@@ -1604,7 +1604,7 @@ pub struct DomainDependencyTripleRecord<'a> {
 }
 
 // Need to implement Serialize / Deserialize here.
-impl<'a> Serialize for DomainDependencyTripleRecord<'a> {
+impl Serialize for DomainDependencyTripleRecord<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1616,7 +1616,7 @@ impl<'a> Serialize for DomainDependencyTripleRecord<'a> {
     }
 }
 
-impl<'de, 'a> Deserialize<'de> for DomainDependencyTripleRecord<'a> {
+impl<'de> Deserialize<'de> for DomainDependencyTripleRecord<'_> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -1672,7 +1672,7 @@ pub enum DomainTypeChoice<'a> {
     Oid(OidType),
 }
 
-impl<'a> DomainTypeChoice<'a> {
+impl DomainTypeChoice<'_> {
     pub fn as_uint(&self) -> Option<u32> {
         match self {
             Self::Uint(value) => Some(*value),
@@ -1712,7 +1712,7 @@ pub struct DomainMembershipTripleRecord<'a> {
     pub environment_map: Vec<EnvironmentMap<'a>>,
 }
 
-impl<'a> Serialize for DomainMembershipTripleRecord<'a> {
+impl Serialize for DomainMembershipTripleRecord<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1778,7 +1778,7 @@ pub struct CoswidTripleRecord<'a> {
     pub coswid_tags: Vec<ConciseSwidTagId<'a>>,
 }
 
-impl<'a> Serialize for CoswidTripleRecord<'a> {
+impl Serialize for CoswidTripleRecord<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1853,7 +1853,7 @@ pub struct ConditionalEndorsementSeriesTripleRecord<'a> {
     pub series: Vec<ConditionalSeriesRecord<'a>>,
 }
 
-impl<'a> Serialize for ConditionalEndorsementSeriesTripleRecord<'a> {
+impl Serialize for ConditionalEndorsementSeriesTripleRecord<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1920,7 +1920,7 @@ pub struct StatefulEnvironmentRecord<'a> {
     pub claims_list: Vec<MeasurementMap<'a>>,
 }
 
-impl<'a> Serialize for StatefulEnvironmentRecord<'a> {
+impl Serialize for StatefulEnvironmentRecord<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1983,7 +1983,7 @@ pub struct ConditionalSeriesRecord<'a> {
     pub addition: Vec<MeasurementMap<'a>>,
 }
 
-impl<'a> Serialize for ConditionalSeriesRecord<'a> {
+impl Serialize for ConditionalSeriesRecord<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -2044,7 +2044,7 @@ pub struct ConditionalEndorsementTripleRecord<'a> {
     pub endorsements: Vec<EndorsedTripleRecord<'a>>,
 }
 
-impl<'a> Serialize for ConditionalEndorsementTripleRecord<'a> {
+impl Serialize for ConditionalEndorsementTripleRecord<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,

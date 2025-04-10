@@ -138,7 +138,7 @@ impl Serialize for Bytes {
     where
         S: Serializer,
     {
-        serializer.serialize_bytes(&self.bytes.as_slice())
+        serializer.serialize_bytes(self.bytes.as_slice())
     }
 }
 
@@ -174,7 +174,7 @@ pub enum ExtensionMap<'a> {
     Map(BTreeMap<Label<'a>, ExtensionMap<'a>>),
 }
 
-impl<'a> Empty for ExtensionMap<'a> {
+impl Empty for ExtensionMap<'_> {
     fn is_empty(&self) -> bool {
         match self {
             Self::Null => true,
@@ -190,6 +190,19 @@ impl<'a> Empty for ExtensionMap<'a> {
 }
 
 impl<'a> ExtensionMap<'a> {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Null => true,
+            Self::Text(value) => value.is_empty(),
+            Self::Bytes(value) => value.bytes.is_empty(),
+            Self::Uint(_) => false,
+            Self::Int(_) => false,
+            Self::Bool(_) => false,
+            Self::Array(value) => value.is_empty(),
+            Self::Map(value) => value.is_empty(),
+        }
+    }
+
     pub fn len(&self) -> usize {
         match self {
             Self::Null => 0,
@@ -412,7 +425,7 @@ pub enum TextOrBytes<'a> {
     Bytes(TaggedBytes),
 }
 
-impl<'a> TextOrBytes<'a> {
+impl TextOrBytes<'_> {
     pub fn is_empty(&self) -> bool {
         match self {
             Self::Text(value) => value.is_empty(),
@@ -459,7 +472,7 @@ pub enum TextOrBytesSized<'a, const N: usize> {
     Bytes(FixedBytes<N>),
 }
 
-impl<'a, const N: usize> TextOrBytesSized<'a, N> {
+impl<const N: usize> TextOrBytesSized<'_, N> {
     pub fn is_empty(&self) -> bool {
         match self {
             Self::Text(value) => value.is_empty(),
@@ -575,7 +588,7 @@ pub enum Label<'a> {
     Int(Int),
 }
 
-impl<'a> Label<'a> {
+impl Label<'_> {
     pub fn is_empty(&self) -> bool {
         match self {
             Label::Text(value) => value.is_empty(),
@@ -619,7 +632,7 @@ pub enum AlgLabel<'a> {
     Int(CoseAlgorithm),
 }
 
-impl<'a> AlgLabel<'a> {
+impl AlgLabel<'_> {
     pub fn is_empty(&self) -> bool {
         match self {
             AlgLabel::Text(value) => value.is_empty(),
@@ -649,7 +662,7 @@ impl<'a> AlgLabel<'a> {
     }
 }
 
-impl<'a> Serialize for AlgLabel<'a> {
+impl Serialize for AlgLabel<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -670,7 +683,7 @@ impl<'de, 'a> Deserialize<'de> for AlgLabel<'a> {
             _phantom: std::marker::PhantomData<&'a ()>,
         }
 
-        impl<'de, 'a> Visitor<'de> for AlgLabelVisitor<'a> {
+        impl<'a> Visitor<'_> for AlgLabelVisitor<'a> {
             type Value = AlgLabel<'a>; // Match Digest<'a>
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -747,6 +760,13 @@ impl<'de, 'a> Deserialize<'de> for AlgLabel<'a> {
             {
                 Ok(AlgLabel::Text(Cow::Owned(value))) // Owned data, no lifetime dependency on 'de
             }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(AlgLabel::Text(Cow::Owned(value.to_string()))) // Use owned data to avoid lifetime issues
+            }
         }
 
         deserializer.deserialize_any(AlgLabelVisitor {
@@ -766,7 +786,7 @@ pub enum Ulabel<'a> {
     Uint(Uint),
 }
 
-impl<'a> Ulabel<'a> {
+impl Ulabel<'_> {
     pub fn is_empty(&self) -> bool {
         match self {
             Ulabel::Text(value) => value.is_empty(),
@@ -825,7 +845,7 @@ impl<T: Clone> OneOrMore<T> {
 
     pub fn as_many(&self) -> Option<&[T]> {
         match self {
-            Self::More(val) => Some(&*val),
+            Self::More(val) => Some(val),
             _ => None,
         }
     }
@@ -929,7 +949,7 @@ pub struct GlobalAttributes<'a> {
     pub attributes: Option<ExtensionMap<'a>>,
 }
 
-impl<'a> Empty for GlobalAttributes<'a> {
+impl Empty for GlobalAttributes<'_> {
     fn is_empty(&self) -> bool {
         self.lang.is_none() && self.attributes.is_none()
     }
@@ -994,7 +1014,7 @@ pub struct Digest<'a> {
     pub val: Bytes,
 }
 
-impl<'a> Serialize for Digest<'a> {
+impl Serialize for Digest<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1009,7 +1029,7 @@ impl<'a> Serialize for Digest<'a> {
     }
 }
 
-impl<'de, 'a> Deserialize<'de> for Digest<'a> {
+impl<'de> Deserialize<'de> for Digest<'_> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -1064,7 +1084,7 @@ impl<'de, 'a> Deserialize<'de> for Digest<'a> {
                     _phantom: std::marker::PhantomData<&'a ()>,
                 }
 
-                impl<'de, 'a> Visitor<'de> for AlgLabelVisitor<'a> {
+                impl<'a> Visitor<'_> for AlgLabelVisitor<'a> {
                     type Value = AlgLabel<'a>; // Match Digest<'a>
 
                     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -1142,6 +1162,13 @@ impl<'de, 'a> Deserialize<'de> for Digest<'a> {
                     {
                         Ok(AlgLabel::Text(Cow::Owned(value))) // Owned data, no lifetime dependency on 'de
                     }
+
+                    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        Ok(AlgLabel::Text(Cow::Owned(value.to_string())))
+                    }
                 }
 
                 deserializer.deserialize_any(AlgLabelVisitor {
@@ -1165,7 +1192,7 @@ pub enum CoseKeySetOrKey<'a> {
     Key(CoseKey<'a>),
 }
 
-impl<'a> CoseKeySetOrKey<'a> {
+impl CoseKeySetOrKey<'_> {
     pub fn is_empty(&self) -> bool {
         match self {
             CoseKeySetOrKey::KeySet(keys) => keys.is_empty(),
@@ -1180,14 +1207,14 @@ impl<'a> CoseKeySetOrKey<'a> {
         }
     }
 
-    pub fn as_key_set(&self) -> Option<&Vec<CoseKey<'a>>> {
+    pub fn as_key_set(&self) -> Option<&Vec<CoseKey<'_>>> {
         match self {
             CoseKeySetOrKey::KeySet(keys) => Some(keys),
             _ => None,
         }
     }
 
-    pub fn as_key(&self) -> Option<&CoseKey<'a>> {
+    pub fn as_key(&self) -> Option<&CoseKey<'_>> {
         match self {
             CoseKeySetOrKey::Key(key) => Some(key),
             _ => None,
@@ -1195,7 +1222,7 @@ impl<'a> CoseKeySetOrKey<'a> {
     }
 }
 
-impl<'a> Serialize for CoseKeySetOrKey<'a> {
+impl Serialize for CoseKeySetOrKey<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1239,7 +1266,7 @@ impl<'de, 'a> Deserialize<'de> for CoseKeySetOrKey<'a> {
                 }
 
                 // Convert to Vec
-                let non_empty_keys = Vec::from(keys);
+                let non_empty_keys = keys;
                 Ok(CoseKeySetOrKey::KeySet(non_empty_keys))
             }
 

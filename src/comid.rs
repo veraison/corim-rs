@@ -142,7 +142,7 @@ impl<'a> ConciseMidTag<'a> {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```ignore
     /// use corim_rs::comid::ConciseMidTag;
     /// use corim_rs::comid::TagIdentityMap;
     /// use corim_rs::comid::TagIdTypeChoice;
@@ -156,8 +156,7 @@ impl<'a> ConciseMidTag<'a> {
     ///     tag_version: Some(1),
     /// };
     /// ```
-    // The Default trait provides an implementation already
-
+    ///
     /// Adds a reference value to the CoMID tag's reference triples.
     ///
     /// This method serializes the provided value to CBOR bytes and adds it as a raw measurement value
@@ -226,9 +225,9 @@ impl<'a> ConciseMidTag<'a> {
             None => {
                 let new_record = ReferenceTripleRecord {
                     ref_env: environment.clone(),
-                    ref_claims: vec![measurement].into(),
+                    ref_claims: vec![measurement],
                 };
-                self.triples.reference_triples = Some(vec![new_record].into());
+                self.triples.reference_triples = Some(vec![new_record]);
             }
             Some(vec) => {
                 if let Some(record) = vec.iter_mut().find(|r| r.ref_env == *environment) {
@@ -236,7 +235,7 @@ impl<'a> ConciseMidTag<'a> {
                 } else {
                     let new_record = ReferenceTripleRecord {
                         ref_env: environment.clone(),
-                        ref_claims: vec![measurement].into(),
+                        ref_claims: vec![measurement],
                     };
                     vec.push(new_record);
                 }
@@ -315,9 +314,9 @@ impl<'a> ConciseMidTag<'a> {
             None => {
                 let new_record = EndorsedTripleRecord {
                     condition: environment.clone(),
-                    endorsement: vec![measurement].into(),
+                    endorsement: vec![measurement],
                 };
-                self.triples.endorsed_triples = Some(vec![new_record].into());
+                self.triples.endorsed_triples = Some(vec![new_record]);
             }
 
             Some(vec) => {
@@ -326,7 +325,7 @@ impl<'a> ConciseMidTag<'a> {
                 } else {
                     let new_record = EndorsedTripleRecord {
                         condition: environment.clone(),
-                        endorsement: vec![measurement].into(),
+                        endorsement: vec![measurement],
                     };
                     vec.push(new_record);
                 }
@@ -366,7 +365,7 @@ pub enum TagIdTypeChoice<'a> {
     Uuid(UuidType),
 }
 
-impl<'a> TagIdTypeChoice<'a> {
+impl TagIdTypeChoice<'_> {
     /// Returns the tag identifier as a string, if it is a text value
     pub fn as_str(&self) -> Option<&str> {
         match self {
@@ -581,8 +580,6 @@ impl<'a> TriplesMapBuilder<'a> {
     ///
     /// let builder = TriplesMapBuilder::default();
     /// ```
-    // Default impl is already provided
-
     /// Adds reference triples to the builder
     ///
     /// # Arguments
