@@ -43,6 +43,7 @@ use std::{
     ops::{Deref, DerefMut, Index, IndexMut},
 };
 
+use base64::{self, engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
     de::{self, SeqAccess, Visitor},
@@ -84,6 +85,32 @@ impl From<&[u8]> for Bytes {
         Self {
             bytes: value.to_vec(),
         }
+    }
+}
+
+impl TryFrom<&str> for Bytes {
+    type Error = base64::DecodeError;
+
+    fn try_from(v: &str) -> Result<Self, Self::Error> {
+        Ok(Self {
+            bytes: URL_SAFE_NO_PAD.decode(v)?,
+        })
+    }
+}
+
+impl TryFrom<String> for Bytes {
+    type Error = base64::DecodeError;
+
+    fn try_from(v: String) -> Result<Self, Self::Error> {
+        Ok(Self {
+            bytes: URL_SAFE_NO_PAD.decode(v)?,
+        })
+    }
+}
+
+impl ToString for Bytes {
+    fn to_string(&self) -> String {
+        URL_SAFE_NO_PAD.encode::<&[u8]>(&self.bytes)
     }
 }
 
@@ -138,7 +165,11 @@ impl Serialize for Bytes {
     where
         S: Serializer,
     {
-        serializer.serialize_bytes(self.bytes.as_slice())
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            serializer.serialize_bytes(self.bytes.as_slice())
+        }
     }
 }
 
@@ -147,8 +178,14 @@ impl<'de> Deserialize<'de> for Bytes {
     where
         D: Deserializer<'de>,
     {
-        let bytes = Vec::<u8>::deserialize(deserializer)?;
-        Ok(Bytes { bytes })
+        if deserializer.is_human_readable() {
+            Ok(String::deserialize(deserializer)?
+                .try_into()
+                .map_err(de::Error::custom)?)
+        } else {
+            let bytes = Vec::<u8>::deserialize(deserializer)?;
+            Ok(Bytes { bytes })
+        }
     }
 }
 
@@ -1947,6 +1984,26 @@ mod tests {
             let expected: super::Bytes = vec![1, 2, 3, 4, 5].into();
 
             let actual: super::Bytes = ciborium::from_reader(&input[..]).unwrap();
+
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_bytes_json_serialize() {
+            let bytes: super::Bytes = vec![1, 2, 3, 4, 5].into();
+
+            let text = serde_json::to_string(&bytes).unwrap();
+
+            assert_eq!(text, "\"AQIDBAU\"");
+        }
+
+        #[test]
+        fn test_bytes_json_deserialize() {
+            let text = "\"AQIDBAU\"";
+
+            let expected: super::Bytes = vec![1, 2, 3, 4, 5].into();
+
+            let actual: super::Bytes = serde_json::from_str(text).unwrap();
 
             assert_eq!(actual, expected);
         }
