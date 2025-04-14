@@ -32,7 +32,10 @@
 /// # Example
 ///
 /// ```
-/// use serde::{Serialize, Deserialize};
+/// use serde::{
+///     ser::SerializeMap,
+///     Serialize, Deserialize,
+/// };
 /// use ciborium::tag::Accepted;
 ///
 /// // This macro is exported from the crate
@@ -47,6 +50,7 @@
 ///     42,  // CBOR tag number
 ///     TaggedMyType,  // Generated struct name
 ///     MyType,  // Type to wrap
+///     "my-type",
 ///     "A wrapped MyType with CBOR tag 42"  // Documentation
 /// ));
 ///
@@ -73,10 +77,10 @@
 #[macro_export]
 macro_rules! generate_tagged {
     // Combined pattern that handles both with and without lifetime parameters
-    ($(($tag_num:expr, $title:ident, $type:ty $(, $($lt:lifetime),* )?, $doc_comments:literal)),* $(,)?) => {
+    ($(($tag_num:expr, $title:ident, $type:ty $(, $($lt:lifetime),* )?, $name:literal, $doc_comments:literal)),* $(,)?) => {
         $(
             #[doc = $doc_comments]
-            #[derive(Debug, ::serde::Serialize, ::serde::Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+            #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
             #[repr(C)]
             pub struct $title $(< $($lt),* >)? (pub ::ciborium::tag::Accepted<$type, $tag_num>);
 
@@ -119,6 +123,94 @@ macro_rules! generate_tagged {
                     Self::new(value)
                 }
             }
+
+            impl $(< $($lt),* >)? ::serde::ser::Serialize for $title $(< $($lt),* >)? {
+                fn serialize<S>(&self, serializer: S) -> ::core::result::Result<S::Ok, S::Error>
+                where
+                    S: serde::Serializer,
+                {
+                    if serializer.is_human_readable() {
+                        let mut state = serializer.serialize_map(Some(2))?;
+                        state.serialize_entry("type", $name)?;
+                        state.serialize_entry("value", &self.0.0)?;
+                        state.end()
+                    } else {
+                        self.0.serialize(serializer)
+                    }
+                }
+            }
+
+            impl < $( $($lt),* ,)? 'de> ::serde::de::Deserialize<'de> for $title $(< $($lt),* >)? {
+                fn deserialize<D>(deserializer: D) -> ::core::result::Result<$title $(< $($lt),* >)?  , D::Error>
+                where
+                    D: ::serde::de::Deserializer<'de>,
+                {
+                    struct __Visitor <'de, $( $($lt),* )?> {
+                        marker: std::marker::PhantomData< $title $(< $($lt),* >)? >,
+                        lifetime: std::marker::PhantomData<&'de () >,
+                    }
+
+                    impl<'de, $( $($lt),* ,)? > ::serde::de::Visitor<'de> for __Visitor<'de, $( $($lt),* )?> {
+                        type Value = $title $(< $($lt),* >)?;
+
+                        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                            formatter.write_str(
+                                &format!("{} struct", stringify!(title)),
+                                )
+                        }
+
+                        fn visit_map<A>(self, mut map: A) -> ::core::result::Result<Self::Value, A::Error>
+                        where
+                            A: ::serde::de::MapAccess<'de>
+                        {
+                            let mut ret = Err(::serde::de::Error::custom(format!("no \"value\" entry in map")));
+                            let mut seen_tag: bool = false;
+                            loop {
+                                match map.next_key::<&str>()? {
+                                    Some("type") => {
+                                        let typ: String = map.next_value()?;
+                                        if typ != $name {
+                                            return Err(::serde::de::Error::custom(format!(
+                                                        "expected type {}, found {}",
+                                                        $name,
+                                                        typ,
+                                                    )));
+                                        }
+
+                                        seen_tag = true;
+                                    },
+                                    Some("value") => {
+                                        ret = Ok($title::new(map.next_value::<$type>()?));
+                                    },
+                                    Some(s) => {
+                                        return Err(::serde::de::Error::custom(
+                                                format!("unexpected map entry: {}", s)
+                                                ));
+                                    },
+                                    None => break,
+                                }
+                            }
+
+                            if seen_tag {
+                                ret
+                            } else {
+                                Err(::serde::de::Error::custom("no \"tag\" entry in map"))
+                            }
+                        }
+                    }
+
+                    if deserializer.is_human_readable() {
+                        deserializer.deserialize_map(__Visitor
+                            {
+                                marker: std::marker::PhantomData,
+                                lifetime: std::marker::PhantomData,
+                            })
+                    } else {
+                        Ok($title(::ciborium::tag::Accepted::deserialize(deserializer)?))
+                    }
+                }
+            }
+
         )*
     };
 }

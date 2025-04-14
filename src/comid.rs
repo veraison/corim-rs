@@ -94,7 +94,7 @@ use crate::{
     ReferenceTripleRecord, Result, Text, Tstr, Uint, Uri, UuidType,
 };
 use derive_more::{Constructor, From, TryFrom};
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeMap, Deserialize, Serialize};
 
 /// A tag version number represented as an unsigned integer
 pub type TagVersionType = Uint;
@@ -104,6 +104,7 @@ generate_tagged!((
     TaggedConciseMidTag,
     ConciseMidTag<'a>,
     'a,
+    "comid",
     "A Concise Module Identifier (CoMID) structured tag"
 ),);
 /// A Concise Module Identifier (CoMID) tag structure tagged with CBOR tag 506

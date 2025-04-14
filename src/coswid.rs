@@ -73,9 +73,9 @@ use crate::{
     VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeMap, Deserialize, Serialize};
 
-generate_tagged!((505, TaggedConciseSwidTag, ConciseSwidTag<'a>, 'a, "Represents a CoSWID tag wrapped with CBOR tag 505"));
+generate_tagged!((505, TaggedConciseSwidTag, ConciseSwidTag<'a>, 'a, "coswid", "Represents a CoSWID tag wrapped with CBOR tag 505"));
 
 /// A Concise Software Identity (CoSWID) tag structure as defined in RFC 9393
 ///
