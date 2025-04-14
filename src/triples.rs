@@ -99,8 +99,8 @@ use crate::{
     core::PkixBase64CertPathType, empty_map_as_none, Bytes, CertPathThumbprintType,
     CertThumprintType, ConciseSwidTagId, CoseKeyType, Digest, ExtensionMap, MinSvnType, OidType,
     OneOrMore, PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, Result,
-    SvnType, Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint, Ulabel, UuidType,
-    VersionScheme,
+    SvnType, TaggedBytes, TaggedUuidType, Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint,
+    Ulabel, UuidType, VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
@@ -317,9 +317,9 @@ pub enum ClassIdTypeChoice {
     /// Object Identifier (OID)
     Oid(OidType),
     /// UUID identifier
-    Uuid(UuidType),
+    Uuid(TaggedUuidType),
     /// Raw bytes
-    Bytes(Bytes),
+    Bytes(TaggedBytes),
 }
 
 impl ClassIdTypeChoice {
@@ -345,7 +345,7 @@ impl ClassIdTypeChoice {
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             Self::Oid(oid_type) => oid_type.as_ref(),
-            Self::Uuid(uuid_type) => uuid_type.as_ref(),
+            Self::Uuid(uuid_type) => uuid_type.as_ref().as_ref(),
             Self::Bytes(bytes) => bytes.as_ref(),
         }
     }
