@@ -626,11 +626,11 @@ generate_tagged!(
     (554, PkixBase64KeyType, Tstr<'a>, 'a, "pkix-base64-key", "A PKIX key in base64 format using CBOR tag 554"),
     (555, PkixBase64CertType, Tstr<'a>, 'a, "pkix-base64-cert", "A PKIX certificate in base64 format using CBOR tag 555"),
     (556, PkixBase64CertPathType, Tstr<'a>, 'a, "pkix-base64-cert-path", "A PKIX certificate path in base64 format using CBOR tag 556"),
-    (557, ThumbprintType, Digest<'a>, 'a, "thumbprint", "A cryptographic thumbprint using CBOR tag 557"),
+    (557, ThumbprintType, Digest, "thumbprint", "A cryptographic thumbprint using CBOR tag 557"),
     (558, CoseKeyType, CoseKeySetOrKey<'a>, 'a, "cose-key", "CBOR tag 558 wrapper for COSE Key Structures"),
-    (559, CertThumprintType, Digest<'a>, 'a, "cert-thumbprint", "A certificate thumbprint using CBOR tag 559"),
+    (559, CertThumprintType, Digest, "cert-thumbprint", "A certificate thumbprint using CBOR tag 559"),
     (560, TaggedBytes, Bytes, "bytes", "A generic byte string using CBOR tag 560"),
-    (561, CertPathThumbprintType, Digest<'a>, 'a, "cert-path-thumbprint", "A certificate path thumbprint using CBOR tag 561"),
+    (561, CertPathThumbprintType, Digest, "cert-path-thumbprint", "A certificate path thumbprint using CBOR tag 561"),
     (562, PkixAsn1DerCertType, TaggedBytes, "pkix-asn1-der-cert", "A PKIX certificate in ASN.1 DER format using CBOR tag 562"),
     (563, TaggedMaskedRawValue, MaskedRawValue, "masked-raw-value", "Represents a masked raw value with its mask"),
 );
@@ -1228,39 +1228,73 @@ pub enum CotlMapRegistry {
 /// Represents a digest value with its algorithm identifier
 #[repr(C)]
 #[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct Digest<'a> {
+pub struct Digest {
     /// Algorithm identifier for the digest
-    pub alg: AlgLabel<'a>,
+    pub alg: HashAlgorithm,
     /// The digest value as bytes
     pub val: Bytes,
 }
 
-impl Serialize for Digest<'_> {
+impl TryFrom<&str> for Digest {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let mut split = value.split(";");
+
+        let alg = HashAlgorithm::try_from(match split.next() {
+            Some(v) => Ok(v),
+            None => Err(CoreError::InvalidValue("empty value".to_string())),
+        }?)?;
+
+        let val = Bytes::try_from(match split.next() {
+            Some(v) => Ok(v),
+            None => Err(CoreError::InvalidValue("no data after \";\"".to_string())),
+        }?)
+        .map_err(|e| CoreError::InvalidValue(e.to_string()))?;
+
+        match split.next() {
+            Some(_) => Err(CoreError::InvalidValue(
+                "too many \";\" found (expect exactly one)".to_string(),
+            )),
+            None => Ok(Digest { alg, val }),
+        }
+    }
+}
+
+impl Display for Digest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{};{}", self.alg, URL_SAFE_NO_PAD.encode(&self.val),)
+    }
+}
+
+impl Serialize for Digest {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut seq = serializer.serialize_seq(Some(2))?;
-        match &self.alg {
-            AlgLabel::Text(text) => seq.serialize_element(text)?,
-            AlgLabel::Int(cose_alg) => seq.serialize_element(cose_alg)?,
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            let mut seq = serializer.serialize_seq(Some(2))?;
+            match self.alg.to_u8() {
+                Some(u) => seq.serialize_element(&u)?,
+                None => seq.serialize_element(&self.alg.to_string())?,
+            }
+            seq.serialize_element(&self.val)?;
+            seq.end()
         }
-        seq.serialize_element(&self.val)?;
-        seq.end()
     }
 }
 
-impl<'de> Deserialize<'de> for Digest<'_> {
+impl<'de> Deserialize<'de> for Digest {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct DigestVisitor<'a> {
-            _phantom: std::marker::PhantomData<&'a ()>,
-        }
+        struct DigestVisitor;
 
-        impl<'de, 'a> Visitor<'de> for DigestVisitor<'a> {
-            type Value = Digest<'a>;
+        impl<'de> Visitor<'de> for DigestVisitor {
+            type Value = Digest;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str(
@@ -1273,9 +1307,7 @@ impl<'de> Deserialize<'de> for Digest<'_> {
                 A: SeqAccess<'de>,
             {
                 let alg = seq
-                    .next_element_seed(AlgLabelSeed {
-                        _phantom: std::marker::PhantomData,
-                    })?
+                    .next_element::<HashAlgorithm>()?
                     .ok_or_else(|| serde::de::Error::custom("missing alg field"))?;
 
                 let val = seq
@@ -1288,119 +1320,20 @@ impl<'de> Deserialize<'de> for Digest<'_> {
 
                 Ok(Digest { alg, val })
             }
-        }
 
-        struct AlgLabelSeed<'a> {
-            _phantom: std::marker::PhantomData<&'a ()>,
-        }
-
-        impl<'de, 'a> serde::de::DeserializeSeed<'de> for AlgLabelSeed<'a> {
-            type Value = AlgLabel<'a>; // Changed from 'de to 'a to match Digest<'a>
-
-            fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where
-                D: Deserializer<'de>,
+                E: de::Error,
             {
-                struct AlgLabelVisitor<'a> {
-                    _phantom: std::marker::PhantomData<&'a ()>,
-                }
-
-                impl<'a> Visitor<'_> for AlgLabelVisitor<'a> {
-                    type Value = AlgLabel<'a>; // Match Digest<'a>
-
-                    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                        formatter.write_str("an integer or text for alg")
-                    }
-
-                    fn visit_i8<E>(self, value: i8) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        self.visit_i64(value as i64)
-                    }
-
-                    fn visit_i16<E>(self, value: i16) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        self.visit_i64(value as i64)
-                    }
-
-                    fn visit_i32<E>(self, value: i32) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        self.visit_i64(value as i64)
-                    }
-
-                    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        let cose_alg = CoseAlgorithm::deserialize(
-                            serde::de::value::I64Deserializer::new(value),
-                        )?;
-                        Ok(AlgLabel::Int(cose_alg))
-                    }
-
-                    fn visit_u8<E>(self, value: u8) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        self.visit_i64(value as i64)
-                    }
-
-                    fn visit_u16<E>(self, value: u16) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        self.visit_i64(value as i64)
-                    }
-
-                    fn visit_u32<E>(self, value: u32) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        self.visit_i64(value as i64)
-                    }
-
-                    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        if value > i64::MAX as u64 {
-                            Err(serde::de::Error::custom(
-                                "COSE algorithm ID out of i64 range",
-                            ))
-                        } else {
-                            self.visit_i64(value as i64)
-                        }
-                    }
-
-                    fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        Ok(AlgLabel::Text(Cow::Owned(value))) // Owned data, no lifetime dependency on 'de
-                    }
-
-                    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        Ok(AlgLabel::Text(Cow::Owned(value.to_string())))
-                    }
-                }
-
-                deserializer.deserialize_any(AlgLabelVisitor {
-                    _phantom: std::marker::PhantomData,
-                })
+                Digest::try_from(v).map_err(E::custom)
             }
         }
 
-        deserializer.deserialize_seq(DigestVisitor {
-            _phantom: std::marker::PhantomData,
-        })
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_str(DigestVisitor)
+        } else {
+            deserializer.deserialize_seq(DigestVisitor)
+        }
     }
 }
 /// Represents either a COSE key set or a single COSE key
@@ -1718,6 +1651,292 @@ pub enum VersionScheme {
     Decimal = 4,
     /// Semantic versioning (e.g., 1.2.3-beta+build.123)
     Semver = 16384,
+}
+
+/// Hashing algorithms listed in the [IANA Named Information Hash Algorithm
+/// Registry][1]. These can be reprsented either via their numeric ID or Hash
+/// Name String. (Note: some algorithms, those in BLAKE and KangarooTwelve
+/// families, do not have an ID an can only be reprsented via their string
+/// names.)
+///
+/// [1]: https://www.iana.org/assignments/named-information/named-information.xhtml
+///
+/// Examples:
+/// ```rust
+/// use corim_rs::core::HashAlgorithm;
+///
+/// let alg = HashAlgorithm::Sha256;
+/// let sha384 = HashAlgorithm::try_from("sha-384").unwrap();
+/// let sha512 = HashAlgorithm::try_from(8u8).unwrap();
+/// ```
+#[repr(i8)]
+#[derive(Debug, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub enum HashAlgorithm {
+    Sha256 = 1,
+    Sha256_128 = 2,
+    Sha256_120 = 3,
+    Sha256_96 = 4,
+    Sha256_64 = 5,
+    Sha256_32 = 6,
+    Sha384 = 7,
+    Sha512 = 8,
+    Sha3_224 = 9,
+    Sha3_256 = 10,
+    Sha3_384 = 11,
+    Sha3_512 = 12,
+
+    Blake2s256 = -1,
+    Blake2b256 = -2,
+    Blake2b512 = -3,
+    K12_256 = -4,
+    K12_512 = -5,
+
+    Reserved(u8) = -6,
+    Unassigned(u8) = -7,
+}
+
+impl HashAlgorithm {
+    fn to_u8(&self) -> Option<u8> {
+        match self {
+            HashAlgorithm::Reserved(v) => Some(*v),
+            HashAlgorithm::Unassigned(v) => Some(*v),
+            HashAlgorithm::Sha256 => Some(1),
+            HashAlgorithm::Sha256_128 => Some(2),
+            HashAlgorithm::Sha256_120 => Some(3),
+            HashAlgorithm::Sha256_96 => Some(4),
+            HashAlgorithm::Sha256_64 => Some(5),
+            HashAlgorithm::Sha256_32 => Some(6),
+            HashAlgorithm::Sha384 => Some(7),
+            HashAlgorithm::Sha512 => Some(8),
+            HashAlgorithm::Sha3_224 => Some(9),
+            HashAlgorithm::Sha3_256 => Some(10),
+            HashAlgorithm::Sha3_384 => Some(11),
+            HashAlgorithm::Sha3_512 => Some(12),
+            _ => None,
+        }
+    }
+}
+
+impl TryFrom<u8> for HashAlgorithm {
+    type Error = CoreError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(HashAlgorithm::Reserved(0)),
+            1 => Ok(HashAlgorithm::Sha256),
+            2 => Ok(HashAlgorithm::Sha256_128),
+            3 => Ok(HashAlgorithm::Sha256_120),
+            4 => Ok(HashAlgorithm::Sha256_96),
+            5 => Ok(HashAlgorithm::Sha256_64),
+            6 => Ok(HashAlgorithm::Sha256_32),
+            7 => Ok(HashAlgorithm::Sha384),
+            8 => Ok(HashAlgorithm::Sha512),
+            9 => Ok(HashAlgorithm::Sha3_224),
+            10 => Ok(HashAlgorithm::Sha3_256),
+            11 => Ok(HashAlgorithm::Sha3_384),
+            12 => Ok(HashAlgorithm::Sha3_512),
+            v @ 13..=31 => Ok(HashAlgorithm::Unassigned(v)),
+            32 => Ok(HashAlgorithm::Reserved(32)),
+            v @ 33..=63 => Ok(HashAlgorithm::Unassigned(v)),
+            v => Err(CoreError::InvalidValue(format!(
+                "algorithmmust be between 0 and 63, found {v}"
+            ))),
+        }
+    }
+}
+
+impl TryFrom<i64> for HashAlgorithm {
+    type Error = CoreError;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        <Self as TryFrom<u8>>::try_from(u8::try_from(value).map_err(|_| {
+            CoreError::InvalidValue(format!("algorithmmust be between 0 and 63, found {value}"))
+        })?)
+    }
+}
+
+impl TryFrom<u64> for HashAlgorithm {
+    type Error = CoreError;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        <Self as TryFrom<u8>>::try_from(u8::try_from(value).map_err(|_| {
+            CoreError::InvalidValue(format!("algorithmmust be between 0 and 63, found {value}"))
+        })?)
+    }
+}
+
+impl TryFrom<&str> for HashAlgorithm {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "reserved" => Ok(HashAlgorithm::Reserved(0)),
+            "unassigned" => Ok(HashAlgorithm::Unassigned(13)),
+            "sha-256" => Ok(HashAlgorithm::Sha256),
+            "sha-256-128" => Ok(HashAlgorithm::Sha256_128),
+            "sha-256-120" => Ok(HashAlgorithm::Sha256_120),
+            "sha-256-96" => Ok(HashAlgorithm::Sha256_96),
+            "sha-256-64" => Ok(HashAlgorithm::Sha256_64),
+            "sha-256-32" => Ok(HashAlgorithm::Sha256_32),
+            "sha-384" => Ok(HashAlgorithm::Sha384),
+            "sha-512" => Ok(HashAlgorithm::Sha512),
+            "sha3-224" => Ok(HashAlgorithm::Sha3_224),
+            "sha3-256" => Ok(HashAlgorithm::Sha3_256),
+            "sha3-384" => Ok(HashAlgorithm::Sha3_384),
+            "sha3-512" => Ok(HashAlgorithm::Sha3_512),
+            "blake2s-256" => Ok(HashAlgorithm::Blake2s256),
+            "blake2b-256" => Ok(HashAlgorithm::Blake2b256),
+            "blake2b-512" => Ok(HashAlgorithm::Blake2b512),
+            "k12-256" => Ok(HashAlgorithm::K12_256),
+            "k12-512" => Ok(HashAlgorithm::K12_512),
+            s => Err(CoreError::InvalidValue(format!(
+                "unkown algorithm name \"{s}\""
+            ))),
+        }
+    }
+}
+
+impl TryFrom<String> for HashAlgorithm {
+    type Error = CoreError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&str>>::try_from(&value)
+    }
+}
+
+impl std::fmt::Display for HashAlgorithm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match *self {
+            HashAlgorithm::Reserved(_) => "reserved",
+            HashAlgorithm::Unassigned(_) => "unassigned",
+            HashAlgorithm::Sha256 => "sha-256",
+            HashAlgorithm::Sha256_128 => "sha-256-128",
+            HashAlgorithm::Sha256_120 => "sha-256-120",
+            HashAlgorithm::Sha256_96 => "sha-256-96",
+            HashAlgorithm::Sha256_64 => "sha-256-64",
+            HashAlgorithm::Sha256_32 => "sha-256-32",
+            HashAlgorithm::Sha384 => "sha-384",
+            HashAlgorithm::Sha512 => "sha-512",
+            HashAlgorithm::Sha3_224 => "sha3-224",
+            HashAlgorithm::Sha3_256 => "sha3-256",
+            HashAlgorithm::Sha3_384 => "sha3-384",
+            HashAlgorithm::Sha3_512 => "sha3-512",
+            HashAlgorithm::Blake2s256 => "blake2s-256",
+            HashAlgorithm::Blake2b256 => "blake2b-256",
+            HashAlgorithm::Blake2b512 => "blake2b-512",
+            HashAlgorithm::K12_256 => "k12-256",
+            HashAlgorithm::K12_512 => "k12-512",
+        };
+
+        f.write_str(s)
+    }
+}
+
+impl Serialize for HashAlgorithm {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            match self.to_u8() {
+                Some(u) => serializer.serialize_u8(u),
+                None => serializer.serialize_str(&self.to_string()),
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for HashAlgorithm {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct HashAlgorithmVisitor;
+
+        impl Visitor<'_> for HashAlgorithmVisitor {
+            type Value = HashAlgorithm;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str(
+                    "an integer ID or a string name form the IANA hash algorithm registry",
+                )
+            }
+
+            fn visit_u8<E>(self, value: u8) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_i8<E>(self, value: i8) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_u16<E>(self, value: u16) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_i16<E>(self, value: i16) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_u32<E>(self, value: u32) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_i32<E>(self, value: i32) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_i64(value as i64)
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                HashAlgorithm::try_from(v).map_err(E::custom)
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                HashAlgorithm::try_from(v).map_err(E::custom)
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                HashAlgorithm::try_from(v).map_err(E::custom)
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                HashAlgorithm::try_from(v).map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_any(HashAlgorithmVisitor)
+    }
 }
 
 /// COSE cryptographic algorithms as defined in RFC 8152 and the IANA COSE Registry
@@ -2659,7 +2878,7 @@ mod tests {
         fn test_thumbprint_type_serialize_deserialize() {
             let thumbprint_bytes = [0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16];
             let digest = Digest {
-                alg: CoseAlgorithm::Sha256.into(),
+                alg: HashAlgorithm::Sha256,
                 val: Bytes::from(thumbprint_bytes.to_vec()),
             };
             let expected = ThumbprintType::from(digest);
@@ -2667,7 +2886,7 @@ mod tests {
             let expected_bytes = [
                 0xD9, 0x02, 0x2D, // Tag 557
                 0x82, // Array of 2 elements
-                0x2F, // Algorithm (-16)
+                0x01, // Algorithm (1)
                 0x4A, // Bstr of length 10
                 0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16,
             ];
@@ -2731,7 +2950,7 @@ mod tests {
         fn test_cert_thumbprint_type_serialize_deserialize() {
             let thumbprint_bytes = [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80];
             let digest = Digest {
-                alg: CoseAlgorithm::Sha384.into(),
+                alg: HashAlgorithm::Sha384,
                 val: Bytes::from(thumbprint_bytes.to_vec()),
             };
             let expected = CertThumprintType::from(digest);
@@ -2739,7 +2958,7 @@ mod tests {
             let expected_bytes = [
                 0xD9, 0x02, 0x2F, // Tag 559
                 0x82, // Array of 2 elements
-                0x38, 0x2A, // Algorithm (-43 for Sha384)
+                0x07, // Algorithm (7 for Sha384)
                 0x48, // Bstr of length 8
                 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, // Thumbprint bytes
             ];
@@ -2779,7 +2998,7 @@ mod tests {
         fn test_cert_path_thumbprint_type_serialize_deserialize() {
             let thumbprint_bytes = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99];
             let digest = Digest {
-                alg: CoseAlgorithm::Sha512.into(),
+                alg: HashAlgorithm::Sha512,
                 val: Bytes::from(thumbprint_bytes.to_vec()),
             };
             let expected = CertPathThumbprintType::from(digest);
@@ -2787,7 +3006,7 @@ mod tests {
             let expected_bytes = [
                 0xD9, 0x02, 0x31, // Tag 561
                 0x82, // Array of 2 elements
-                0x38, 0x2B, // Algorithm (-44 for Sha512)
+                0x08, // Algorithm (8 for Sha512)
                 0x49, // Bstr of length 9
                 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, // Thumbprint bytes
             ];

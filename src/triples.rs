@@ -573,11 +573,11 @@ pub enum CryptoKeyTypeChoice<'a> {
     /// COSE key structure
     CoseKey(CoseKeyType<'a>),
     /// Generic cryptographic thumbprint
-    Thumbprint(ThumbprintType<'a>),
+    Thumbprint(ThumbprintType),
     /// Certificate thumbprint
-    CertThumbprint(CertThumprintType<'a>),
+    CertThumbprint(CertThumprintType),
     /// Certificate path thumbprint
-    CertPathThumbprint(CertPathThumbprintType<'a>),
+    CertPathThumbprint(CertPathThumbprintType),
     /// ASN.1 DER encoded PKIX certificate
     PkixAsn1DerCert(PkixAsn1DerCertType),
     /// Raw bytes
@@ -836,7 +836,7 @@ pub struct MeasurementValuesMap<'a> {
     /// Optional cryptographic digest
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "2")]
-    pub digest: Option<DigestsType<'a>>,
+    pub digest: Option<DigestsType>,
     /// Optional status flags
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "3")]
@@ -890,7 +890,7 @@ pub struct MeasurementValuesMapBuilder<'a> {
     /// Optional security version number
     pub svn: Option<SvnTypeChoice>,
     /// Optional cryptographic digest
-    pub digest: Option<DigestsType<'a>>,
+    pub digest: Option<DigestsType>,
     /// Optional status flags
     pub flags: Option<FlagsMap<'a>>,
     /// Optional raw measurement value
@@ -924,7 +924,7 @@ impl<'a> MeasurementValuesMapBuilder<'a> {
         self.svn = Some(value);
         self
     }
-    pub fn digest(mut self, value: DigestsType<'a>) -> Self {
+    pub fn digest(mut self, value: DigestsType) -> Self {
         self.digest = Some(value);
         self
     }
@@ -1060,7 +1060,7 @@ impl SvnTypeChoice {
 }
 
 /// Collection of one or more cryptographic digests
-pub type DigestsType<'a> = Vec<Digest<'a>>;
+pub type DigestsType = Vec<Digest>;
 
 /// Status flags indicating various security and configuration states
 #[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
