@@ -52,7 +52,9 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use crate::{empty::Empty, empty_map_as_none, error::CoreError, generate_tagged, FixedBytes, Integer};
+use crate::{
+    empty::Empty, empty_map_as_none, error::CoreError, generate_tagged, FixedBytes, Integer,
+};
 
 /// Text represents a UTF-8 string value
 pub type Text<'a> = Cow<'a, str>;
