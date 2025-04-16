@@ -769,6 +769,7 @@ pub type EntityNameTypeChoice<'a> = Text<'a>;
 pub type CoseMap<'a> = ExtensionMap<'a>;
 
 #[cfg(test)]
+#[rustfmt::skip::macros(vec)]
 mod tests {
 
     use crate::comid::{
@@ -796,22 +797,143 @@ mod tests {
     /// ```
     ///
     fn test_cose_sign1_corim_serialize_deserialize() {
-        let expected: [u8; 276] = [
-            132, 88, 65, 191, 97, 49, 38, 97, 51, 116, 97, 112, 112, 108, 105, 99, 97, 116, 105,
-            111, 110, 47, 114, 105, 109, 43, 99, 98, 111, 114, 97, 52, 71, 107, 101, 121, 45, 48,
-            48, 49, 97, 56, 161, 97, 48, 191, 97, 48, 110, 69, 120, 97, 109, 112, 108, 101, 32, 83,
-            105, 103, 110, 101, 114, 97, 49, 246, 255, 255, 160, 88, 200, 217, 1, 245, 191, 97, 48,
-            105, 99, 111, 114, 105, 109, 45, 48, 48, 49, 97, 49, 130, 217, 1, 249, 191, 97, 48,
-            104, 115, 119, 105, 100, 45, 49, 50, 51, 98, 49, 50, 0, 97, 49, 112, 69, 120, 97, 109,
-            112, 108, 101, 32, 83, 111, 102, 116, 119, 97, 114, 101, 97, 50, 191, 98, 51, 49, 110,
-            69, 120, 97, 109, 112, 108, 101, 32, 69, 110, 116, 105, 116, 121, 98, 51, 51, 1, 255,
-            255, 217, 1, 250, 191, 97, 48, 101, 101, 110, 95, 85, 83, 97, 49, 161, 97, 48, 107, 83,
-            111, 109, 101, 32, 84, 97, 103, 32, 73, 68, 97, 50, 129, 191, 98, 51, 49, 111, 83, 111,
-            109, 101, 32, 67, 111, 77, 73, 68, 32, 78, 97, 109, 101, 98, 51, 51, 129, 246, 255, 97,
-            52, 191, 97, 48, 129, 130, 161, 97, 48, 161, 97, 49, 107, 83, 111, 109, 101, 32, 86,
-            101, 110, 100, 111, 114, 129, 162, 97, 48, 104, 83, 111, 109, 101, 32, 75, 101, 121,
-            97, 49, 191, 98, 49, 49, 105, 83, 111, 109, 101, 32, 78, 97, 109, 101, 255, 255, 255,
-            255, 217, 2, 48, 65, 0,
+        let expected = vec![
+            0x84, // array(4)
+              0x58, 0x41, // bstr(65) -- COSE protected header
+                0xbf, // map(indef)
+                  0x61, // key: tstr(1)
+                    0x31, // "1"
+                  0x26, // value: -7
+                  0x61, // key: tstr(1)
+                    0x33, // "3"
+                  0x74, // value: tstr(20)
+                    0x61, 0x70, 0x70, 0x6c, 0x69, 0x63, 0x61, 0x74, // "applicat"
+                    0x69, 0x6f, 0x6e, 0x2f, 0x72, 0x69, 0x6d, 0x2b, // "ion/rim+"
+                    0x63, 0x62, 0x6f, 0x72,                         // "cbor"
+                  0x61, // key: tstr(1)
+                    0x34, // "4"
+                  0x47, // value: bstr(7)
+                    0x6b, 0x65, 0x79, 0x2d, 0x30, 0x30, 0x31,
+                  0x61, // key: tstr(1)
+                    0x38, // "8"
+                  0xa1, // value: map(1)
+                    0x61, // key: tstr(1)
+                      0x30, // "0"
+                    0xbf, // value: map(indef)
+                      0x61, // key: tstr(1)
+                        0x30, // "1"
+                      0x6e, // value: tstr(14)
+                        0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, // "Example "
+                        0x53, 0x69, 0x67, 0x6e, 0x65, 0x72,             // "Signer"
+                      0x61, // key: tstr(1)
+                        0x31, // "1"
+                      0xf6, // value: null
+                    0xff, // break
+                0xff, // break
+              0xa0, // map(0) -- COSE unprotected header
+              0x58, 0xc8, // bstr(200) -- COSE payload
+                0xd9, 0x01, 0xf5, // tag(501) -- CoRIM
+                  0xbf, // map(indef)
+                    0x61, // key: tstr(1)
+                      0x30, // "0"
+                    0x69, // value: tstr(9)
+                      0x63, 0x6f, 0x72, 0x69, 0x6d, 0x2d, 0x30, 0x30, // "corim-00"
+                      0x31,                                           // "1"
+                    0x61, // key: tstr(1)
+                      0x31, // "1"
+                    0x82, // value: array(2)
+                      0xd9, 0x01, 0xf9, // tag(505) -- CoSWID
+                        0xbf, // map(indef)
+                          0x61, // key: tstr(1)
+                            0x30, // "0"
+                          0x68, // value: tstr(8)
+                            0x73, 0x77, 0x69, 0x64, 0x2d, 0x31, 0x32, 0x33,  // "swid-123"
+                          0x62,  // key: tstr(2)
+                            0x31, 0x32, // "12"
+                          0x00, // value: 0
+                          0x61, // key: tstr(1)
+                            0x31, // "1"
+                          0x70, // value: tstr(16)
+                            0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, // "Example "
+                            0x53, 0x6f, 0x66, 0x74, 0x77, 0x61, 0x72, 0x65, // "Software"
+                          0x61, // key: tstr(1)
+                            0x32, // "2"
+                          0xbf, // value: map(indef)
+                            0x62, // key: tstr(2)
+                              0x33, 0x31, // "31"
+                            0x6e, // value: tstr(14)
+                              0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, // "Example "
+                              0x45, 0x6e, 0x74, 0x69, 0x74, 0x79,             // "Entity"
+                            0x62, // key: tstr(2)
+                              0x33, 0x33, // "33"
+                            0x01, // value: 1
+                          0xff,  // break(map)
+                        0xff,  // break(map)
+                      0xd9, 0x01, 0xfa, // tag (506) -- CoMID
+                        0xbf, // map(indef)
+                          0x61, // key: tstr(1)
+                            0x30, // "0"
+                          0x65, // value: tstr(5)
+                            0x65, 0x6e, 0x5f, 0x55, 0x53, // "en_US"
+                          0x61, // key: tstr(1)
+                            0x31, // "1"
+                          0xa1, // value: map(1)
+                            0x61, // key: tstr(1)
+                              0x30, // "0"
+                            0x6b, // value: tstr(11)
+                              0x53, 0x6f, 0x6d, 0x65, 0x20, 0x54, 0x61, 0x67, // "Some Tag"
+                              0x20, 0x49, 0x44,                               // " ID"
+                          0x61, // key: tstr(1)
+                            0x32, // "2"
+                          0x81, // value: array(1)
+                            0xbf, // map(indef)
+                              0x62, // key: tstr(2)
+                                0x33, 0x31, // "31"
+                              0x6f, // value: tstr(15)
+                                0x53, 0x6f, 0x6d, 0x65, 0x20, 0x43, 0x6f, 0x4d,
+                                0x49, 0x44, 0x20, 0x4e, 0x61, 0x6d, 0x65,
+                              0x62, // key: tstr(2)
+                                0x33, 0x33, // "33"
+                              0x81, // value: array(1)
+                                0xf6, // null
+                            0xff, // break(map)
+                          0x61, // key: tstr(1)
+                            0x34, // "4"
+                          0xbf, // value: map(indef)
+                            0x61, // key: tstr(1)
+                              0x30, // "0"
+                            0x81, // value: array(1)
+                              0x82, // array(2)
+                                0xa1, //  map(1)
+                                  0x61, // key: tstr(1)
+                                    0x30, // "0"
+                                  0xbf, // value: map(indef)
+                                    0x01, // key: 1
+                                    0x6b, // value: tstr(11)
+                                      0x53, 0x6f, 0x6d, 0x65, 0x20, 0x56, 0x65, 0x6e, // "Some Ven"
+                                      0x64, 0x6f, 0x72,                               // "dor"
+                                  0xff,
+                                0x81, // array(1)
+                                  0xa2, // map(2)
+                                    0x61, // key: tstr(1)
+                                      0x30, // "0"
+                                    0x68, // value: str(8)
+                                      0x53, 0x6f, 0x6d, 0x65, 0x20, 0x4b, 0x65, 0x79, // "Some Key"
+                                    0x61, // key: tstr(1)
+                                      0x31, // "1"
+                                    0xbf, // value: map(indef)
+                                      0x62, // key: tstr(2)
+                                        0x31, 0x31, // "11"
+                                      0x69, // value: tstr(9)
+                                        0x53, 0x6f, 0x6d, 0x65, 0x20, 0x4e, 0x61, 0x6d, // "Some Nam"
+                                        0x65,                                           // "e"
+                                    0xff, // break
+                          0xff, // break
+                        0xff, // break
+                  0xff, // break
+              0xd9, 0x02, 0x30, // tag(560) -- COSE signature
+                0x41, // bstr(1)
+                  0x00
         ];
 
         let triples = TriplesMapBuilder::default()

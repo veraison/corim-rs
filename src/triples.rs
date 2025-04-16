@@ -104,8 +104,8 @@ use crate::{
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
-    de::{SeqAccess, Visitor},
-    ser::SerializeSeq,
+    de::{self, SeqAccess, Visitor},
+    ser::{SerializeSeq, SerializeMap},
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
@@ -224,30 +224,144 @@ impl<'a> EnvironmentMapBuilder<'a> {
 /// Classification information for an environment. It is **HIGHLY** recommend to use ClassMapBuilder to ensure the CDDL enforcement of
 /// at least one field being present.
 #[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+    Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
 )]
 #[repr(C)]
 pub struct ClassMap<'a> {
     /// Optional class identifier
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "0")]
     pub class_id: Option<ClassIdTypeChoice>,
     /// Optional vendor name
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "1")]
     pub vendor: Option<Tstr<'a>>,
     /// Optional model identifier
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "2")]
     pub model: Option<Tstr<'a>>,
     /// Optional layer number
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "3")]
     pub layer: Option<Uint>,
     /// Optional index number
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "4")]
     pub index: Option<Uint>,
+}
+
+impl Serialize for ClassMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            if let Some(class_id) = &self.class_id {
+                map.serialize_entry("class-id", class_id)?;
+            }
+            if let Some(vendor) = &self.vendor {
+                map.serialize_entry("vendor", vendor)?;
+            }
+            if let Some(model) = &self.model {
+                map.serialize_entry("model", model)?;
+            }
+            if let Some(layer) = &self.layer {
+                map.serialize_entry("layer", layer)?;
+            }
+            if let Some(index) = &self.index {
+                map.serialize_entry("index", index)?;
+            }
+        } else {
+            if let Some(class_id) = &self.class_id {
+                map.serialize_entry(&0, class_id)?;
+            }
+            if let Some(vendor) = &self.vendor {
+                map.serialize_entry(&1, vendor)?;
+            }
+            if let Some(model) = &self.model {
+                map.serialize_entry(&2, model)?;
+            }
+            if let Some(layer) = &self.layer {
+                map.serialize_entry(&3, layer)?;
+            }
+            if let Some(index) = &self.index {
+                map.serialize_entry(&4, index)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ClassMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ClassMapVisitor<'a> {
+            pub is_human_readable: bool,
+            data: PhantomData<&'a ()>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for ClassMapVisitor<'a> {
+            type Value = ClassMap<'a>;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map contianing ClassMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut class_map = ClassMap::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("class-id") => {
+                                class_map.class_id = Some(map.next_value::<ClassIdTypeChoice>()?);
+                            },
+                            Some("vendor") => {
+                                class_map.vendor = Some(map.next_value::<Tstr>()?);
+                            },
+                            Some("model") => {
+                                class_map.model = Some(map.next_value::<Tstr>()?);
+                            },
+                            Some("layer") => {
+                                class_map.layer = Some(map.next_value::<Uint>()?);
+                            },
+                            Some("index") => {
+                                class_map.index = Some(map.next_value::<Uint>()?);
+                            },
+                            Some(name) => return Err(de::Error::custom(format!("unexpected field name \"{name}\""))),
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                class_map.class_id = Some(map.next_value::<ClassIdTypeChoice>()?);
+                            },
+                            Some(1) => {
+                                class_map.vendor = Some(map.next_value::<Tstr>()?);
+                            },
+                            Some(2) => {
+                                class_map.model = Some(map.next_value::<Tstr>()?);
+                            },
+                            Some(3) => {
+                                class_map.layer = Some(map.next_value::<Uint>()?);
+                            },
+                            Some(4) => {
+                                class_map.index = Some(map.next_value::<Uint>()?);
+                            },
+                            Some(key) => return Err(de::Error::custom(format!("unexpected field key \"{key}\""))),
+                            None => break,
+                        }
+                    }
+                }
+
+                Ok(class_map)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(ClassMapVisitor{
+            is_human_readable: is_hr,
+            data: PhantomData{},
+        })
+    }
 }
 
 #[derive(Default)]
@@ -2104,9 +2218,9 @@ impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementTripleRecord<'a> {
 }
 
 #[cfg(test)]
+#[rustfmt::skip::macros(vec)]
 mod test {
     use super::*;
-    use crate::core::*;
 
     #[test]
     fn test_class_id_json_serde() {
@@ -2157,5 +2271,91 @@ mod test {
             err.to_string(),
             "data did not match any variant of untagged enum ClassIdTypeChoice".to_string()
         );
+    }
+
+    #[test]
+    fn test_class_map_serde() {
+        let class_map = ClassMap {
+            class_id: Some(ClassIdTypeChoice::Oid(OidType::from(
+                ObjectIdentifier::try_from("1.2.3.4").unwrap(),
+            ))),
+            vendor: Some("foo".into()),
+            model: Some("bar".into()),
+            layer: Some(1),
+            index: Some(0),
+        };
+
+        let mut actual: Vec<u8> = Vec::new();
+        ciborium::into_writer(&class_map, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0
+              0xd8, 0x6f, // value: tag 111
+                0x43, // bstr(3)
+                  0x2a, 0x03, 0x04, // OID bytes
+              0x01, // key: 1
+              0x63, // value: tstr(3)
+                0x66, 0x6f, 0x6f, // "foo"
+              0x02, // key: 2
+              0x63, // value: tstr(3)
+                0x62, 0x61, 0x72, // "bar"
+              0x03, // key: 3
+              0x01, // value: 1
+              0x04, // key: 4
+              0x00, // value: 0
+            0xff, // break
+        ];
+
+        assert_eq!(actual, expected);
+
+        let class_map_de: ClassMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(class_map_de, class_map);
+
+        let expected = r#"{"class-id":{"type":"oid","value":"1.2.3.4"},"vendor":"foo","model":"bar","layer":1,"index":0}"#;
+        let actual = serde_json::to_string(&class_map).unwrap();
+
+        assert_eq!(actual, expected);
+
+        let class_map_de: ClassMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(class_map_de, class_map);
+
+        let class_map = ClassMap {
+            class_id: None,
+            vendor: Some("foo".into()),
+            model: None,
+            layer: Some(1),
+            index: None,
+        };
+
+        let mut actual: Vec<u8> = Vec::new();
+        ciborium::into_writer(&class_map, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x01, // key: 1
+              0x63, // value: tstr(3)
+                0x66, 0x6f, 0x6f, // "foo"
+              0x03, // key: 3
+              0x01, // value: 1
+            0xff, // break
+        ];
+
+        assert_eq!(actual, expected);
+
+        let class_map_de: ClassMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(class_map_de, class_map);
+
+        let expected = r#"{"vendor":"foo","layer":1}"#;
+        let actual = serde_json::to_string(&class_map).unwrap();
+
+        assert_eq!(actual, expected);
+
+        let class_map_de: ClassMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(class_map_de, class_map);
     }
 }
