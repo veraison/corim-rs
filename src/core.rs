@@ -40,6 +40,7 @@
 use std::{
     borrow::Cow,
     collections::BTreeMap,
+    fmt::Display,
     ops::{Deref, DerefMut, Index, IndexMut},
 };
 
@@ -108,9 +109,9 @@ impl TryFrom<String> for Bytes {
     }
 }
 
-impl ToString for Bytes {
-    fn to_string(&self) -> String {
-        URL_SAFE_NO_PAD.encode::<&[u8]>(&self.bytes)
+impl Display for Bytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(URL_SAFE_NO_PAD.encode(&self.bytes).as_str())
     }
 }
 
