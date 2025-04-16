@@ -48,6 +48,7 @@ dependencies = [
  "base64",
  "ciborium",
  "derive_more",
+ "oid",
  "serde",
  "serde_json",
 ]
@@ -99,6 +100,15 @@ name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
+
+[[package]]
+name = "oid"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c19903c598813dba001b53beeae59bb77ad4892c5c1b9b3500ce4293a0d06c2"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "proc-macro2"
