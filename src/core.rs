@@ -325,9 +325,7 @@ impl<'a> ExtensionMap<'a> {
 }
 
 /// UUID type representing a 16-byte unique identifier
-#[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct UuidType(pub FixedBytes<16>);
 
 impl TryFrom<&[u8]> for UuidType {
@@ -335,6 +333,32 @@ impl TryFrom<&[u8]> for UuidType {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         Ok(Self(FixedBytes(value.try_into()?)))
+    }
+}
+
+impl TryFrom<&str> for UuidType {
+    type Error = uuid::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(UuidType::from(FixedBytes::from(
+            *uuid::Uuid::parse_str(value)?.as_bytes(),
+        )))
+    }
+}
+
+impl TryFrom<String> for UuidType {
+    type Error = uuid::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(UuidType::from(FixedBytes::from(
+            *uuid::Uuid::parse_str(&value)?.as_bytes(),
+        )))
+    }
+}
+
+impl Display for UuidType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(uuid::Uuid::from_bytes(self.0 .0).to_string().as_ref())
     }
 }
 
@@ -375,6 +399,34 @@ impl Index<usize> for UuidType {
 impl IndexMut<usize> for UuidType {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.0 .0[index]
+    }
+}
+
+impl Serialize for UuidType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            serializer.serialize_bytes(&self.0 .0)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for UuidType {
+    fn deserialize<D>(deserializer: D) -> Result<UuidType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            String::deserialize(deserializer)?
+                .try_into()
+                .map_err(de::Error::custom)
+        } else {
+            Ok(UuidType::from(FixedBytes::<16>::deserialize(deserializer)?))
+        }
     }
 }
 
@@ -2077,6 +2129,44 @@ mod tests {
             let expected: super::Bytes = vec![1, 2, 3, 4, 5].into();
 
             let actual: super::Bytes = serde_json::from_str(text).unwrap();
+
+            assert_eq!(actual, expected);
+        }
+    }
+
+    mod uuid {
+        use super::super::*;
+
+        // note: CBOR is tested as part of TaggedUuidType below.
+
+        #[test]
+        fn test_uuid_type_json_serialize() {
+            let uuid_bytes: [u8; 16] = [
+                0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16, 0x44, 0x66, 0x55, 0x44,
+                0x00, 0x00,
+            ];
+
+            let expected = "\"550e8400-e29b-41d4-a716-446655440000\"";
+
+            let uuid = UuidType::from(FixedBytes::from(uuid_bytes));
+
+            let actual = serde_json::to_string(&uuid).unwrap();
+
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_uuid_type_json_deserialize() {
+            let uuid_bytes: [u8; 16] = [
+                0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16, 0x44, 0x66, 0x55, 0x44,
+                0x00, 0x00,
+            ];
+
+            let expected = UuidType::from(FixedBytes::from(uuid_bytes));
+
+            let json = "\"550e8400-e29b-41d4-a716-446655440000\"";
+
+            let actual: UuidType = serde_json::from_str(json).unwrap();
 
             assert_eq!(actual, expected);
         }
