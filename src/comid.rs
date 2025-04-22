@@ -23,13 +23,14 @@
 //!         ConciseMidTag, TagIdentityMap, ComidEntityMap, TriplesMap,
 //!         TagIdTypeChoice, ComidRoleTypeChoice
 //!     },
+//!     numbers::Integer,
 //!     core::{Text, Tstr},
 //! };
 //!
 //! // Create a tag identity
 //! let tag_identity = TagIdentityMap {
 //!     tag_id: TagIdTypeChoice::Tstr(Tstr::from("example-tag-id")),
-//!     tag_version: Some(1u32),
+//!     tag_version: Some(Integer(1u32.into())),
 //! };
 //!
 //! // Create an entity

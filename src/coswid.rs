@@ -36,12 +36,15 @@
 //! # Example
 //!
 //! ```rust
-//! use corim_rs::coswid::{ConciseSwidTag, SoftwareMetaEntry};
+//! use corim_rs::{
+//!   coswid::{ConciseSwidTag, SoftwareMetaEntry},
+//!   numbers::Integer,
+//! };
 //!
 //! // Create a basic CoSWID tag
 //! let tag = ConciseSwidTag {
 //!     tag_id: "example-software".into(),
-//!     tag_version: 1,
+//!     tag_version: Integer(1),
 //!     software_name: "Example Software".to_string().into(),
 //!     entity: vec![].into(),  // Add entities here
 //!     corpus: None,

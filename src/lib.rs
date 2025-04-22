@@ -47,6 +47,9 @@ pub mod result;
 /// Provides the Emtpy Trait.
 pub mod empty;
 
+/// Provides the Number Traits.
+pub mod numbers;
+
 // Use all public items from each module
 use comid::*;
 use core::*;
@@ -56,5 +59,6 @@ use cotl::*;
 use empty::*;
 use error::*;
 use fixed_bytes::*;
+use numbers::*;
 use result::*;
 use triples::*;

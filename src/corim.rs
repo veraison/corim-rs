@@ -777,6 +777,7 @@ mod tests {
     use crate::core::Bytes;
     use crate::corim::{COSESign1Corim, CorimMetaMap, CorimSignerMap, ProtectedCorimHeaderMap};
     use crate::coswid::{ConciseSwidTag, EntityEntry};
+    use crate::numbers::Integer;
     use crate::triples::{
         ClassMap, EnvironmentMap, MeasurementMap, MeasurementValuesMap, ReferenceTripleRecord,
     };
@@ -850,7 +851,7 @@ mod tests {
 
         let cose_corim = COSESign1Corim {
             protected: ProtectedCorimHeaderMap {
-                alg: -7,
+                alg: Integer(-7),
                 content_type: "application/rim+cbor".into(),
                 kid: vec![0x6B, 0x65, 0x79, 0x2D, 0x30, 0x30, 0x31].into(),
                 corim_meta: CorimMetaMap {
@@ -868,7 +869,7 @@ mod tests {
                 tags: vec![
                     ConciseSwidTag {
                         tag_id: "swid-123".into(),
-                        tag_version: 0,
+                        tag_version: Integer(0),
                         software_name: "Example Software".into(),
                         entity: EntityEntry {
                             entity_name: "Example Entity".into(),
