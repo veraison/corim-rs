@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 use std::{
-    cmp::Ordering, fmt::{Debug, Display}, hash::Hash, ops::{
+    cmp::Ordering, fmt::{Debug, Display}, hash::Hash, i128, ops::{
         Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Deref,
         DerefMut, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Shl, ShlAssign, Shr,
         ShrAssign, Sub, SubAssign,
@@ -592,44 +592,18 @@ impl Integer {
         }
     }
 
-    /// Converts the integer to an ASCII character if it is within the ASCII range.
-    ///
-    /// # Returns
-    /// * `Some(u8)` - The ASCII character if it can be represented
-    /// * `None` - If the integer is outside the ASCII range
-    pub const fn from_ascii(&self) -> Option<u8> {
-        if self.0 >= 0 && self.0 <= 127 {
-            Some(self.0 as u8)
-        } else {
-            None
-        }
-    }
-
-    /// Converts the integer to an ASCII character using a specific radix.
-    ///
-    /// # Parameters
-    /// * `radix` - The radix to use for conversion
-    ///
-    /// # Returns
-    /// * `Some(u8)` - The ASCII character if it can be represented
-    /// * `None` - If the integer is outside the range for the given radix
-    pub const fn from_ascii_radix(&self, radix: u32) -> Option<u8> {
-        if self.0 >= 0 && self.0 < radix as i128 {
-            Some(self.0 as u8)
-        } else {
-            None
-        }
-    }
-
     /// Converts the integer from big-endian representation.
     ///
+    /// # Parameters
+    /// * `x` - The primitive BE integer to convert into Integer
+    /// 
     /// # Returns
     /// A new `Integer` containing the converted value.
-    pub const fn from_be(self) -> Self {
+    pub const fn from_be(x: i128) -> Self {
         if cfg!(target_endian = "big") {
-            self
+            Self(x)
         } else {
-            self.swap_bytes()
+            Self(x.swap_bytes())
         }
     }
 
@@ -650,13 +624,16 @@ impl Integer {
 
     /// Converts the integer from little-endian representation.
     ///
+    /// # Parameters
+    /// * `x` - The primitive LE integer to convert into Integer
+    /// 
     /// # Returns
     /// A new `Integer` containing the converted value.
-    pub const fn from_le(self) -> Self {
+    pub const fn from_le(x: i128) -> Self {
         if cfg!(target_endian = "little") {
-            self
+            Self(x)
         } else {
-            self.swap_bytes()
+            Self(x.swap_bytes())
         }
     }
 
@@ -1499,8 +1476,17 @@ impl Integer {
     ///
     /// # Returns
     /// `true` if the value can be represented by type `T` without overflow, otherwise `false`
-    pub fn fits_into<T: IntegerType>(&self) -> bool {
+    pub fn fits_into<T: IntegerType + 'static>(&self) -> bool {
         let val = self.0;
+
+        if std::any::TypeId::of::<T>() == std::any::TypeId::of::<u128>() {
+            if val < 0 {
+                return false;
+            }
+
+            return true
+        }
+
         val >= T::min_value().as_i128() && val <= T::max_value().as_i128()
     }
 }
@@ -2379,8 +2365,8 @@ mod tests {
         assert!(!Integer::MIN.fits_into::<i32>());
         
         assert!(Integer::MAX.fits_into::<i128>());
+        assert!(Integer::MAX.fits_into::<u128>());
         assert!(!Integer::MAX.fits_into::<i64>());
-        assert!(!Integer::MAX.fits_into::<u128>());
         
         // Test with specific edge values
         let max_i32_plus_1 = Integer(2147483648); // i32::MAX + 1
