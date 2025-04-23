@@ -45,14 +45,14 @@ use std::{
 };
 
 use base64::{self, engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use derive_more::{Constructor, From, TryFrom, AsRef, AsMut, Deref, DerefMut};
+use derive_more::{AsMut, AsRef, Constructor, Deref, DerefMut, From, TryFrom};
 use serde::{
     de::{self, SeqAccess, Visitor},
     ser::{Error as _, SerializeSeq},
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use crate::{empty::Empty, empty_map_as_none, generate_tagged, FixedBytes};
+use crate::{empty::Empty, empty_map_as_none, error::CoreError, generate_tagged, FixedBytes};
 
 /// Text represents a UTF-8 string value
 pub type Text<'a> = Cow<'a, str>;
@@ -430,34 +430,58 @@ impl<'de> Deserialize<'de> for UuidType {
     }
 }
 
-/// UEID type representing a 33-byte Unique Entity Identifier
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
-pub struct UeidType(pub FixedBytes<33>);
+/// UEID type representing a Unique Entity Identifier between 7 and 33 bytes long
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct UeidType(Bytes);
 
 impl TryFrom<&[u8]> for UeidType {
-    type Error = std::array::TryFromSliceError;
+    type Error = CoreError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        Ok(Self(FixedBytes(value.try_into()?)))
+        if value.len() >= 7 && value.len() <= 33 {
+            Ok(Self(Bytes::from(value)))
+        } else {
+            Err(CoreError::InvalidValue(
+                "UEID must be between 7 and 33 bytes long".to_string(),
+            ))
+        }
+    }
+}
+
+impl TryFrom<&str> for UeidType {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        URL_SAFE_NO_PAD
+            .decode(value)
+            .map_err(|e| CoreError::InvalidValue(e.to_string()))?
+            .as_slice()
+            .try_into()
+    }
+}
+
+impl TryFrom<String> for UeidType {
+    type Error = CoreError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::try_from(<std::string::String as AsRef<str>>::as_ref(&value))
     }
 }
 
 impl AsRef<[u8]> for UeidType {
     fn as_ref(&self) -> &[u8] {
-        &self.0 .0
+        &self.0
     }
 }
 
 impl AsMut<[u8]> for UeidType {
     fn as_mut(&mut self) -> &mut [u8] {
-        &mut self.0 .0
+        &mut self.0
     }
 }
 
 impl Deref for UeidType {
-    type Target = [u8; 33];
+    type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -474,13 +498,48 @@ impl Index<usize> for UeidType {
     type Output = u8;
 
     fn index(&self, index: usize) -> &Self::Output {
-        &self.0 .0[index]
+        &self.0[index]
     }
 }
 
 impl IndexMut<usize> for UeidType {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0 .0[index]
+        &mut self.0[index]
+    }
+}
+
+impl Display for UeidType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(URL_SAFE_NO_PAD.encode(self).as_ref())
+    }
+}
+
+impl Serialize for UeidType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string())
+        } else {
+            serializer.serialize_bytes(&self.0)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for UeidType {
+    fn deserialize<D>(deserializer: D) -> Result<UeidType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            String::deserialize(deserializer)?
+                .try_into()
+                .map_err(de::Error::custom)
+        } else {
+            UeidType::try_from(Bytes::deserialize(deserializer)?.as_ref())
+                .map_err(de::Error::custom)
+        }
     }
 }
 
@@ -2172,6 +2231,118 @@ mod tests {
         }
     }
 
+    mod ueid {
+        use super::super::*;
+
+        #[test]
+        fn test_ueid_type_from_bytes() {
+            let ueid_bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
+
+            let res = UeidType::try_from(ueid_bytes).err().unwrap();
+
+            assert_eq!(
+                res,
+                CoreError::InvalidValue("UEID must be between 7 and 33 bytes long".to_string())
+            );
+
+            let ueid_bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+
+            let res = UeidType::try_from(ueid_bytes).err();
+
+            assert_eq!(res, None);
+
+            let ueid_bytes: &[u8] = &[
+                0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+                0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C,
+                0x1D, 0x1E, 0x1F, 0x20, 0x21,
+            ];
+
+            let res = UeidType::try_from(ueid_bytes).err();
+
+            assert_eq!(res, None);
+
+            let ueid_bytes: &[u8] = &[
+                0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+                0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C,
+                0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22,
+            ];
+
+            let res = UeidType::try_from(ueid_bytes).err().unwrap();
+
+            assert_eq!(
+                res,
+                CoreError::InvalidValue("UEID must be between 7 and 33 bytes long".to_string())
+            );
+        }
+
+        #[test]
+        fn test_ueid_type_from_str() {
+            let ueid_str = "AAECAwQF";
+
+            let res = UeidType::try_from(ueid_str).err().unwrap();
+
+            assert_eq!(
+                res,
+                CoreError::InvalidValue("UEID must be between 7 and 33 bytes long".to_string())
+            );
+
+            let ueid_str = "AAECAwQFBg";
+
+            let res = UeidType::try_from(ueid_str).err();
+
+            assert_eq!(res, None);
+
+            let ueid_str = "AAECAwQFBgcJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAh";
+
+            let res = UeidType::try_from(ueid_str).err();
+
+            assert_eq!(res, None);
+
+            let ueid_str = "AAECAwQFBgcJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIg";
+
+            let res = UeidType::try_from(ueid_str).err().unwrap();
+
+            assert_eq!(
+                res,
+                CoreError::InvalidValue("UEID must be between 7 and 33 bytes long".to_string())
+            );
+        }
+
+        #[test]
+        fn test_ueid_type_json_serialize() {
+            let ueid_bytes: &[u8] = &[
+                0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16, 0x44, 0x66, 0x55, 0x44,
+                0x00, 0x00, 0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16, 0x44, 0x66,
+                0x55, 0x44, 0x00, 0x00, 0x00,
+            ];
+
+            let ueid = UeidType::try_from(ueid_bytes).unwrap();
+
+            let expected = "\"VQ6EAOKbQdSnFkRmVUQAAFUOhADim0HUpxZEZlVEAAAA\"";
+
+            let actual = serde_json::to_string(&ueid).unwrap();
+
+            assert_eq!(&actual, expected);
+        }
+
+        #[test]
+        fn test_ueid_type_json_deserialize() {
+            let ueid_bytes: &[u8] = &[
+                0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16, 0x44, 0x66, 0x55, 0x44,
+                0x00, 0x00, 0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16, 0x44, 0x66,
+                0x55, 0x44, 0x00, 0x00, 0x00,
+            ];
+
+            let expected = UeidType::try_from(ueid_bytes).unwrap();
+
+            let text = "\"VQ6EAOKbQdSnFkRmVUQAAFUOhADim0HUpxZEZlVEAAAA\"";
+
+            let actual: UeidType = serde_json::from_str(text).unwrap();
+
+            assert_eq!(actual, expected);
+        }
+    }
+
     mod generated_tags {
         use super::*;
         #[test]
@@ -2356,13 +2527,13 @@ mod tests {
 
         #[test]
         fn test_tagged_ueid_type_serialize_deserialize() {
-            let ueid_bytes: [u8; 33] = [
+            let ueid_bytes: &[u8] = &[
                 0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16, 0x44, 0x66, 0x55, 0x44,
                 0x00, 0x00, 0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16, 0x44, 0x66,
                 0x55, 0x44, 0x00, 0x00, 0x00,
             ];
             // Test value
-            let expected = TaggedUeidType::from(UeidType::from(FixedBytes::from(ueid_bytes)));
+            let expected = TaggedUeidType::from(UeidType::from(Bytes::from(ueid_bytes)));
 
             // Expected CBOR bytes: Tag 550 (D826) + Byte string 33 bytes
             let expected_bytes = [
