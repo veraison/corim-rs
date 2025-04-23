@@ -52,7 +52,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use crate::{empty::Empty, empty_map_as_none, error::CoreError, generate_tagged, FixedBytes};
+use crate::{empty::Empty, empty_map_as_none, error::CoreError, generate_tagged, FixedBytes, Integer};
 
 /// Text represents a UTF-8 string value
 pub type Text<'a> = Cow<'a, str>;
@@ -62,17 +62,15 @@ pub type Tstr<'a> = Text<'a>;
 /// AnyUri represents a URI that can be relative or absolute
 pub type AnyUri<'a> = Uri<'a>;
 /// Time represents an integer value for time measurements
-pub type Time = i32;
+pub type Time = Integer;
 /// Role represents an unsigned 8-bit integer for role identifiers
 pub type Role = u8;
 /// Uint represents an unsigned 32-bit integer
-pub type Uint = u32;
+pub type Uint = Integer;
 /// Int represents a signed 32-bit integer
-pub type Int = i32;
+pub type Int = Integer;
 /// Boolean represenation.
 pub type Bool = bool;
-/// Integer is an alias for Int type
-pub type Integer = Int;
 /// Floating Point variables.
 pub type Float = f32;
 
@@ -191,7 +189,7 @@ impl<'de> Deserialize<'de> for Bytes {
 }
 
 /// ExtensionMap represents the possible types that can be used in extensions
-#[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, From, TryFrom, Clone)]
+#[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, TryFrom, Clone)]
 #[serde(untagged)]
 pub enum ExtensionMap<'a> {
     /// No value
@@ -2347,7 +2345,7 @@ mod tests {
         use super::*;
         #[test]
         fn test_deserialize_integer_time() {
-            let value: Int = 1580000000;
+            let value: Int = 1580000000.into();
             let expected = IntegerTime::from(value);
             let bytes: [u8; 6] = [0xC1, 0x1A, 0x5E, 0x2C, 0xE3, 0x00]; // C1 1A 0x5E, 0x2C, 0xE3, 0x00 = Tag 1, 1580000000
                                                                        // Deserialize
@@ -2360,7 +2358,7 @@ mod tests {
         // 2 bytes total: Tag 1 (C1) + 1-byte integer (Major Type 0)
         #[test]
         fn test_deserialize_integer_time_1_bytes() {
-            let value: Int = 23; // Max for 1-byte encoding
+            let value: Int = 23.into(); // Max for 1-byte encoding
             let expected = IntegerTime::from(value);
             let bytes: [u8; 2] = [0xC1, 0x17]; // C1 17 = Tag 1, 23
                                                // Deserialize
@@ -2375,7 +2373,7 @@ mod tests {
         // 3 bytes total: Tag 1 (C1) + 2-byte integer (Major Type 0, 0x18)
         #[test]
         fn test_deserialize_integer_time_2_bytes() {
-            let value: Int = 255; // Max for 2-byte encoding
+            let value: Int = 255.into(); // Max for 2-byte encoding
             let expected = IntegerTime::from(value);
             let bytes: [u8; 3] = [0xC1, 0x18, 0xFF]; // C1 18 FF = Tag 1, 255
                                                      // Deserialize
@@ -2389,7 +2387,7 @@ mod tests {
 
         #[test]
         fn test_deserialize_integer_time_3_bytes() {
-            let expected = IntegerTime::from(1000i32);
+            let expected: IntegerTime = Integer::from(1000i32).into();
             let bytes: [u8; 4] = [0xC1, 0x19, 0x03, 0xE8]; // 1000 = 0x03E8
             let actual: IntegerTime = ciborium::from_reader(bytes.as_slice()).unwrap();
             assert_eq!(expected, actual);
@@ -2398,7 +2396,7 @@ mod tests {
         // 5 bytes total: Tag 1 (C1) + 4-byte integer (Major Type 0, 0x1A)
         #[test]
         fn test_deserialize_integer_time_4_bytes() {
-            let value: Int = 1000; // Fits in 2 bytes, but we force 4-byte encoding
+            let value: Int = 1000.into(); // Fits in 2 bytes, but we force 4-byte encoding
             let expected = IntegerTime::from(value);
             let bytes: [u8; 6] = [0xC1, 0x1A, 0x00, 0x00, 0x03, 0xE8]; // C1 1A 00 03 E8 = Tag 1, 1000
                                                                        // Deserialize
@@ -2413,7 +2411,7 @@ mod tests {
         // 5 bytes total: Tag 1 (C1) + 4-byte integer (Major Type 0, 0x1A)
         #[test]
         fn test_deserialize_integer_time_4_bytes_larger() {
-            let value: Int = 1580000000;
+            let value: Int = 1580000000.into();
             let expected = IntegerTime::from(value);
             let bytes: [u8; 6] = [0xC1, 0x1A, 0x5E, 0x2C, 0xE3, 0x00]; // C1 1A 00 03 E8 = Tag 1, 1000
                                                                        // Deserialize
@@ -2554,7 +2552,7 @@ mod tests {
 
         #[test]
         fn test_svn_type_serialize_deserialize() {
-            let expected = SvnType::from(1u32);
+            let expected = SvnType::from(Integer::from(1u32));
 
             let expected_bytes = [
                 0xD9, 0x02, 0x28, // Tag 552
@@ -2571,7 +2569,7 @@ mod tests {
 
         #[test]
         fn test_min_svn_type_serialize_deserialize() {
-            let expected = MinSvnType::from(0u32);
+            let expected = MinSvnType::from(Integer::from(0u32));
 
             let expected_bytes = [
                 0xD9, 0x02, 0x29, // Tag 553
@@ -2684,10 +2682,10 @@ mod tests {
         fn test_cose_key_type_serialize_deserialize() {
             // Create a basic COSE key
             let key = CoseKey {
-                kty: Label::Int(1), // EC2 key type
+                kty: Label::Int(1.into()), // EC2 key type
                 kid: TaggedBytes::from(Bytes::from(vec![0x01, 0x02, 0x03])),
                 alg: AlgLabel::Int(CoseAlgorithm::ES256),
-                key_ops: vec![Label::Int(1)], // sign operation
+                key_ops: vec![Label::Int(1.into())], // sign operation
                 base_iv: TaggedBytes::from(Bytes::from(vec![0x04, 0x05, 0x06])),
                 extension: None,
             };

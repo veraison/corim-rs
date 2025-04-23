@@ -5,6 +5,7 @@ mod core;
 mod corim;
 mod coswid;
 mod cotl;
+mod numbers;
 mod triples;
 
 pub use comid::*;
@@ -13,6 +14,7 @@ pub use corim::*;
 pub use coswid::*;
 pub use cotl::*;
 use derive_more::From;
+pub use numbers::*;
 pub use triples::*;
 
 #[derive(Debug, From)]
@@ -23,6 +25,7 @@ pub enum Error {
     Coswid(CoswidError),
     Cotl(CotlError),
     Triples(TriplesError),
+    Numbers(NumbersError),
     Custom(String, String),
     Unknown,
 }
@@ -38,6 +41,7 @@ impl std::fmt::Display for Error {
             Self::Coswid(err) => write!(f, "{err}"),
             Self::Cotl(err) => write!(f, "{err}"),
             Self::Triples(err) => write!(f, "{err}"),
+            Self::Numbers(err) => write!(f, "{err}"),
             Self::Unknown => write!(f, "unknown error encountered!"),
             Self::Custom(err, msg) => write!(f, "{} - {}", err, msg),
         }

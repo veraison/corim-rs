@@ -97,7 +97,7 @@ use std::{
 
 use crate::{
     core::PkixBase64CertPathType, empty_map_as_none, Bytes, CertPathThumbprintType,
-    CertThumprintType, ConciseSwidTagId, CoseKeyType, Digest, ExtensionMap, MinSvnType, OidType,
+    CertThumprintType, ConciseSwidTagId, CoseKeyType, Digest, ExtensionMap, Integer, MinSvnType, OidType,
     OneOrMore, PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, Result,
     SvnType, TaggedBytes, TaggedUuidType, Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint,
     Ulabel, UuidType, VersionScheme,
@@ -530,6 +530,7 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 ///
 /// ```rust
 /// use corim_rs::triples::CryptoKeyTypeChoice;
+/// use corim_rs::numbers::Integer;
 /// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, AlgLabel, Label, CoseAlgorithm};
 ///
 /// // Base64 encoded certificate
@@ -540,12 +541,12 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 /// // COSE key structure
 /// let cose = CryptoKeyTypeChoice::CoseKey(
 ///     CoseKeyType::new(CoseKeySetOrKey::Key(CoseKey {
-///         kty: Label::Int(1),  // EC2 key type
+///         kty: Label::Int(Integer(1)),  // EC2 key type
 ///         kid: TaggedBytes::new(vec![1, 2, 3].into()),  // Key ID
 ///         alg: AlgLabel::Int(CoseAlgorithm::ES256),  // ES256 algorithm
 ///         key_ops: vec![
-///             Label::Int(1),  // sign
-///             Label::Int(2),  // verify
+///             Label::Int(Integer(1)),  // sign
+///             Label::Int(Integer(2)),  // verify
 ///         ].into(),
 ///         base_iv: TaggedBytes::new(vec![4, 5, 6].into()),  // Initialization vector
 ///         extension: None,  // No extensions
@@ -799,7 +800,7 @@ impl MeasuredElementTypeChoice<'_> {
         }
     }
 
-    pub fn as_uint(&self) -> Option<u32> {
+    pub fn as_uint(&self) -> Option<Integer> {
         match self {
             Self::UInt(uint) => Some(*uint),
             _ => None,
@@ -1037,23 +1038,23 @@ pub enum SvnTypeChoice {
 }
 
 impl SvnTypeChoice {
-    pub fn as_svn(&self) -> Option<u32> {
+    pub fn as_svn(&self) -> Option<Integer> {
         match self {
             Self::Svn(svn) => Some(*svn),
             _ => None,
         }
     }
 
-    pub fn as_tagged_svn(&self) -> Option<u32> {
+    pub fn as_tagged_svn(&self) -> Option<SvnType> {
         match self {
-            Self::TaggedSvn(svn) => Some(*svn.as_ref()),
+            Self::TaggedSvn(svn) => Some(svn.clone()),
             _ => None,
         }
     }
 
-    pub fn as_tagged_min_svn(&self) -> Option<u32> {
+    pub fn as_tagged_min_svn(&self) -> Option<MinSvnType> {
         match self {
-            Self::TaggedMinSvn(svn) => Some(*svn.as_ref()),
+            Self::TaggedMinSvn(svn) => Some(svn.clone()),
             _ => None,
         }
     }
@@ -1673,7 +1674,7 @@ pub enum DomainTypeChoice<'a> {
 }
 
 impl DomainTypeChoice<'_> {
-    pub fn as_uint(&self) -> Option<u32> {
+    pub fn as_uint(&self) -> Option<Integer> {
         match self {
             Self::Uint(value) => Some(*value),
             _ => None,
