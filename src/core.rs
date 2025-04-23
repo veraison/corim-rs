@@ -48,7 +48,7 @@ use base64::{self, engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use derive_more::{AsMut, AsRef, Constructor, Deref, DerefMut, From, TryFrom};
 use serde::{
     de::{self, SeqAccess, Visitor},
-    ser::{Error as _, SerializeSeq},
+    ser::{Error as _, SerializeMap, SerializeSeq},
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
@@ -616,23 +616,23 @@ impl<'de> Deserialize<'de> for ObjectIdentifier {
 }
 
 generate_tagged!(
-    (1, IntegerTime, Int, "A representation of time in integer format using CBOR tag 1"),
-    (32, Uri, Text<'a>, 'a,  "A URI text string with CBOR tag 32"),
-    (37, TaggedUuidType, UuidType, "UUID type wrapped with CBOR tag 37"),
-    (111, OidType, ObjectIdentifier, "An Object Identifier (OID) represented as bytes using CBOR tag 111"),
-    (550, TaggedUeidType, UeidType, "UEID type wrapped with CBOR tag 550"),
-    (552, SvnType, Uint, "A Security Version Number (SVN) using CBOR tag 552"),
-    (553, MinSvnType, Uint, "A minimum Security Version Number (SVN) using CBOR tag 553"),
-    (554, PkixBase64KeyType, Tstr<'a>, 'a, "A PKIX key in base64 format using CBOR tag 554"),
-    (555, PkixBase64CertType, Tstr<'a>, 'a, "A PKIX certificate in base64 format using CBOR tag 555"),
-    (556, PkixBase64CertPathType, Tstr<'a>, 'a, "A PKIX certificate path in base64 format using CBOR tag 556"),
-    (557, ThumbprintType, Digest<'a>, 'a, "A cryptographic thumbprint using CBOR tag 557"),
-    (558, CoseKeyType, CoseKeySetOrKey<'a>, 'a, "CBOR tag 558 wrapper for COSE Key Structures"),
-    (559, CertThumprintType, Digest<'a>, 'a, "A certificate thumbprint using CBOR tag 559"),
-    (560, TaggedBytes, Bytes, "A generic byte string using CBOR tag 560"),
-    (561, CertPathThumbprintType, Digest<'a>, 'a, "A certificate path thumbprint using CBOR tag 561"),
-    (562, PkixAsn1DerCertType, TaggedBytes, "A PKIX certificate in ASN.1 DER format using CBOR tag 562"),
-    (563, TaggedMaskedRawValue, MaskedRawValue, "Represents a masked raw value with its mask"),
+    (1, IntegerTime, Int, "time", "A representation of time in integer format using CBOR tag 1"),
+    (32, Uri, Text<'a>, 'a,  "uri", "A URI text string with CBOR tag 32"),
+    (37, TaggedUuidType, UuidType, "uuid", "UUID type wrapped with CBOR tag 37"),
+    (111, OidType, ObjectIdentifier, "oid", "An Object Identifier (OID) represented as bytes using CBOR tag 111"),
+    (550, TaggedUeidType, UeidType, "ueid", "UEID type wrapped with CBOR tag 550"),
+    (552, SvnType, Uint, "svn", "A Security Version Number (SVN) using CBOR tag 552"),
+    (553, MinSvnType, Uint, "min-svn", "A minimum Security Version Number (SVN) using CBOR tag 553"),
+    (554, PkixBase64KeyType, Tstr<'a>, 'a, "pkix-base64-key", "A PKIX key in base64 format using CBOR tag 554"),
+    (555, PkixBase64CertType, Tstr<'a>, 'a, "pkix-base64-cert", "A PKIX certificate in base64 format using CBOR tag 555"),
+    (556, PkixBase64CertPathType, Tstr<'a>, 'a, "pkix-base64-cert-path", "A PKIX certificate path in base64 format using CBOR tag 556"),
+    (557, ThumbprintType, Digest<'a>, 'a, "thumbprint", "A cryptographic thumbprint using CBOR tag 557"),
+    (558, CoseKeyType, CoseKeySetOrKey<'a>, 'a, "cose-key", "CBOR tag 558 wrapper for COSE Key Structures"),
+    (559, CertThumprintType, Digest<'a>, 'a, "cert-thumbprint", "A certificate thumbprint using CBOR tag 559"),
+    (560, TaggedBytes, Bytes, "bytes", "A generic byte string using CBOR tag 560"),
+    (561, CertPathThumbprintType, Digest<'a>, 'a, "cert-path-thumbprint", "A certificate path thumbprint using CBOR tag 561"),
+    (562, PkixAsn1DerCertType, TaggedBytes, "pkix-asn1-der-cert", "A PKIX certificate in ASN.1 DER format using CBOR tag 562"),
+    (563, TaggedMaskedRawValue, MaskedRawValue, "masked-raw-value", "Represents a masked raw value with its mask"),
 );
 
 /// Represents a value that can be either text or bytes

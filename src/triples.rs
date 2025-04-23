@@ -99,8 +99,8 @@ use crate::{
     core::PkixBase64CertPathType, empty_map_as_none, Bytes, CertPathThumbprintType,
     CertThumprintType, ConciseSwidTagId, CoseKeyType, Digest, ExtensionMap, MinSvnType, OidType,
     OneOrMore, PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, Result,
-    SvnType, Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint, Ulabel, UuidType,
-    VersionScheme,
+    SvnType, TaggedBytes, TaggedUuidType, Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint,
+    Ulabel, UuidType, VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
@@ -317,9 +317,9 @@ pub enum ClassIdTypeChoice {
     /// Object Identifier (OID)
     Oid(OidType),
     /// UUID identifier
-    Uuid(UuidType),
+    Uuid(TaggedUuidType),
     /// Raw bytes
-    Bytes(Bytes),
+    Bytes(TaggedBytes),
 }
 
 impl ClassIdTypeChoice {
@@ -345,7 +345,7 @@ impl ClassIdTypeChoice {
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             Self::Oid(oid_type) => oid_type.as_ref(),
-            Self::Uuid(uuid_type) => uuid_type.as_ref(),
+            Self::Uuid(uuid_type) => uuid_type.as_ref().as_ref(),
             Self::Bytes(bytes) => bytes.as_ref(),
         }
     }
@@ -2099,5 +2099,62 @@ impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementTripleRecord<'a> {
         deserializer.deserialize_seq(ConditionalEndorsementTripleRecordVisitor {
             marker: PhantomData,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::core::*;
+
+    #[test]
+    fn test_class_id_json_serde() {
+        let class_id_oid = ClassIdTypeChoice::Oid(OidType::from(
+            ObjectIdentifier::try_from("1.2.3.4").unwrap(),
+        ));
+
+        let actual = serde_json::to_string(&class_id_oid).unwrap();
+
+        let expected = r#"{"type":"oid","value":"1.2.3.4"}"#;
+
+        assert_eq!(actual, expected);
+
+        let other: ClassIdTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(class_id_oid, other);
+
+        let class_id_bytes =
+            ClassIdTypeChoice::Bytes(Bytes::from(&[0xde, 0xad, 0xbe, 0xef][..]).into());
+
+        let expected = r#"{"type":"bytes","value":"3q2-7w"}"#;
+
+        let actual = serde_json::to_string(&class_id_bytes).unwrap();
+
+        assert_eq!(actual, expected);
+
+        let other: ClassIdTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(class_id_bytes, other);
+
+        let class_id_uuid = ClassIdTypeChoice::Uuid(TaggedUuidType::from(
+            UuidType::try_from("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+        ));
+
+        let actual = serde_json::to_string(&class_id_uuid).unwrap();
+
+        let expected = r#"{"type":"uuid","value":"550e8400-e29b-41d4-a716-446655440000"}"#;
+
+        assert_eq!(actual, expected);
+
+        let bad_tag = r#"{"type":"foo","value":"3q2-7w"}"#;
+
+        let err = serde_json::from_str::<ClassIdTypeChoice>(bad_tag)
+            .err()
+            .unwrap();
+
+        assert_eq!(
+            err.to_string(),
+            "data did not match any variant of untagged enum ClassIdTypeChoice".to_string()
+        );
     }
 }

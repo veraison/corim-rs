@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 use derive_more::{Constructor, From};
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeMap, Deserialize, Serialize};
 
 use crate::{generate_tagged, TagIdentityMap, ValidityMap};
 
@@ -10,6 +10,7 @@ generate_tagged!((
     TaggedConciseTlTag,
     ConciseTlTag<'a>,
     'a,
+    "cotl",
     r#"A Concise Trust List (CoTL) tag structure tagged with CBOR tag 508
 
 CoTL tags provide a mechanism to maintain lists of trusted CoMID and CoSWID tags. 
