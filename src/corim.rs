@@ -425,7 +425,7 @@ pub struct CorimLocatorMap<'a> {
     /// Optional cryptographic thumbprint for verification
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "1")]
-    pub thumbprint: Option<Digest<'a>>,
+    pub thumbprint: Option<Digest>,
 }
 
 /// Profile identifier that can be either a URI or OID
