@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MIT
 
 use std::{
-    cmp::Ordering, fmt::{Debug, Display}, hash::Hash, i128, ops::{
+    cmp::Ordering,
+    fmt::{Debug, Display},
+    hash::Hash,
+    ops::{
         Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Deref,
         DerefMut, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Shl, ShlAssign, Shr,
         ShrAssign, Sub, SubAssign,
-    }, str::FromStr
+    },
+    str::FromStr,
 };
 
 use serde::Serialize;
@@ -22,7 +26,7 @@ macro_rules! all_integers {
 /// the [`Inner`] type of [`EncodedInteger`].
 mod private {
     /// A sealed trait that prevents external implementations of the `IntegerType` trait.
-    /// 
+    ///
     /// This trait is part of the sealed traits pattern, ensuring that only types
     /// within this crate can implement the public `IntegerType` trait.
     pub trait Sealed {}
@@ -186,18 +190,17 @@ pub trait WrappedInteger {
 #[derive(Default, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
 pub struct Integer(pub i128);
 
-
 impl Integer {
     // Add these constants to the impl block
     /// Constant representing zero
     pub const ZERO: Self = Integer(0);
-    
+
     /// Constant representing one
     pub const ONE: Self = Integer(1);
 
     /// Constant representing the minimum value
     pub const MIN: Self = Integer(i128::MIN);
-    
+
     /// Constant representing the maximum value
     pub const MAX: Self = Integer(i128::MAX);
 
@@ -596,7 +599,7 @@ impl Integer {
     ///
     /// # Parameters
     /// * `x` - The primitive BE integer to convert into Integer
-    /// 
+    ///
     /// # Returns
     /// A new `Integer` containing the converted value.
     pub const fn from_be(x: i128) -> Self {
@@ -626,7 +629,7 @@ impl Integer {
     ///
     /// # Parameters
     /// * `x` - The primitive LE integer to convert into Integer
-    /// 
+    ///
     /// # Returns
     /// A new `Integer` containing the converted value.
     pub const fn from_le(x: i128) -> Self {
@@ -1117,7 +1120,7 @@ impl Integer {
 
     /// Performs saturating exponentiation.
     ///
-    /// Returns the result of exponentiation, saturating at the numeric bounds 
+    /// Returns the result of exponentiation, saturating at the numeric bounds
     /// instead of overflowing.
     ///
     /// # Parameters
@@ -1484,7 +1487,7 @@ impl Integer {
                 return false;
             }
 
-            return true
+            return true;
         }
 
         val >= T::min_value().as_i128() && val <= T::max_value().as_i128()
@@ -1964,7 +1967,7 @@ impl<'de> serde::Deserialize<'de> for Integer {
                 if v.is_ascii() {
                     return Ok(Integer(v as u8 as i128));
                 }
-                if v.is_digit(10) {
+                if v.is_ascii_digit() {
                     return Ok(Integer(v.to_digit(10).unwrap() as i128));
                 }
 
@@ -1990,7 +1993,7 @@ impl<'de> serde::Deserialize<'de> for Integer {
                 }
                 let mut value = 0u128;
                 for c in v.chars() {
-                    if !c.is_digit(10) {
+                    if !c.is_ascii_digit() {
                         return Err(E::custom("invalid character in string"));
                     }
                     value = (value * 10) + (c.to_digit(10).unwrap() as u128);
@@ -2019,7 +2022,7 @@ impl<'de> serde::Deserialize<'de> for Integer {
             where
                 E: serde::de::Error,
             {
-                if v.len() == 0 {
+                if v.is_empty() {
                     return Err(E::custom("empty byte array"));
                 }
                 if v.len() > 16 {
@@ -2210,7 +2213,7 @@ mod tests {
         assert_eq!(my_i64_int.inner(), 43i128);
         assert_eq!(my_i128_int.inner(), 15i128);
     }
-    
+
     #[test]
     fn test_fits_into_u8() {
         // Values within u8 range
@@ -2218,14 +2221,14 @@ mod tests {
         assert!(Integer(1).fits_into::<u8>());
         assert!(Integer(127).fits_into::<u8>());
         assert!(Integer(255).fits_into::<u8>());
-        
+
         // Values outside u8 range
         assert!(!Integer(-1).fits_into::<u8>());
         assert!(!Integer(256).fits_into::<u8>());
         assert!(!Integer(i128::MAX).fits_into::<u8>());
         assert!(!Integer(i128::MIN).fits_into::<u8>());
     }
-    
+
     #[test]
     fn test_fits_into_i8() {
         // Values within i8 range
@@ -2234,14 +2237,14 @@ mod tests {
         assert!(Integer(0).fits_into::<i8>());
         assert!(Integer(1).fits_into::<i8>());
         assert!(Integer(127).fits_into::<i8>());
-        
+
         // Values outside i8 range
         assert!(!Integer(-129).fits_into::<i8>());
         assert!(!Integer(128).fits_into::<i8>());
         assert!(!Integer(i128::MAX).fits_into::<i8>());
         assert!(!Integer(i128::MIN).fits_into::<i8>());
     }
-    
+
     #[test]
     fn test_fits_into_u16() {
         // Values within u16 range
@@ -2249,14 +2252,14 @@ mod tests {
         assert!(Integer(1).fits_into::<u16>());
         assert!(Integer(32767).fits_into::<u16>());
         assert!(Integer(65535).fits_into::<u16>());
-        
+
         // Values outside u16 range
         assert!(!Integer(-1).fits_into::<u16>());
         assert!(!Integer(65536).fits_into::<u16>());
         assert!(!Integer(i128::MAX).fits_into::<u16>());
         assert!(!Integer(i128::MIN).fits_into::<u16>());
     }
-    
+
     #[test]
     fn test_fits_into_i16() {
         // Values within i16 range
@@ -2265,14 +2268,14 @@ mod tests {
         assert!(Integer(0).fits_into::<i16>());
         assert!(Integer(1).fits_into::<i16>());
         assert!(Integer(32767).fits_into::<i16>());
-        
+
         // Values outside i16 range
         assert!(!Integer(-32769).fits_into::<i16>());
         assert!(!Integer(32768).fits_into::<i16>());
         assert!(!Integer(i128::MAX).fits_into::<i16>());
         assert!(!Integer(i128::MIN).fits_into::<i16>());
     }
-    
+
     #[test]
     fn test_fits_into_u32() {
         // Values within u32 range
@@ -2280,14 +2283,14 @@ mod tests {
         assert!(Integer(1).fits_into::<u32>());
         assert!(Integer(2147483647).fits_into::<u32>());
         assert!(Integer(4294967295).fits_into::<u32>());
-        
+
         // Values outside u32 range
         assert!(!Integer(-1).fits_into::<u32>());
         assert!(!Integer(4294967296).fits_into::<u32>());
         assert!(!Integer(i128::MAX).fits_into::<u32>());
         assert!(!Integer(i128::MIN).fits_into::<u32>());
     }
-    
+
     #[test]
     fn test_fits_into_i32() {
         // Values within i32 range
@@ -2296,14 +2299,14 @@ mod tests {
         assert!(Integer(0).fits_into::<i32>());
         assert!(Integer(1).fits_into::<i32>());
         assert!(Integer(2147483647).fits_into::<i32>());
-        
+
         // Values outside i32 range
         assert!(!Integer(-2147483649).fits_into::<i32>());
         assert!(!Integer(2147483648).fits_into::<i32>());
         assert!(!Integer(i128::MAX).fits_into::<i32>());
         assert!(!Integer(i128::MIN).fits_into::<i32>());
     }
-    
+
     #[test]
     fn test_fits_into_u64() {
         // Values within u64 range
@@ -2311,14 +2314,14 @@ mod tests {
         assert!(Integer(1).fits_into::<u64>());
         assert!(Integer(9223372036854775807).fits_into::<u64>());
         assert!(Integer(18446744073709551615).fits_into::<u64>());
-        
+
         // Values outside u64 range
         assert!(!Integer(-1).fits_into::<u64>());
         assert!(!Integer(18446744073709551616).fits_into::<u64>());
         assert!(!Integer(i128::MAX).fits_into::<u64>());
         assert!(!Integer(i128::MIN).fits_into::<u64>());
     }
-    
+
     #[test]
     fn test_fits_into_i64() {
         // Values within i64 range
@@ -2327,26 +2330,26 @@ mod tests {
         assert!(Integer(0).fits_into::<i64>());
         assert!(Integer(1).fits_into::<i64>());
         assert!(Integer(9223372036854775807).fits_into::<i64>());
-        
+
         // Values outside i64 range
         assert!(!Integer(-9223372036854775809).fits_into::<i64>());
         assert!(!Integer(9223372036854775808).fits_into::<i64>());
         assert!(!Integer(i128::MAX).fits_into::<i64>());
         assert!(!Integer(i128::MIN).fits_into::<i64>());
     }
-    
+
     #[test]
     fn test_fits_into_u128() {
         // Values within u128 range
         assert!(Integer(0).fits_into::<u128>());
         assert!(Integer(1).fits_into::<u128>());
         assert!(Integer(i128::MAX).fits_into::<u128>());
-        
+
         // Values outside u128 range
         assert!(!Integer(-1).fits_into::<u128>());
         assert!(!Integer(i128::MIN).fits_into::<u128>());
     }
-    
+
     #[test]
     fn test_fits_into_i128() {
         // All i128 values fit into i128
@@ -2356,24 +2359,24 @@ mod tests {
         assert!(Integer(1).fits_into::<i128>());
         assert!(Integer(i128::MAX).fits_into::<i128>());
     }
-    
+
     #[test]
     fn test_fits_into_edge_cases() {
         // Test with Integer::MAX and Integer::MIN constants
         assert!(Integer::MIN.fits_into::<i128>());
         assert!(!Integer::MIN.fits_into::<i64>());
         assert!(!Integer::MIN.fits_into::<i32>());
-        
+
         assert!(Integer::MAX.fits_into::<i128>());
         assert!(Integer::MAX.fits_into::<u128>());
         assert!(!Integer::MAX.fits_into::<i64>());
-        
+
         // Test with specific edge values
         let max_i32_plus_1 = Integer(2147483648); // i32::MAX + 1
         assert!(!max_i32_plus_1.fits_into::<i32>());
         assert!(max_i32_plus_1.fits_into::<u32>());
         assert!(max_i32_plus_1.fits_into::<i64>());
-        
+
         let min_i32_minus_1 = Integer(-2147483649); // i32::MIN - 1
         assert!(!min_i32_minus_1.fits_into::<i32>());
         assert!(min_i32_minus_1.fits_into::<i64>());
