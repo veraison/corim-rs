@@ -723,7 +723,7 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 /// ```rust
 /// use corim_rs::triples::CryptoKeyTypeChoice;
 /// use corim_rs::numbers::Integer;
-/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, AlgLabel, Label, CoseAlgorithm};
+/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, Label, CoseAlgorithm};
 ///
 /// // Base64 encoded certificate
 /// let cert = CryptoKeyTypeChoice::PkixBase64Cert(
@@ -735,7 +735,7 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 ///     CoseKeyType::new(CoseKeySetOrKey::Key(CoseKey {
 ///         kty: Label::Int(Integer(1)),  // EC2 key type
 ///         kid: TaggedBytes::new(vec![1, 2, 3].into()),  // Key ID
-///         alg: AlgLabel::Int(CoseAlgorithm::ES256),  // ES256 algorithm
+///         alg: CoseAlgorithm::ES256,  // ES256 algorithm
 ///         key_ops: vec![
 ///             Label::Int(Integer(1)),  // sign
 ///             Label::Int(Integer(2)),  // verify
@@ -899,20 +899,20 @@ impl CryptoKeyTypeChoice<'_> {
 }
 
 /// Types of group identifiers
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum GroupIdTypeChoice {
     /// UUID identifier
-    Uuid(UuidType),
+    Uuid(TaggedUuidType),
     /// Raw bytes
-    Bytes(Bytes),
+    Bytes(TaggedBytes),
 }
 
 impl GroupIdTypeChoice {
     pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Uuid(uuid) => Some(uuid.as_ref()),
+            Self::Uuid(uuid) => Some(uuid.as_slice()),
             _ => None,
         }
     }
@@ -921,6 +921,60 @@ impl GroupIdTypeChoice {
         match self {
             Self::Bytes(bytes) => Some(bytes.as_ref()),
             _ => None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for GroupIdTypeChoice {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let tagged_value = TaggedJsonValue::deserialize(deserializer)?;
+
+            match tagged_value.typ {
+                "uuid" => {
+                    let uuid: UuidType = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(GroupIdTypeChoice::Uuid(TaggedUuidType::from(uuid)))
+                }
+                "bytes" => {
+                    let bytes: Bytes = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(GroupIdTypeChoice::Bytes(TaggedBytes::from(bytes)))
+                }
+                s => Err(de::Error::custom(format!(
+                    "unexpected GroupIdTypeChoice type \"{s}\""
+                ))),
+            }
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Tag(tag, inner) => {
+                    // Re-serializing the inner Value so that we can deserialize it
+                    // into an appropriate type, once we figure out what that is
+                    // based on the tag.
+                    let mut buf: Vec<u8> = Vec::new();
+                    ciborium::into_writer(&inner, &mut buf).unwrap();
+
+                    match tag {
+                        37 => {
+                            let uuid: UuidType =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(GroupIdTypeChoice::Uuid(TaggedUuidType::from(uuid)))
+                        }
+                        560 => {
+                            let bytes: Bytes =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(GroupIdTypeChoice::Bytes(TaggedBytes::from(bytes)))
+                        }
+                        n => Err(de::Error::custom(format!(
+                            "unexpected ClassIdTypeChoice tag {n}"
+                        ))),
+                    }
+                }
+                _ => Err(de::Error::custom("did not see a tag")),
+            }
         }
     }
 }
@@ -2299,6 +2353,7 @@ impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementTripleRecord<'a> {
 #[rustfmt::skip::macros(vec)]
 mod test {
     use super::*;
+    use crate::fixed_bytes::FixedBytes;
 
     #[test]
     fn test_class_id_json_serde() {
@@ -2458,5 +2513,43 @@ mod test {
         let class_map_de: ClassMap = serde_json::from_str(expected).unwrap();
 
         assert_eq!(class_map_de, class_map);
+    }
+
+    #[test]
+    fn test_group_id_serde() {
+        let uuid_bytes: [u8; 16] = [
+            0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4, 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44,
+            0x00, 0x00,
+        ];
+
+        let expected = r#"{"type":"uuid","value":"550e8400-e29b-41d4-a716-446655440000"}"#;
+
+        let group_id = GroupIdTypeChoice::Uuid(TaggedUuidType::from(UuidType::from(
+            FixedBytes::from(uuid_bytes),
+        )));
+
+        let actual = serde_json::to_string(&group_id).unwrap();
+
+        assert_eq!(&actual, expected);
+
+        let group_id_de: GroupIdTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(group_id_de, group_id);
+
+        let expected: Vec<u8> = vec![
+            0xd8, 0x25, // tag(37)
+              0x50, // bstr(16)
+                0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4,
+                0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00,
+        ];
+
+        let mut actual: Vec<u8> = Vec::new();
+        ciborium::into_writer(&group_id, &mut actual).unwrap();
+
+        assert_eq!(actual, expected);
+
+        let group_id_de: GroupIdTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(group_id_de, group_id);
     }
 }
