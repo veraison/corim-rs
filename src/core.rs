@@ -1539,16 +1539,11 @@ pub enum HashAlgorithm {
     Blake2b512 = -3,
     K12_256 = -4,
     K12_512 = -5,
-
-    Reserved(u8) = -6,
-    Unassigned(u8) = -7,
 }
 
 impl HashAlgorithm {
     fn to_u8(&self) -> Option<u8> {
         match self {
-            HashAlgorithm::Reserved(v) => Some(*v),
-            HashAlgorithm::Unassigned(v) => Some(*v),
             HashAlgorithm::Sha256 => Some(1),
             HashAlgorithm::Sha256_128 => Some(2),
             HashAlgorithm::Sha256_120 => Some(3),
@@ -1571,7 +1566,6 @@ impl TryFrom<u8> for HashAlgorithm {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(HashAlgorithm::Reserved(0)),
             1 => Ok(HashAlgorithm::Sha256),
             2 => Ok(HashAlgorithm::Sha256_128),
             3 => Ok(HashAlgorithm::Sha256_120),
@@ -1584,9 +1578,6 @@ impl TryFrom<u8> for HashAlgorithm {
             10 => Ok(HashAlgorithm::Sha3_256),
             11 => Ok(HashAlgorithm::Sha3_384),
             12 => Ok(HashAlgorithm::Sha3_512),
-            v @ 13..=31 => Ok(HashAlgorithm::Unassigned(v)),
-            32 => Ok(HashAlgorithm::Reserved(32)),
-            v @ 33..=63 => Ok(HashAlgorithm::Unassigned(v)),
             v => Err(CoreError::InvalidValue(format!(
                 "algorithmmust be between 0 and 63, found {v}"
             ))),
@@ -1619,8 +1610,6 @@ impl TryFrom<&str> for HashAlgorithm {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "reserved" => Ok(HashAlgorithm::Reserved(0)),
-            "unassigned" => Ok(HashAlgorithm::Unassigned(13)),
             "sha-256" => Ok(HashAlgorithm::Sha256),
             "sha-256-128" => Ok(HashAlgorithm::Sha256_128),
             "sha-256-120" => Ok(HashAlgorithm::Sha256_120),
@@ -1656,8 +1645,6 @@ impl TryFrom<String> for HashAlgorithm {
 impl std::fmt::Display for HashAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match *self {
-            HashAlgorithm::Reserved(_) => "reserved",
-            HashAlgorithm::Unassigned(_) => "unassigned",
             HashAlgorithm::Sha256 => "sha-256",
             HashAlgorithm::Sha256_128 => "sha-256-128",
             HashAlgorithm::Sha256_120 => "sha-256-120",
@@ -1825,8 +1812,6 @@ impl<'de> Deserialize<'de> for HashAlgorithm {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
 #[repr(i64)]
 pub enum CoseAlgorithm {
-    /// Reserved for private use (-65536)
-    Unassigned0 = -65536,
     /// RSASSA-PKCS1-v1_5 using SHA-1
     RS1 = -65535,
     /// AES-CTR with 128-bit key
@@ -1841,8 +1826,6 @@ pub enum CoseAlgorithm {
     A192CBC = -65530,
     /// AES-CBC with 256-bit key
     A256CBC = -65529,
-    /// Unassigned (-65528)
-    Unassigned1 = -65528,
     /// WalnutDSA signature algorithm
     WalnutDSA = -260,
     /// RSASSA-PKCS1-v1_5 using SHA-512
@@ -1851,8 +1834,6 @@ pub enum CoseAlgorithm {
     RS384 = -258,
     /// RSASSA-PKCS1-v1_5 using SHA-256
     RS256 = -257,
-    /// Unassigned (-256)
-    Unassigned2 = -256,
     /// ECDSA using secp256k1 curve and SHA-256
     ES256K = -47,
     /// HSS/LMS hash-based signature
@@ -1899,8 +1880,6 @@ pub enum CoseAlgorithm {
     EcdhEsHkdf512 = -26,
     /// ECDH ES w/ HKDF - SHA-256
     EcdhEsHkdf256 = -25,
-    /// Unassigned (-24)
-    Unassigned3 = -24,
     /// SHAKE128 hash function
     SHAKE128 = -18,
     /// SHA-512/256 hash function
@@ -1919,8 +1898,6 @@ pub enum CoseAlgorithm {
     DirectHkdfSha512 = -11,
     /// Direct key agreement with HKDF and SHA-256
     DirectHkdfSha256 = -10,
-    /// Unassigned (-9)
-    Unassigned4 = -9,
     /// EdDSA signature algorithm
     EdDSA = -8,
     /// ECDSA w/ SHA-256
@@ -1933,10 +1910,6 @@ pub enum CoseAlgorithm {
     A192KW = -4,
     /// AES Key Wrap w/ 128-bit key
     A128KW = -3,
-    /// Unassigned (-2)
-    Unassigned5 = -2,
-    /// Reserved (0)
-    Reserved = 0,
     /// AES-GCM mode w/ 128-bit key
     A128GCM = 1,
     /// AES-GCM mode w/ 192-bit key
@@ -1951,8 +1924,6 @@ pub enum CoseAlgorithm {
     Hmac384_384 = 6,
     /// HMAC w/ SHA-512
     Hmac512_512 = 7,
-    /// Unassigned (8)
-    Unassigned6 = 8,
     /// AES-CCM mode 16-byte MAC, 13-byte nonce, 128-bit key
     AesCcm16_64_128 = 10,
     /// AES-CCM mode 16-byte MAC, 13-byte nonce, 256-bit key
@@ -1965,16 +1936,12 @@ pub enum CoseAlgorithm {
     AesMac128_64 = 14,
     /// AES-MAC 256-bit key, 64-bit tag
     AesMac256_64 = 15,
-    /// Unassigned (16)
-    Unassigned7 = 16,
     /// ChaCha20/Poly1305 w/ 256-bit key
     ChaCha20Poly1305 = 24,
     /// AES-MAC 128-bit key
     AesMac128 = 128,
     /// AES-MAC 256-bit key
     AesMac256 = 256,
-    /// Unassigned (27)
-    Unassigned8 = 27,
     /// AES-CCM mode 16-byte MAC, 13-byte nonce, 128-bit key
     AesCcm16_128_128 = 30,
     /// AES-CCM mode 16-byte MAC, 13-byte nonce, 256-bit key
@@ -1998,7 +1965,6 @@ impl TryFrom<i64> for CoseAlgorithm {
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
         match value {
-            -65536 => Ok(CoseAlgorithm::Unassigned0),
             -65535 => Ok(CoseAlgorithm::RS1),
             -65534 => Ok(CoseAlgorithm::A128CTR),
             -65533 => Ok(CoseAlgorithm::A192CTR),
@@ -2006,12 +1972,10 @@ impl TryFrom<i64> for CoseAlgorithm {
             -65531 => Ok(CoseAlgorithm::A128CBC),
             -65530 => Ok(CoseAlgorithm::A192CBC),
             -65529 => Ok(CoseAlgorithm::A256CBC),
-            -65528 => Ok(CoseAlgorithm::Unassigned1),
             -260 => Ok(CoseAlgorithm::WalnutDSA),
             -259 => Ok(CoseAlgorithm::RS512),
             -258 => Ok(CoseAlgorithm::RS384),
             -257 => Ok(CoseAlgorithm::RS256),
-            -256 => Ok(CoseAlgorithm::Unassigned2),
             -47 => Ok(CoseAlgorithm::ES256K),
             -46 => Ok(CoseAlgorithm::HssLms),
             -45 => Ok(CoseAlgorithm::SHAKE256),
@@ -2035,7 +1999,6 @@ impl TryFrom<i64> for CoseAlgorithm {
             -27 => Ok(CoseAlgorithm::EcdhSsHkdf256),
             -26 => Ok(CoseAlgorithm::EcdhEsHkdf512),
             -25 => Ok(CoseAlgorithm::EcdhEsHkdf256),
-            -24 => Ok(CoseAlgorithm::Unassigned3),
             -18 => Ok(CoseAlgorithm::SHAKE128),
             -17 => Ok(CoseAlgorithm::Sha512_256),
             -16 => Ok(CoseAlgorithm::Sha256),
@@ -2045,15 +2008,12 @@ impl TryFrom<i64> for CoseAlgorithm {
             -12 => Ok(CoseAlgorithm::DirectHkdfAes128),
             -11 => Ok(CoseAlgorithm::DirectHkdfSha512),
             -10 => Ok(CoseAlgorithm::DirectHkdfSha256),
-            -9 => Ok(CoseAlgorithm::Unassigned4),
             -8 => Ok(CoseAlgorithm::EdDSA),
             -7 => Ok(CoseAlgorithm::ES256),
             -6 => Ok(CoseAlgorithm::Direct),
             -5 => Ok(CoseAlgorithm::A256KW),
             -4 => Ok(CoseAlgorithm::A192KW),
             -3 => Ok(CoseAlgorithm::A128KW),
-            -2 => Ok(CoseAlgorithm::Unassigned5),
-            0 => Ok(CoseAlgorithm::Reserved),
             1 => Ok(CoseAlgorithm::A128GCM),
             2 => Ok(CoseAlgorithm::A192GCM),
             3 => Ok(CoseAlgorithm::A256GCM),
@@ -2061,18 +2021,15 @@ impl TryFrom<i64> for CoseAlgorithm {
             5 => Ok(CoseAlgorithm::Hmac256_256),
             6 => Ok(CoseAlgorithm::Hmac384_384),
             7 => Ok(CoseAlgorithm::Hmac512_512),
-            8 => Ok(CoseAlgorithm::Unassigned6),
             10 => Ok(CoseAlgorithm::AesCcm16_64_128),
             11 => Ok(CoseAlgorithm::AesCcm16_64_256),
             12 => Ok(CoseAlgorithm::AesCcm64_64_128),
             13 => Ok(CoseAlgorithm::AesCcm64_64_256),
             14 => Ok(CoseAlgorithm::AesMac128_64),
             15 => Ok(CoseAlgorithm::AesMac256_64),
-            16 => Ok(CoseAlgorithm::Unassigned7),
             24 => Ok(CoseAlgorithm::ChaCha20Poly1305),
             128 => Ok(CoseAlgorithm::AesMac128),
             256 => Ok(CoseAlgorithm::AesMac256),
-            27 => Ok(CoseAlgorithm::Unassigned8),
             30 => Ok(CoseAlgorithm::AesCcm16_128_128),
             31 => Ok(CoseAlgorithm::AesCcm16_128_256),
             32 => Ok(CoseAlgorithm::AesCcm64_128_128),
@@ -2092,7 +2049,6 @@ impl TryFrom<&str> for CoseAlgorithm {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "Unassigned" => Ok(CoseAlgorithm::Unassigned0),
             "RS1" => Ok(CoseAlgorithm::RS1),
             "A128CTR" => Ok(CoseAlgorithm::A128CTR),
             "A192CTR" => Ok(CoseAlgorithm::A192CTR),
@@ -2142,7 +2098,6 @@ impl TryFrom<&str> for CoseAlgorithm {
             "A256KW" => Ok(CoseAlgorithm::A256KW),
             "A192KW" => Ok(CoseAlgorithm::A192KW),
             "A128KW" => Ok(CoseAlgorithm::A128KW),
-            "Reserved" => Ok(CoseAlgorithm::Reserved),
             "A128GCM" => Ok(CoseAlgorithm::A128GCM),
             "A192GCM" => Ok(CoseAlgorithm::A192GCM),
             "A256GCM" => Ok(CoseAlgorithm::A256GCM),
@@ -2175,7 +2130,6 @@ impl TryFrom<&str> for CoseAlgorithm {
 impl Display for CoseAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
-            CoseAlgorithm::Unassigned0 => "Unassigned",
             CoseAlgorithm::RS1 => "RS1",
             CoseAlgorithm::A128CTR => "A128CTR",
             CoseAlgorithm::A192CTR => "A192CTR",
@@ -2183,12 +2137,10 @@ impl Display for CoseAlgorithm {
             CoseAlgorithm::A128CBC => "A128CBC",
             CoseAlgorithm::A192CBC => "A192CBC",
             CoseAlgorithm::A256CBC => "A256CBC",
-            CoseAlgorithm::Unassigned1 => "Unassigned",
             CoseAlgorithm::WalnutDSA => "WalnutDSA",
             CoseAlgorithm::RS512 => "RS512",
             CoseAlgorithm::RS384 => "RS384",
             CoseAlgorithm::RS256 => "RS256",
-            CoseAlgorithm::Unassigned2 => "Unassigned",
             CoseAlgorithm::ES256K => "ES256K",
             CoseAlgorithm::HssLms => "HSS-LMS",
             CoseAlgorithm::SHAKE256 => "SHAKE256",
@@ -2212,7 +2164,6 @@ impl Display for CoseAlgorithm {
             CoseAlgorithm::EcdhSsHkdf256 => "ECDH-SS + HKDF-256",
             CoseAlgorithm::EcdhEsHkdf512 => "ECDH-ES + HKDF-512",
             CoseAlgorithm::EcdhEsHkdf256 => "ECDH-ES + HKDF-256",
-            CoseAlgorithm::Unassigned3 => "Unassigned",
             CoseAlgorithm::SHAKE128 => "SHAKE128",
             CoseAlgorithm::Sha512_256 => "SHA-512/256",
             CoseAlgorithm::Sha256 => "SHA-256",
@@ -2222,15 +2173,12 @@ impl Display for CoseAlgorithm {
             CoseAlgorithm::DirectHkdfAes128 => "direct+HKDF-AES-128",
             CoseAlgorithm::DirectHkdfSha512 => "direct+HKDF-SHA-512",
             CoseAlgorithm::DirectHkdfSha256 => "direct+HKDF-SHA-256",
-            CoseAlgorithm::Unassigned4 => "Unassigned",
             CoseAlgorithm::EdDSA => "EdDSA",
             CoseAlgorithm::ES256 => "ES256",
             CoseAlgorithm::Direct => "direct",
             CoseAlgorithm::A256KW => "A256KW",
             CoseAlgorithm::A192KW => "A192KW",
             CoseAlgorithm::A128KW => "A128KW",
-            CoseAlgorithm::Unassigned5 => "Unassigned",
-            CoseAlgorithm::Reserved => "Reserved",
             CoseAlgorithm::A128GCM => "A128GCM",
             CoseAlgorithm::A192GCM => "A192GCM",
             CoseAlgorithm::A256GCM => "A256GCM",
@@ -2238,18 +2186,15 @@ impl Display for CoseAlgorithm {
             CoseAlgorithm::Hmac256_256 => "HMAC-256/256",
             CoseAlgorithm::Hmac384_384 => "HMAC-384/384",
             CoseAlgorithm::Hmac512_512 => "HMAC-512/512",
-            CoseAlgorithm::Unassigned6 => "Unassigned",
             CoseAlgorithm::AesCcm16_64_128 => "AES-CCM-16-64-128",
             CoseAlgorithm::AesCcm16_64_256 => "AES-CCM-16-64-256",
             CoseAlgorithm::AesCcm64_64_128 => "AES-CCM-64-64-128",
             CoseAlgorithm::AesCcm64_64_256 => "AES-CCM-64-64-256",
             CoseAlgorithm::AesMac128_64 => "AES-MAC 128/64",
             CoseAlgorithm::AesMac256_64 => "AES-MAC 256/64",
-            CoseAlgorithm::Unassigned7 => "Unassigned",
             CoseAlgorithm::ChaCha20Poly1305 => "ChaCha20/Poly1305",
             CoseAlgorithm::AesMac128 => "AES-MAC 128/128",
             CoseAlgorithm::AesMac256 => "AES-MAC 256/256",
-            CoseAlgorithm::Unassigned8 => "Unassigned",
             CoseAlgorithm::AesCcm16_128_128 => "AES-CCM-16-128-128",
             CoseAlgorithm::AesCcm16_128_256 => "AES-CCM-16-128-256",
             CoseAlgorithm::AesCcm64_128_128 => "AES-CCM-64-128-128",
