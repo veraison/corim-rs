@@ -1590,7 +1590,7 @@ impl TryFrom<i64> for HashAlgorithm {
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
         <Self as TryFrom<u8>>::try_from(u8::try_from(value).map_err(|_| {
-            CoreError::InvalidValue(format!("algorithmmust be between 0 and 63, found {value}"))
+            CoreError::InvalidValue(format!("algorithm must be between 0 and 63, found {value}"))
         })?)
     }
 }
@@ -1600,7 +1600,7 @@ impl TryFrom<u64> for HashAlgorithm {
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         <Self as TryFrom<u8>>::try_from(u8::try_from(value).map_err(|_| {
-            CoreError::InvalidValue(format!("algorithmmust be between 0 and 63, found {value}"))
+            CoreError::InvalidValue(format!("algorithm must be between 0 and 63, found {value}"))
         })?)
     }
 }
@@ -3162,7 +3162,7 @@ mod tests {
 
             assert_eq!(
                 err.to_string().as_str(),
-                "invalid value: \"expected a valid COSE algorithm name, found \"foo\"\"",
+                "invalid value: expected a valid COSE algorithm name, found \"foo\"",
             );
 
             let err: serde_json::Error =
@@ -3172,7 +3172,7 @@ mod tests {
 
             assert_eq!(
                 err.to_string().as_str(),
-                "invalid value: \"invalid COSE algorithm Private Use value 42 (must be < -65536)\"",
+                "invalid value: invalid COSE algorithm Private Use value 42 (must be < -65536)",
             );
         }
     }
