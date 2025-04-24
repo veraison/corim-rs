@@ -845,157 +845,6 @@ impl<'a> From<&'a str> for Label<'a> {
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From, TryFrom)]
-/// Algorithm label that can be either a text string or a COSE algorithm identifier
-pub enum AlgLabel<'a> {
-    Text(Text<'a>),
-    Int(CoseAlgorithm),
-}
-
-impl AlgLabel<'_> {
-    pub fn is_empty(&self) -> bool {
-        match self {
-            AlgLabel::Text(value) => value.is_empty(),
-            AlgLabel::Int(_) => false,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        match self {
-            AlgLabel::Text(value) => value.len(),
-            AlgLabel::Int(_) => 1,
-        }
-    }
-
-    pub fn as_str(&self) -> Option<&str> {
-        match self {
-            AlgLabel::Text(value) => Some(value.as_ref()),
-            _ => None,
-        }
-    }
-
-    pub fn as_int(&self) -> Option<CoseAlgorithm> {
-        match self {
-            AlgLabel::Int(value) => Some(value.clone()),
-            _ => None,
-        }
-    }
-}
-
-impl Serialize for AlgLabel<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            AlgLabel::Text(text) => serializer.serialize_str(text),
-            AlgLabel::Int(cose_alg) => cose_alg.serialize(serializer),
-        }
-    }
-}
-
-impl<'de, 'a> Deserialize<'de> for AlgLabel<'a> {
-    fn deserialize<D>(deserializer: D) -> Result<AlgLabel<'a>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct AlgLabelVisitor<'a> {
-            _phantom: std::marker::PhantomData<&'a ()>,
-        }
-
-        impl<'a> Visitor<'_> for AlgLabelVisitor<'a> {
-            type Value = AlgLabel<'a>; // Match Digest<'a>
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("an integer or text for alg")
-            }
-
-            fn visit_i8<E>(self, value: i8) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                self.visit_i64(value as i64)
-            }
-
-            fn visit_i16<E>(self, value: i16) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                self.visit_i64(value as i64)
-            }
-
-            fn visit_i32<E>(self, value: i32) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                self.visit_i64(value as i64)
-            }
-
-            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                let cose_alg =
-                    CoseAlgorithm::deserialize(serde::de::value::I64Deserializer::new(value))?;
-                Ok(AlgLabel::Int(cose_alg))
-            }
-
-            fn visit_u8<E>(self, value: u8) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                self.visit_i64(value as i64)
-            }
-
-            fn visit_u16<E>(self, value: u16) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                self.visit_i64(value as i64)
-            }
-
-            fn visit_u32<E>(self, value: u32) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                self.visit_i64(value as i64)
-            }
-
-            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                if value > i64::MAX as u64 {
-                    Err(serde::de::Error::custom(
-                        "COSE algorithm ID out of i64 range",
-                    ))
-                } else {
-                    self.visit_i64(value as i64)
-                }
-            }
-
-            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(AlgLabel::Text(Cow::Owned(value))) // Owned data, no lifetime dependency on 'de
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(AlgLabel::Text(Cow::Owned(value.to_string()))) // Use owned data to avoid lifetime issues
-            }
-        }
-
-        deserializer.deserialize_any(AlgLabelVisitor {
-            _phantom: std::marker::PhantomData,
-        })
-    }
-}
-
 /// Represents an unsigned label that can be either text or unsigned integer
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, TryFrom)]
@@ -1465,7 +1314,7 @@ pub struct CoseKey<'a> {
     pub kid: TaggedBytes,
     /// Algorithm identifier (alg)
     #[serde(rename = "3")]
-    pub alg: AlgLabel<'a>,
+    pub alg: CoseAlgorithm,
     /// Allowed operations for this key
     #[serde(rename = "4")]
     pub key_ops: Vec<Label<'a>>,
@@ -2138,107 +1987,16 @@ pub enum CoseAlgorithm {
     IvGeneration = 34,
 }
 
-impl Serialize for CoseAlgorithm {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // Match each variant to its exact discriminant value
-        let value = match self {
-            Self::Unassigned0 => -65536,
-            Self::RS1 => -65535,
-            Self::A128CTR => -65534,
-            Self::A192CTR => -65533,
-            Self::A256CTR => -65532,
-            Self::A128CBC => -65531,
-            Self::A192CBC => -65530,
-            Self::A256CBC => -65529,
-            Self::Unassigned1 => -65528,
-            Self::WalnutDSA => -260,
-            Self::RS512 => -259,
-            Self::RS384 => -258,
-            Self::RS256 => -257,
-            Self::Unassigned2 => -256,
-            Self::ES256K => -47,
-            Self::HssLms => -46,
-            Self::SHAKE256 => -45,
-            Self::Sha512 => -44,
-            Self::Sha384 => -43,
-            Self::RsaesOaepSha512 => -42,
-            Self::RsaesOaepSha256 => -41,
-            Self::RsaesOaepRfc => 8017,
-            Self::PS512 => -39,
-            Self::PS384 => -38,
-            Self::PS256 => -37,
-            Self::ES512 => -36,
-            Self::ES384 => -35,
-            Self::EcdhSsA256kw => -34,
-            Self::EcdhSsA192kw => -33,
-            Self::EcdhSsA128kw => -32,
-            Self::EcdhEsA256kw => -31,
-            Self::EcdhEsA192kw => -30,
-            Self::EcdhEsA128kw => -29,
-            Self::EcdhSsHkdf512 => -28,
-            Self::EcdhSsHkdf256 => -27,
-            Self::EcdhEsHkdf512 => -26,
-            Self::EcdhEsHkdf256 => -25,
-            Self::Unassigned3 => -24,
-            Self::SHAKE128 => -18,
-            Self::Sha512_256 => -17,
-            Self::Sha256 => -16,
-            Self::Sha256_64 => -15,
-            Self::Sha1 => -14,
-            Self::DirectHkdfAes256 => -13,
-            Self::DirectHkdfAes128 => -12,
-            Self::DirectHkdfSha512 => -11,
-            Self::DirectHkdfSha256 => -10,
-            Self::Unassigned4 => -9,
-            Self::EdDSA => -8,
-            Self::ES256 => -7,
-            Self::Direct => -6,
-            Self::A256KW => -5,
-            Self::A192KW => -4,
-            Self::A128KW => -3,
-            Self::Unassigned5 => -2,
-            Self::Reserved => 0,
-            Self::A128GCM => 1,
-            Self::A192GCM => 2,
-            Self::A256GCM => 3,
-            Self::Hmac256_64 => 4,
-            Self::Hmac256_256 => 5,
-            Self::Hmac384_384 => 6,
-            Self::Hmac512_512 => 7,
-            Self::Unassigned6 => 8,
-            Self::AesCcm16_64_128 => 10,
-            Self::AesCcm16_64_256 => 11,
-            Self::AesCcm64_64_128 => 12,
-            Self::AesCcm64_64_256 => 13,
-            Self::AesMac128_64 => 14,
-            Self::AesMac256_64 => 15,
-            Self::Unassigned7 => 16,
-            Self::ChaCha20Poly1305 => 24,
-            Self::AesMac128 => 128,
-            Self::AesMac256 => 256,
-            Self::Unassigned8 => 27,
-            Self::AesCcm16_128_128 => 30,
-            Self::AesCcm16_128_256 => 31,
-            Self::AesCcm64_128_128 => 32,
-            Self::AesCcm64_128_256 => 33,
-            Self::IvGeneration => 34,
-        };
-
-        serializer.serialize_i64(value)
+impl From<CoseAlgorithm> for i64 {
+    fn from(value: CoseAlgorithm) -> Self {
+        value as i64
     }
 }
-impl<'de> Deserialize<'de> for CoseAlgorithm {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // Deserialize the value as an i64
-        let value = i64::deserialize(deserializer)?;
 
-        // Match the i64 value to the corresponding enum variant
+impl TryFrom<i64> for CoseAlgorithm {
+    type Error = CoreError;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
         match value {
             -65536 => Ok(CoseAlgorithm::Unassigned0),
             -65535 => Ok(CoseAlgorithm::RS1),
@@ -2321,10 +2079,212 @@ impl<'de> Deserialize<'de> for CoseAlgorithm {
             33 => Ok(CoseAlgorithm::AesCcm64_128_256),
             34 => Ok(CoseAlgorithm::IvGeneration),
             // If the value doesn't match any variant, return an error
-            _ => Err(serde::de::Error::invalid_value(
-                serde::de::Unexpected::Signed(value),
-                &"a valid COSE algorithm identifier",
-            )),
+            _ => Err(CoreError::InvalidValue(format!(
+                "expected a valid COSE algorithm identifier, found {}",
+                value
+            ))),
+        }
+    }
+}
+
+impl TryFrom<&str> for CoseAlgorithm {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "Unassigned" => Ok(CoseAlgorithm::Unassigned0),
+            "RS1" => Ok(CoseAlgorithm::RS1),
+            "A128CTR" => Ok(CoseAlgorithm::A128CTR),
+            "A192CTR" => Ok(CoseAlgorithm::A192CTR),
+            "A256CTR" => Ok(CoseAlgorithm::A256CTR),
+            "A128CBC" => Ok(CoseAlgorithm::A128CBC),
+            "A192CBC" => Ok(CoseAlgorithm::A192CBC),
+            "A256CBC" => Ok(CoseAlgorithm::A256CBC),
+            "WalnutDSA" => Ok(CoseAlgorithm::WalnutDSA),
+            "RS512" => Ok(CoseAlgorithm::RS512),
+            "RS384" => Ok(CoseAlgorithm::RS384),
+            "RS256" => Ok(CoseAlgorithm::RS256),
+            "ES256K" => Ok(CoseAlgorithm::ES256K),
+            "HSS-LMS" => Ok(CoseAlgorithm::HssLms),
+            "SHAKE256" => Ok(CoseAlgorithm::SHAKE256),
+            "SHA-512" => Ok(CoseAlgorithm::Sha512),
+            "SHA-384" => Ok(CoseAlgorithm::Sha384),
+            "RSAES-OAEP w/ SHA-512" => Ok(CoseAlgorithm::RsaesOaepSha512),
+            "RSAES-OAEP w/ SHA-256" => Ok(CoseAlgorithm::RsaesOaepSha256),
+            "RSAES-OAEP w/ RFC 8017 default parameters" => Ok(CoseAlgorithm::RsaesOaepRfc),
+            "PS512" => Ok(CoseAlgorithm::PS512),
+            "PS384" => Ok(CoseAlgorithm::PS384),
+            "PS256" => Ok(CoseAlgorithm::PS256),
+            "ES512" => Ok(CoseAlgorithm::ES512),
+            "ES384" => Ok(CoseAlgorithm::ES384),
+            "ECDH-SS + A256KW" => Ok(CoseAlgorithm::EcdhSsA256kw),
+            "ECDH-SS + A192KW" => Ok(CoseAlgorithm::EcdhSsA192kw),
+            "ECDH-SS + A128KW" => Ok(CoseAlgorithm::EcdhSsA128kw),
+            "ECDH-ES + A256KW" => Ok(CoseAlgorithm::EcdhEsA256kw),
+            "ECDH-ES + A192KW" => Ok(CoseAlgorithm::EcdhEsA192kw),
+            "ECDH-ES + A128KW" => Ok(CoseAlgorithm::EcdhEsA128kw),
+            "ECDH-SS + HKDF-512" => Ok(CoseAlgorithm::EcdhSsHkdf512),
+            "ECDH-SS + HKDF-256" => Ok(CoseAlgorithm::EcdhSsHkdf256),
+            "ECDH-ES + HKDF-512" => Ok(CoseAlgorithm::EcdhEsHkdf512),
+            "ECDH-ES + HKDF-256" => Ok(CoseAlgorithm::EcdhEsHkdf256),
+            "SHAKE128" => Ok(CoseAlgorithm::SHAKE128),
+            "SHA-512/256" => Ok(CoseAlgorithm::Sha512_256),
+            "SHA-256" => Ok(CoseAlgorithm::Sha256),
+            "SHA-256/64" => Ok(CoseAlgorithm::Sha256_64),
+            "SHA-1" => Ok(CoseAlgorithm::Sha1),
+            "direct+HKDF-AES-256" => Ok(CoseAlgorithm::DirectHkdfAes256),
+            "direct+HKDF-AES-128" => Ok(CoseAlgorithm::DirectHkdfAes128),
+            "direct+HKDF-SHA-512" => Ok(CoseAlgorithm::DirectHkdfSha512),
+            "direct+HKDF-SHA-256" => Ok(CoseAlgorithm::DirectHkdfSha256),
+            "EdDSA" => Ok(CoseAlgorithm::EdDSA),
+            "ES256" => Ok(CoseAlgorithm::ES256),
+            "direct" => Ok(CoseAlgorithm::Direct),
+            "A256KW" => Ok(CoseAlgorithm::A256KW),
+            "A192KW" => Ok(CoseAlgorithm::A192KW),
+            "A128KW" => Ok(CoseAlgorithm::A128KW),
+            "Reserved" => Ok(CoseAlgorithm::Reserved),
+            "A128GCM" => Ok(CoseAlgorithm::A128GCM),
+            "A192GCM" => Ok(CoseAlgorithm::A192GCM),
+            "A256GCM" => Ok(CoseAlgorithm::A256GCM),
+            "HMAC-256/64" => Ok(CoseAlgorithm::Hmac256_64),
+            "HMAC-256/256" => Ok(CoseAlgorithm::Hmac256_256),
+            "HMAC-384/384" => Ok(CoseAlgorithm::Hmac384_384),
+            "HMAC-512/512" => Ok(CoseAlgorithm::Hmac512_512),
+            "AES-CCM-16-64-128" => Ok(CoseAlgorithm::AesCcm16_64_128),
+            "AES-CCM-16-64-256" => Ok(CoseAlgorithm::AesCcm16_64_256),
+            "AES-CCM-64-64-128" => Ok(CoseAlgorithm::AesCcm64_64_128),
+            "AES-CCM-64-64-256" => Ok(CoseAlgorithm::AesCcm64_64_256),
+            "AES-MAC 128/64" => Ok(CoseAlgorithm::AesMac128_64),
+            "AES-MAC 256/64" => Ok(CoseAlgorithm::AesMac256_64),
+            "ChaCha20/Poly1305" => Ok(CoseAlgorithm::ChaCha20Poly1305),
+            "AES-MAC 128/128" => Ok(CoseAlgorithm::AesMac128),
+            "AES-MAC 256/256" => Ok(CoseAlgorithm::AesMac256),
+            "AES-CCM-16-128-128" => Ok(CoseAlgorithm::AesCcm16_128_128),
+            "AES-CCM-16-128-256" => Ok(CoseAlgorithm::AesCcm16_128_256),
+            "AES-CCM-64-128-128" => Ok(CoseAlgorithm::AesCcm64_128_128),
+            "AES-CCM-64-128-256" => Ok(CoseAlgorithm::AesCcm64_128_256),
+            "IV-GENERATION" => Ok(CoseAlgorithm::IvGeneration),
+            _ => Err(CoreError::InvalidValue(format!(
+                "expected a valid COSE algorithm name, found \"{}\"",
+                value
+            ))),
+        }
+    }
+}
+
+impl Display for CoseAlgorithm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            CoseAlgorithm::Unassigned0 => "Unassigned",
+            CoseAlgorithm::RS1 => "RS1",
+            CoseAlgorithm::A128CTR => "A128CTR",
+            CoseAlgorithm::A192CTR => "A192CTR",
+            CoseAlgorithm::A256CTR => "A256CTR",
+            CoseAlgorithm::A128CBC => "A128CBC",
+            CoseAlgorithm::A192CBC => "A192CBC",
+            CoseAlgorithm::A256CBC => "A256CBC",
+            CoseAlgorithm::Unassigned1 => "Unassigned",
+            CoseAlgorithm::WalnutDSA => "WalnutDSA",
+            CoseAlgorithm::RS512 => "RS512",
+            CoseAlgorithm::RS384 => "RS384",
+            CoseAlgorithm::RS256 => "RS256",
+            CoseAlgorithm::Unassigned2 => "Unassigned",
+            CoseAlgorithm::ES256K => "ES256K",
+            CoseAlgorithm::HssLms => "HSS-LMS",
+            CoseAlgorithm::SHAKE256 => "SHAKE256",
+            CoseAlgorithm::Sha512 => "SHA-512",
+            CoseAlgorithm::Sha384 => "SHA-384",
+            CoseAlgorithm::RsaesOaepSha512 => "RSAES-OAEP w/ SHA-512",
+            CoseAlgorithm::RsaesOaepSha256 => "RSAES-OAEP w/ SHA-256",
+            CoseAlgorithm::RsaesOaepRfc => "RSAES-OAEP w/ RFC 8017 default parameters",
+            CoseAlgorithm::PS512 => "PS512",
+            CoseAlgorithm::PS384 => "PS384",
+            CoseAlgorithm::PS256 => "PS256",
+            CoseAlgorithm::ES512 => "ES512",
+            CoseAlgorithm::ES384 => "ES384",
+            CoseAlgorithm::EcdhSsA256kw => "ECDH-SS + A256KW",
+            CoseAlgorithm::EcdhSsA192kw => "ECDH-SS + A192KW",
+            CoseAlgorithm::EcdhSsA128kw => "ECDH-SS + A128KW",
+            CoseAlgorithm::EcdhEsA256kw => "ECDH-ES + A256KW",
+            CoseAlgorithm::EcdhEsA192kw => "ECDH-ES + A192KW",
+            CoseAlgorithm::EcdhEsA128kw => "ECDH-ES + A128KW",
+            CoseAlgorithm::EcdhSsHkdf512 => "ECDH-SS + HKDF-512",
+            CoseAlgorithm::EcdhSsHkdf256 => "ECDH-SS + HKDF-256",
+            CoseAlgorithm::EcdhEsHkdf512 => "ECDH-ES + HKDF-512",
+            CoseAlgorithm::EcdhEsHkdf256 => "ECDH-ES + HKDF-256",
+            CoseAlgorithm::Unassigned3 => "Unassigned",
+            CoseAlgorithm::SHAKE128 => "SHAKE128",
+            CoseAlgorithm::Sha512_256 => "SHA-512/256",
+            CoseAlgorithm::Sha256 => "SHA-256",
+            CoseAlgorithm::Sha256_64 => "SHA-256/64",
+            CoseAlgorithm::Sha1 => "SHA-1",
+            CoseAlgorithm::DirectHkdfAes256 => "direct+HKDF-AES-256",
+            CoseAlgorithm::DirectHkdfAes128 => "direct+HKDF-AES-128",
+            CoseAlgorithm::DirectHkdfSha512 => "direct+HKDF-SHA-512",
+            CoseAlgorithm::DirectHkdfSha256 => "direct+HKDF-SHA-256",
+            CoseAlgorithm::Unassigned4 => "Unassigned",
+            CoseAlgorithm::EdDSA => "EdDSA",
+            CoseAlgorithm::ES256 => "ES256",
+            CoseAlgorithm::Direct => "direct",
+            CoseAlgorithm::A256KW => "A256KW",
+            CoseAlgorithm::A192KW => "A192KW",
+            CoseAlgorithm::A128KW => "A128KW",
+            CoseAlgorithm::Unassigned5 => "Unassigned",
+            CoseAlgorithm::Reserved => "Reserved",
+            CoseAlgorithm::A128GCM => "A128GCM",
+            CoseAlgorithm::A192GCM => "A192GCM",
+            CoseAlgorithm::A256GCM => "A256GCM",
+            CoseAlgorithm::Hmac256_64 => "HMAC-256/64",
+            CoseAlgorithm::Hmac256_256 => "HMAC-256/256",
+            CoseAlgorithm::Hmac384_384 => "HMAC-384/384",
+            CoseAlgorithm::Hmac512_512 => "HMAC-512/512",
+            CoseAlgorithm::Unassigned6 => "Unassigned",
+            CoseAlgorithm::AesCcm16_64_128 => "AES-CCM-16-64-128",
+            CoseAlgorithm::AesCcm16_64_256 => "AES-CCM-16-64-256",
+            CoseAlgorithm::AesCcm64_64_128 => "AES-CCM-64-64-128",
+            CoseAlgorithm::AesCcm64_64_256 => "AES-CCM-64-64-256",
+            CoseAlgorithm::AesMac128_64 => "AES-MAC 128/64",
+            CoseAlgorithm::AesMac256_64 => "AES-MAC 256/64",
+            CoseAlgorithm::Unassigned7 => "Unassigned",
+            CoseAlgorithm::ChaCha20Poly1305 => "ChaCha20/Poly1305",
+            CoseAlgorithm::AesMac128 => "AES-MAC 128/128",
+            CoseAlgorithm::AesMac256 => "AES-MAC 256/256",
+            CoseAlgorithm::Unassigned8 => "Unassigned",
+            CoseAlgorithm::AesCcm16_128_128 => "AES-CCM-16-128-128",
+            CoseAlgorithm::AesCcm16_128_256 => "AES-CCM-16-128-256",
+            CoseAlgorithm::AesCcm64_128_128 => "AES-CCM-64-128-128",
+            CoseAlgorithm::AesCcm64_128_256 => "AES-CCM-64-128-256",
+            CoseAlgorithm::IvGeneration => "IV-GENERATION",
+        };
+
+        f.write_str(name)
+    }
+}
+
+impl Serialize for CoseAlgorithm {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(self.to_string().as_str())
+        } else {
+            serializer.serialize_i64(self.to_owned().into())
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CoseAlgorithm {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            CoseAlgorithm::try_from(String::deserialize(deserializer)?.as_str())
+                .map_err(serde::de::Error::custom)
+        } else {
+            CoseAlgorithm::try_from(i64::deserialize(deserializer)?)
+                .map_err(serde::de::Error::custom)
         }
     }
 }
@@ -2905,7 +2865,7 @@ mod tests {
             let key = CoseKey {
                 kty: Label::Int(1.into()), // EC2 key type
                 kid: TaggedBytes::from(Bytes::from(vec![0x01, 0x02, 0x03])),
-                alg: AlgLabel::Int(CoseAlgorithm::ES256),
+                alg: CoseAlgorithm::ES256,
                 key_ops: vec![Label::Int(1.into())], // sign operation
                 base_iv: TaggedBytes::from(Bytes::from(vec![0x04, 0x05, 0x06])),
                 extension: None,
@@ -2925,7 +2885,7 @@ mod tests {
                 0x01, 0x02, 0x03, // "\u0001\u0002\u0003"
                 0x61, // (key) Text of one character
                 0x33, // '3' (algorithm)
-                0x26, // (value) -6 (ES256)
+                0x26, // (value) -7 (ES256)
                 0x61, // (key) Text of one character
                 0x34, // '4'
                 0x81, // (value) Array of 1 element
@@ -3084,6 +3044,36 @@ mod tests {
                 mask_bytes,
                 "Inner mask bytes mismatch"
             );
+        }
+    }
+
+    mod cose {
+        use super::CoseAlgorithm;
+
+        #[test]
+        fn test_cose_algorithm_serde() {
+            let expected = vec![
+                0x30, // -17
+            ];
+
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&CoseAlgorithm::Sha512_256, &mut buffer).unwrap();
+
+            assert_eq!(buffer, expected);
+
+            let alg: CoseAlgorithm = ciborium::from_reader(expected.as_slice()).unwrap();
+
+            assert_eq!(alg, CoseAlgorithm::Sha512_256);
+
+            let expected = "\"SHA-512/256\"";
+
+            let json = serde_json::to_string(&CoseAlgorithm::Sha512_256).unwrap();
+
+            assert_eq!(json.as_str(), expected);
+
+            let alg: CoseAlgorithm = serde_json::from_str(expected).unwrap();
+
+            assert_eq!(alg, CoseAlgorithm::Sha512_256);
         }
     }
 }

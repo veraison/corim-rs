@@ -723,7 +723,7 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 /// ```rust
 /// use corim_rs::triples::CryptoKeyTypeChoice;
 /// use corim_rs::numbers::Integer;
-/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, AlgLabel, Label, CoseAlgorithm};
+/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, Bytes, TaggedBytes, Label, CoseAlgorithm};
 ///
 /// // Base64 encoded certificate
 /// let cert = CryptoKeyTypeChoice::PkixBase64Cert(
@@ -735,7 +735,7 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 ///     CoseKeyType::new(CoseKeySetOrKey::Key(CoseKey {
 ///         kty: Label::Int(Integer(1)),  // EC2 key type
 ///         kid: TaggedBytes::new(vec![1, 2, 3].into()),  // Key ID
-///         alg: AlgLabel::Int(CoseAlgorithm::ES256),  // ES256 algorithm
+///         alg: CoseAlgorithm::ES256,  // ES256 algorithm
 ///         key_ops: vec![
 ///             Label::Int(Integer(1)),  // sign
 ///             Label::Int(Integer(2)),  // verify
