@@ -4,7 +4,6 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
     hash::Hash,
-    i128,
     ops::{
         Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Deref,
         DerefMut, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Shl, ShlAssign, Shr,
@@ -1968,7 +1967,7 @@ impl<'de> serde::Deserialize<'de> for Integer {
                 if v.is_ascii() {
                     return Ok(Integer(v as u8 as i128));
                 }
-                if v.is_digit(10) {
+                if v.is_ascii_digit() {
                     return Ok(Integer(v.to_digit(10).unwrap() as i128));
                 }
 
@@ -1994,7 +1993,7 @@ impl<'de> serde::Deserialize<'de> for Integer {
                 }
                 let mut value = 0u128;
                 for c in v.chars() {
-                    if !c.is_digit(10) {
+                    if !c.is_ascii_digit() {
                         return Err(E::custom("invalid character in string"));
                     }
                     value = (value * 10) + (c.to_digit(10).unwrap() as u128);
@@ -2023,7 +2022,7 @@ impl<'de> serde::Deserialize<'de> for Integer {
             where
                 E: serde::de::Error,
             {
-                if v.len() == 0 {
+                if v.is_empty() {
                     return Err(E::custom("empty byte array"));
                 }
                 if v.len() > 16 {

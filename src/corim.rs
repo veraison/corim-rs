@@ -102,6 +102,7 @@ pub type UnsignedCorimMap<'a> = CorimMap<'a>;
 /// A type choice representing either a signed or unsigned CoRIM manifest
 #[repr(C)]
 #[derive(Debug, From, TryFrom)]
+#[allow(clippy::large_enum_variant)]
 pub enum ConciseRimTypeChoice<'a> {
     /// An unprotected CoRIM with CBOR tag 501
     TaggedUnsignedCorimMap(TaggedUnsignedCorimMap<'a>),
