@@ -1812,6 +1812,8 @@ impl<'de> Deserialize<'de> for HashAlgorithm {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
 #[repr(i64)]
 pub enum CoseAlgorithm {
+    // Reserved for Private Use
+    PrivateUse(i64),
     /// RSASSA-PKCS1-v1_5 using SHA-1
     RS1 = -65535,
     /// AES-CTR with 128-bit key
@@ -1954,9 +1956,83 @@ pub enum CoseAlgorithm {
     IvGeneration = 34,
 }
 
+const COSE_ALGORITHM_PRIVATE_BOUNDARY: i64 = -65536;
+
 impl From<CoseAlgorithm> for i64 {
     fn from(value: CoseAlgorithm) -> Self {
-        value as i64
+        match value {
+            CoseAlgorithm::PrivateUse(v) => v,
+            CoseAlgorithm::RS1 => -65535,
+            CoseAlgorithm::A128CTR => -65534,
+            CoseAlgorithm::A192CTR => -65533,
+            CoseAlgorithm::A256CTR => -65532,
+            CoseAlgorithm::A128CBC => -65531,
+            CoseAlgorithm::A192CBC => -65530,
+            CoseAlgorithm::A256CBC => -65529,
+            CoseAlgorithm::WalnutDSA => -260,
+            CoseAlgorithm::RS512 => -259,
+            CoseAlgorithm::RS384 => -258,
+            CoseAlgorithm::RS256 => -257,
+            CoseAlgorithm::ES256K => -47,
+            CoseAlgorithm::HssLms => -46,
+            CoseAlgorithm::SHAKE256 => -45,
+            CoseAlgorithm::Sha512 => -44,
+            CoseAlgorithm::Sha384 => -43,
+            CoseAlgorithm::RsaesOaepSha512 => -42,
+            CoseAlgorithm::RsaesOaepSha256 => -41,
+            CoseAlgorithm::RsaesOaepRfc => 8017,
+            CoseAlgorithm::PS512 => -39,
+            CoseAlgorithm::PS384 => -38,
+            CoseAlgorithm::PS256 => -37,
+            CoseAlgorithm::ES512 => -36,
+            CoseAlgorithm::ES384 => -35,
+            CoseAlgorithm::EcdhSsA256kw => -34,
+            CoseAlgorithm::EcdhSsA192kw => -33,
+            CoseAlgorithm::EcdhSsA128kw => -32,
+            CoseAlgorithm::EcdhEsA256kw => -31,
+            CoseAlgorithm::EcdhEsA192kw => -30,
+            CoseAlgorithm::EcdhEsA128kw => -29,
+            CoseAlgorithm::EcdhSsHkdf512 => -28,
+            CoseAlgorithm::EcdhSsHkdf256 => -27,
+            CoseAlgorithm::EcdhEsHkdf512 => -26,
+            CoseAlgorithm::EcdhEsHkdf256 => -25,
+            CoseAlgorithm::SHAKE128 => -18,
+            CoseAlgorithm::Sha512_256 => -17,
+            CoseAlgorithm::Sha256 => -16,
+            CoseAlgorithm::Sha256_64 => -15,
+            CoseAlgorithm::Sha1 => -14,
+            CoseAlgorithm::DirectHkdfAes256 => -13,
+            CoseAlgorithm::DirectHkdfAes128 => -12,
+            CoseAlgorithm::DirectHkdfSha512 => -11,
+            CoseAlgorithm::DirectHkdfSha256 => -10,
+            CoseAlgorithm::EdDSA => -8,
+            CoseAlgorithm::ES256 => -7,
+            CoseAlgorithm::Direct => -6,
+            CoseAlgorithm::A256KW => -5,
+            CoseAlgorithm::A192KW => -4,
+            CoseAlgorithm::A128KW => -3,
+            CoseAlgorithm::A128GCM => 1,
+            CoseAlgorithm::A192GCM => 2,
+            CoseAlgorithm::A256GCM => 3,
+            CoseAlgorithm::Hmac256_64 => 4,
+            CoseAlgorithm::Hmac256_256 => 5,
+            CoseAlgorithm::Hmac384_384 => 6,
+            CoseAlgorithm::Hmac512_512 => 7,
+            CoseAlgorithm::AesCcm16_64_128 => 10,
+            CoseAlgorithm::AesCcm16_64_256 => 11,
+            CoseAlgorithm::AesCcm64_64_128 => 12,
+            CoseAlgorithm::AesCcm64_64_256 => 13,
+            CoseAlgorithm::AesMac128_64 => 14,
+            CoseAlgorithm::AesMac256_64 => 15,
+            CoseAlgorithm::ChaCha20Poly1305 => 24,
+            CoseAlgorithm::AesMac128 => 128,
+            CoseAlgorithm::AesMac256 => 256,
+            CoseAlgorithm::AesCcm16_128_128 => 30,
+            CoseAlgorithm::AesCcm16_128_256 => 31,
+            CoseAlgorithm::AesCcm64_128_128 => 32,
+            CoseAlgorithm::AesCcm64_128_256 => 33,
+            CoseAlgorithm::IvGeneration => 34,
+        }
     }
 }
 
@@ -2035,11 +2111,17 @@ impl TryFrom<i64> for CoseAlgorithm {
             32 => Ok(CoseAlgorithm::AesCcm64_128_128),
             33 => Ok(CoseAlgorithm::AesCcm64_128_256),
             34 => Ok(CoseAlgorithm::IvGeneration),
-            // If the value doesn't match any variant, return an error
-            _ => Err(CoreError::InvalidValue(format!(
-                "expected a valid COSE algorithm identifier, found {}",
-                value
-            ))),
+            v => {
+                if v < COSE_ALGORITHM_PRIVATE_BOUNDARY {
+                    Ok(CoseAlgorithm::PrivateUse(v))
+                } else {
+                    // If the value doesn't match any variant, return an error
+                    Err(CoreError::InvalidValue(format!(
+                        "expected a valid COSE algorithm identifier, found {}",
+                        value
+                    )))
+                }
+            }
         }
     }
 }
@@ -2119,17 +2201,43 @@ impl TryFrom<&str> for CoseAlgorithm {
             "AES-CCM-64-128-128" => Ok(CoseAlgorithm::AesCcm64_128_128),
             "AES-CCM-64-128-256" => Ok(CoseAlgorithm::AesCcm64_128_256),
             "IV-GENERATION" => Ok(CoseAlgorithm::IvGeneration),
-            _ => Err(CoreError::InvalidValue(format!(
-                "expected a valid COSE algorithm name, found \"{}\"",
-                value
-            ))),
+            s => {
+                if s.starts_with("PrivateUse(") {
+                    let v: i64 = s[11..s.len() - 1].parse().map_err(|_| {
+                        CoreError::InvalidValue(format!(
+                            "expected a valid COSE algorithm name, found \"{}\"",
+                            value
+                        ))
+                    })?;
+
+                    if v < COSE_ALGORITHM_PRIVATE_BOUNDARY {
+                        Ok(CoseAlgorithm::PrivateUse(v))
+                    } else {
+                        Err(CoreError::InvalidValue(format!(
+                            "invalid COSE algorithm Private Use value {} (must be < {})",
+                            v, COSE_ALGORITHM_PRIVATE_BOUNDARY,
+                        )))
+                    }
+                } else {
+                    Err(CoreError::InvalidValue(format!(
+                        "expected a valid COSE algorithm name, found \"{}\"",
+                        value
+                    )))
+                }
+            }
         }
     }
 }
 
 impl Display for CoseAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s: String;
+
         let name = match self {
+            CoseAlgorithm::PrivateUse(v) => {
+                s = format!("PrivateUse({})", v);
+                s.as_str()
+            }
             CoseAlgorithm::RS1 => "RS1",
             CoseAlgorithm::A128CTR => "A128CTR",
             CoseAlgorithm::A192CTR => "A192CTR",
@@ -3019,6 +3127,53 @@ mod tests {
             let alg: CoseAlgorithm = serde_json::from_str(expected).unwrap();
 
             assert_eq!(alg, CoseAlgorithm::Sha512_256);
+        }
+
+        #[test]
+        fn test_cose_algorithm_private_use_serde() {
+            let alg = CoseAlgorithm::PrivateUse(-65537);
+
+            let expected = vec![
+                0x3a, 0x00, 0x01, 0x00, 0x00, // -65537
+            ];
+
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&alg, &mut buffer).unwrap();
+
+            assert_eq!(buffer, expected);
+
+            let alg_de: CoseAlgorithm = ciborium::from_reader(expected.as_slice()).unwrap();
+
+            assert_eq!(alg_de, alg);
+
+            let expected = "\"PrivateUse(-65537)\"";
+
+            let json = serde_json::to_string(&alg).unwrap();
+
+            assert_eq!(json.as_str(), expected);
+
+            let alg_de: CoseAlgorithm = serde_json::from_str(expected).unwrap();
+
+            assert_eq!(alg_de, alg);
+
+            let err: serde_json::Error = serde_json::from_str::<CoseAlgorithm>("\"foo\"")
+                .err()
+                .unwrap();
+
+            assert_eq!(
+                err.to_string().as_str(),
+                "invalid value: \"expected a valid COSE algorithm name, found \"foo\"\"",
+            );
+
+            let err: serde_json::Error =
+                serde_json::from_str::<CoseAlgorithm>("\"PrivateUse(42)\"")
+                    .err()
+                    .unwrap();
+
+            assert_eq!(
+                err.to_string().as_str(),
+                "invalid value: \"invalid COSE algorithm Private Use value 42 (must be < -65536)\"",
+            );
         }
     }
 }
