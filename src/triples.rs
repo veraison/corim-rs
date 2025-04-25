@@ -723,7 +723,7 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 /// ```rust
 /// use corim_rs::triples::CryptoKeyTypeChoice;
 /// use corim_rs::numbers::Integer;
-/// use corim_rs::core::{PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKey, CoseKty, Bytes, TaggedBytes, CoseAlgorithm, CoseKeyOperation};
+/// use corim_rs::core::{Bytes, PkixBase64CertType, CoseKeyType, CoseKeySetOrKey, CoseKeyBuilder, CoseKty, CoseAlgorithm, CoseKeyOperation, CoseEllipticCurve};
 ///
 /// // Base64 encoded certificate
 /// let cert = CryptoKeyTypeChoice::PkixBase64Cert(
@@ -732,17 +732,21 @@ impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
 ///
 /// // COSE key structure
 /// let cose = CryptoKeyTypeChoice::CoseKey(
-///     CoseKeyType::new(CoseKeySetOrKey::Key(CoseKey {
-///         kty: CoseKty::Ec2,  // EC2 key type
-///         kid: TaggedBytes::new(vec![1, 2, 3].into()),  // Key ID
-///         alg: CoseAlgorithm::ES256,  // ES256 algorithm
-///         key_ops: vec![
+///     CoseKeyType::new(CoseKeySetOrKey::Key(CoseKeyBuilder::new()
+///         .kty(CoseKty::Ec2)  // EC2 key type
+///         .kid(Bytes::from(vec![1, 2, 3]))  // Key ID
+///         .alg(CoseAlgorithm::ES256)  // ES256 algorithm
+///         .key_ops(vec![
 ///             CoseKeyOperation::Sign,  // sign
 ///             CoseKeyOperation::Verify,  // verify
-///         ].into(),
-///         base_iv: TaggedBytes::new(vec![4, 5, 6].into()),  // Initialization vector
-///         extension: None,  // No extensions
-///     }))
+///         ].into())
+///         .base_iv(Bytes::new(vec![4, 5, 6]))  // Initialization vector
+///         .crv(CoseEllipticCurve::P256)
+///         .x(Bytes::from(vec![7, 8, 9]))
+///         .y(Bytes::from(vec![10, 11, 12]))
+///         .d(Bytes::from(vec![13, 14, 15]))
+///         .build().unwrap()
+///     ))
 /// );
 ///
 /// // Raw key bytes
@@ -764,7 +768,7 @@ pub enum CryptoKeyTypeChoice<'a> {
     /// Base64-encoded PKIX certificate path
     PkixBase64CertPath(PkixBase64CertPathType<'a>),
     /// COSE key structure
-    CoseKey(CoseKeyType<'a>),
+    CoseKey(CoseKeyType),
     /// Generic cryptographic thumbprint
     Thumbprint(ThumbprintType),
     /// Certificate thumbprint
