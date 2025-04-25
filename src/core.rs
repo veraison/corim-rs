@@ -1308,7 +1308,7 @@ impl<'de, 'a> Deserialize<'de> for CoseKeySetOrKey<'a> {
 pub struct CoseKey<'a> {
     /// Key type identifier (kty)
     #[serde(rename = "1")]
-    pub kty: Label<'a>,
+    pub kty: CoseKty,
     /// Key identifier (kid)
     #[serde(rename = "2")]
     pub kid: TaggedBytes,
@@ -2342,6 +2342,122 @@ impl<'de> Deserialize<'de> for CoseAlgorithm {
     }
 }
 
+/// COSE key types as defined in RFC 8152 and the IANA COSE Registry
+///
+/// These identify the key families and, thus, the set of key-type-specific parameters to be found
+/// inside the COSE key structure.
+///
+/// # Example
+///
+/// ```rust
+/// use corim_rs::core::CoseKty;
+///
+/// let okp = CoseKty::Okp;  // Octet Key Pair
+/// let ec2 = CoseKty::Ec2;  // Elliptic Curve w/ x/y coordinates
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[repr(i8)]
+pub enum CoseKty {
+    /// Octet Key Pair
+    Okp = 1,
+    /// Elliptic Curve Keys w/ x- and y-coordinate pair
+    Ec2 = 2,
+    /// RSA Key
+    Rsa = 3,
+    /// Symmetric Keys
+    Symmetric = 4,
+    /// Public key for HSS/LMS hash-based digital signature
+    HssLms = 5,
+    /// WallnutDSA public key
+    WallnutDsa = 6,
+}
+
+impl From<CoseKty> for i8 {
+    fn from(value: CoseKty) -> Self {
+        value as i8
+    }
+}
+
+impl TryFrom<i8> for CoseKty {
+    type Error = CoreError;
+
+    fn try_from(value: i8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(CoseKty::Okp),
+            2 => Ok(CoseKty::Ec2),
+            3 => Ok(CoseKty::Rsa),
+            4 => Ok(CoseKty::Symmetric),
+            5 => Ok(CoseKty::HssLms),
+            6 => Ok(CoseKty::WallnutDsa),
+            i => Err(CoreError::InvalidValue(format!(
+                "{} is not a valid COSE key type (must be between 1 and 6)",
+                i
+            ))),
+        }
+    }
+}
+
+impl TryFrom<&str> for CoseKty {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "OKP" => Ok(CoseKty::Okp),
+            "EC2" => Ok(CoseKty::Ec2),
+            "Rsa" => Ok(CoseKty::Rsa),
+            "Symmetric" => Ok(CoseKty::Symmetric),
+            "HSS-LMS" => Ok(CoseKty::HssLms),
+            "WallnutDSA" => Ok(CoseKty::WallnutDsa),
+            s => Err(CoreError::InvalidValue(format!(
+                "\"{}\" is not a valid COSE key type",
+                s
+            ))),
+        }
+    }
+}
+
+impl Display for CoseKty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let kty = match self {
+            CoseKty::Okp => "OKP",
+            CoseKty::Ec2 => "EC2",
+            CoseKty::Rsa => "Rsa",
+            CoseKty::Symmetric => "Symmetric",
+            CoseKty::HssLms => "HSS-LMS",
+            CoseKty::WallnutDsa => "WallnutDSA",
+        };
+
+        f.write_str(kty)
+    }
+}
+
+impl Serialize for CoseKty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(self.to_string().as_str())
+        } else {
+            serializer.serialize_i8(self.to_owned().into())
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CoseKty {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let kty = String::deserialize(deserializer)?;
+            Ok(CoseKty::try_from(kty.as_str()).map_err(de::Error::custom)?)
+        } else {
+            Ok(CoseKty::try_from(i8::deserialize(deserializer)?).map_err(de::Error::custom)?)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2892,6 +3008,7 @@ mod tests {
             let thumbprint_bytes = [0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16];
             let digest = Digest {
                 alg: HashAlgorithm::Sha256,
+
                 val: Bytes::from(thumbprint_bytes.to_vec()),
             };
             let expected = ThumbprintType::from(digest);
@@ -2916,7 +3033,7 @@ mod tests {
         fn test_cose_key_type_serialize_deserialize() {
             // Create a basic COSE key
             let key = CoseKey {
-                kty: Label::Int(1.into()), // EC2 key type
+                kty: CoseKty::Ec2, // EC2 key type
                 kid: TaggedBytes::from(Bytes::from(vec![0x01, 0x02, 0x03])),
                 alg: CoseAlgorithm::ES256,
                 key_ops: vec![Label::Int(1.into())], // sign operation
@@ -2930,7 +3047,7 @@ mod tests {
                 0xBF, // Map *
                 0x61, // (key) Text of one character
                 0x31, // '1'
-                0x01, // (value) unsigned integer 1
+                0x02, // (value) unsigned integer 2
                 0x61, // (key) Text of one character
                 0x32, // '2'
                 0xD9, 0x02, 0x30, // Tag 560
@@ -3101,7 +3218,7 @@ mod tests {
     }
 
     mod cose {
-        use super::CoseAlgorithm;
+        use super::{CoseAlgorithm, CoseKty};
 
         #[test]
         fn test_cose_algorithm_serde() {
@@ -3174,6 +3291,32 @@ mod tests {
                 err.to_string().as_str(),
                 "invalid value: invalid COSE algorithm Private Use value 42 (must be < -65536)",
             );
+        }
+
+        #[test]
+        fn test_cose_kty_serde() {
+            let expected = vec![
+                0x01, // 1
+            ];
+
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&CoseKty::Okp, &mut buffer).unwrap();
+
+            assert_eq!(buffer, expected);
+
+            let kty: CoseKty = ciborium::from_reader(expected.as_slice()).unwrap();
+
+            assert_eq!(kty, CoseKty::Okp);
+
+            let expected = "\"OKP\"";
+
+            let json = serde_json::to_string(&CoseKty::Okp).unwrap();
+
+            assert_eq!(json.as_str(), expected);
+
+            let kty: CoseKty = serde_json::from_str(expected).unwrap();
+
+            assert_eq!(kty, CoseKty::Okp);
         }
     }
 }
