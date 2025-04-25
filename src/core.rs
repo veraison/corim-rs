@@ -47,7 +47,7 @@ use std::{
 use base64::{self, engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use derive_more::{AsMut, AsRef, Constructor, Deref, DerefMut, From, TryFrom};
 use serde::{
-    de::{self, SeqAccess, Visitor},
+    de::{self, SeqAccess, Unexpected, Visitor},
     ser::{Error as _, SerializeMap, SerializeSeq},
     Deserialize, Deserializer, Serialize, Serializer,
 };
@@ -1317,7 +1317,7 @@ pub struct CoseKey<'a> {
     pub alg: CoseAlgorithm,
     /// Allowed operations for this key
     #[serde(rename = "4")]
-    pub key_ops: Vec<Label<'a>>,
+    pub key_ops: Vec<CoseKeyOperation>,
     /// Base initialization vector
     #[serde(rename = "5")]
     pub base_iv: TaggedBytes,
@@ -2458,6 +2458,219 @@ impl<'de> Deserialize<'de> for CoseKty {
     }
 }
 
+/// COSE key operations as defined in RFC 8152 and the IANA COSE Registry
+///
+/// These restrict the set of operations a COSE Key could be used for to the ones specified.
+///
+/// # Example
+///
+/// ```rust
+/// use corim_rs::core::CoseKeyOperation;
+///
+/// let sign = CoseKeyOperation::Sign;  // key used for signing
+/// let verify = CoseKeyOperation::Verify;  // key used for verification of signatures
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[repr(i8)]
+pub enum CoseKeyOperation {
+    /// The key is used to create signatures. Requires private key fields.
+    Sign = 1,
+    /// The key is used for verification of signatures.
+    Verify = 2,
+    /// The key is used for key transport encryption.
+    Encrypt = 3,
+    /// The key is used for key transport decryption. Requires private key fields.
+    Decrypt = 4,
+    /// The key is used for key wrap encryption.
+    WrapKeys = 5,
+    /// The key is used for key wrap decryption. Requires private key fields.
+    UnwrapKeys = 6,
+    /// The key is used for deriving keys.  Requires private key fields.
+    KeyDerive = 7,
+    /// The key is used for deriving bits not to be used as a key. Requires private key fields.
+    KeyDeriveBits = 8,
+    /// The key is used for creating MACs.
+    MacCreate = 9,
+    /// They key used for validating MACs.
+    MacVerify = 10,
+}
+
+impl From<CoseKeyOperation> for i8 {
+    fn from(value: CoseKeyOperation) -> Self {
+        value as i8
+    }
+}
+
+impl TryFrom<i8> for CoseKeyOperation {
+    type Error = CoreError;
+
+    fn try_from(value: i8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(CoseKeyOperation::Sign),
+            2 => Ok(CoseKeyOperation::Verify),
+            3 => Ok(CoseKeyOperation::Encrypt),
+            4 => Ok(CoseKeyOperation::Decrypt),
+            5 => Ok(CoseKeyOperation::WrapKeys),
+            6 => Ok(CoseKeyOperation::UnwrapKeys),
+            7 => Ok(CoseKeyOperation::KeyDerive),
+            8 => Ok(CoseKeyOperation::KeyDeriveBits),
+            9 => Ok(CoseKeyOperation::MacCreate),
+            10 => Ok(CoseKeyOperation::MacVerify),
+            i => Err(CoreError::InvalidValue(format!(
+                "{} is not a valid COSE key ops (must be between 1 and 10)",
+                i
+            ))),
+        }
+    }
+}
+
+impl TryFrom<&str> for CoseKeyOperation {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "sign" => Ok(CoseKeyOperation::Sign),
+            "verify" => Ok(CoseKeyOperation::Verify),
+            "encrypt" => Ok(CoseKeyOperation::Encrypt),
+            "decrypt" => Ok(CoseKeyOperation::Decrypt),
+            "wrapKey" => Ok(CoseKeyOperation::WrapKeys),
+            "unwrapKey" => Ok(CoseKeyOperation::UnwrapKeys),
+            "deriveKey" => Ok(CoseKeyOperation::KeyDerive),
+            "deriveBits" => Ok(CoseKeyOperation::KeyDeriveBits),
+            // unlike the other values, MAC ops are not taken from RFC7517, which does not define
+            // these operations. They are taken from the "Name" column of table 4 inside RFC8152;
+            // these do not constitute valid string values for CBOR serializations.
+            "MAC create" => Ok(CoseKeyOperation::MacCreate),
+            "MAC verify" => Ok(CoseKeyOperation::MacVerify),
+            i => Err(CoreError::InvalidValue(format!(
+                "{} is not a valid COSE key ops (must be between 1 and 10)",
+                i
+            ))),
+        }
+    }
+}
+
+impl Display for CoseKeyOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let op = match self {
+            CoseKeyOperation::Sign => "sign",
+            CoseKeyOperation::Verify => "verify",
+            CoseKeyOperation::Encrypt => "encrypt",
+            CoseKeyOperation::Decrypt => "decrypt",
+            CoseKeyOperation::WrapKeys => "wrapKey",
+            CoseKeyOperation::UnwrapKeys => "unwrapKey",
+            CoseKeyOperation::KeyDerive => "deriveKey",
+            CoseKeyOperation::KeyDeriveBits => "deriveBits",
+            CoseKeyOperation::MacCreate => "MAC create",
+            CoseKeyOperation::MacVerify => "MAC verify",
+        };
+
+        f.write_str(op)
+    }
+}
+
+impl Serialize for CoseKeyOperation {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(self.to_string().as_str())
+        } else {
+            serializer.serialize_i8(self.to_owned().into())
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CoseKeyOperation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CoseKeyOpsVisitor {
+            pub is_human_readable: bool,
+        }
+
+        impl Visitor<'_> for CoseKeyOpsVisitor {
+            type Value = CoseKeyOperation;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or integer COSE key operations identifier")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let op: CoseKeyOperation = v.try_into().map_err(de::Error::custom)?;
+
+                // RFC8152 states that string values for key operations match those defined by
+                // RFC7517, which does not define the MAC create and verify operations. Even though
+                // we define string representation for these for the sake of the non-normative JSON
+                // serialization, they are not valid for the normative CBOR serialization, where
+                // they must appear as ints.
+                if !self.is_human_readable
+                    && (op == CoseKeyOperation::MacVerify || op == CoseKeyOperation::MacCreate)
+                {
+                    Err(de::Error::custom(
+                        "string representation is not valid for MAC create and verify ops",
+                    ))
+                } else {
+                    Ok(op)
+                }
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(v.as_str())
+            }
+
+            fn visit_borrowed_str<E>(self, v: &'_ str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(v)
+            }
+
+            fn visit_i8<E>(self, v: i8) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                CoseKeyOperation::try_from(v).map_err(de::Error::custom)
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v <= i8::MAX as i64 && v >= i8::MIN as i64 {
+                    self.visit_i8(v as i8)
+                } else {
+                    Err(de::Error::invalid_value(Unexpected::Signed(v), &self))
+                }
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v <= i8::MAX as u64 && v > 0 {
+                    self.visit_i8(v as i8)
+                } else {
+                    Err(de::Error::invalid_value(Unexpected::Unsigned(v), &self))
+                }
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_any(CoseKeyOpsVisitor {
+            is_human_readable: is_hr,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3036,7 +3249,7 @@ mod tests {
                 kty: CoseKty::Ec2, // EC2 key type
                 kid: TaggedBytes::from(Bytes::from(vec![0x01, 0x02, 0x03])),
                 alg: CoseAlgorithm::ES256,
-                key_ops: vec![Label::Int(1.into())], // sign operation
+                key_ops: vec![CoseKeyOperation::Sign], // sign operation
                 base_iv: TaggedBytes::from(Bytes::from(vec![0x04, 0x05, 0x06])),
                 extension: None,
             };
@@ -3218,7 +3431,7 @@ mod tests {
     }
 
     mod cose {
-        use super::{CoseAlgorithm, CoseKty};
+        use super::*;
 
         #[test]
         fn test_cose_algorithm_serde() {
@@ -3317,6 +3530,32 @@ mod tests {
             let kty: CoseKty = serde_json::from_str(expected).unwrap();
 
             assert_eq!(kty, CoseKty::Okp);
+        }
+
+        #[test]
+        fn test_cose_key_operation_serde() {
+            let expected = vec![
+                0x01, // 1
+            ];
+
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&CoseKeyOperation::Sign, &mut buffer).unwrap();
+
+            assert_eq!(buffer, expected);
+
+            let op: CoseKeyOperation = ciborium::from_reader(expected.as_slice()).unwrap();
+
+            assert_eq!(op, CoseKeyOperation::Sign);
+
+            let expected = "\"sign\"";
+
+            let json = serde_json::to_string(&CoseKeyOperation::Sign).unwrap();
+
+            assert_eq!(json.as_str(), expected);
+
+            let op: CoseKeyOperation = serde_json::from_str(expected).unwrap();
+
+            assert_eq!(op, CoseKeyOperation::Sign);
         }
     }
 }
