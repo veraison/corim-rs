@@ -905,15 +905,15 @@ mod tests {
                               0x30, // "0"
                             0x81, // value: array(1)
                               0x82, // array(2)
-                                0xa1, //  map(1)
-                                  0x61, // key: tstr(1)
-                                    0x30, // "0"
+                                0xbf, //  map(indef)
+                                  0x00, // 0
                                   0xbf, // value: map(indef)
                                     0x01, // key: 1
                                     0x6b, // value: tstr(11)
                                       0x53, 0x6f, 0x6d, 0x65, 0x20, 0x56, 0x65, 0x6e, // "Some Ven"
                                       0x64, 0x6f, 0x72,                               // "dor"
                                   0xff,
+                                0xff,
                                 0x81, // array(1)
                                   0xa2, // map(2)
                                     0x61, // key: tstr(1)

@@ -628,10 +628,10 @@ generate_tagged!(
     (556, PkixBase64CertPathType, Tstr<'a>, 'a, "pkix-base64-cert-path", "A PKIX certificate path in base64 format using CBOR tag 556"),
     (557, ThumbprintType, Digest, "thumbprint", "A cryptographic thumbprint using CBOR tag 557"),
     (558, CoseKeyType, CoseKeySetOrKey, "cose-key", "CBOR tag 558 wrapper for COSE Key Structures"),
-    (559, CertThumprintType, Digest, "cert-thumbprint", "A certificate thumbprint using CBOR tag 559"),
+    (559, CertThumbprintType, Digest, "cert-thumbprint", "A certificate thumbprint using CBOR tag 559"),
     (560, TaggedBytes, Bytes, "bytes", "A generic byte string using CBOR tag 560"),
     (561, CertPathThumbprintType, Digest, "cert-path-thumbprint", "A certificate path thumbprint using CBOR tag 561"),
-    (562, PkixAsn1DerCertType, TaggedBytes, "pkix-asn1-der-cert", "A PKIX certificate in ASN.1 DER format using CBOR tag 562"),
+    (562, PkixAsn1DerCertType, Bytes, "pkix-asn1-der-cert", "A PKIX certificate in ASN.1 DER format using CBOR tag 562"),
     (563, TaggedMaskedRawValue, MaskedRawValue, "masked-raw-value", "Represents a masked raw value with its mask"),
 );
 
@@ -4108,7 +4108,7 @@ mod tests {
                 alg: HashAlgorithm::Sha384,
                 val: Bytes::from(thumbprint_bytes.to_vec()),
             };
-            let expected = CertThumprintType::from(digest);
+            let expected = CertThumbprintType::from(digest);
 
             let expected_bytes = [
                 0xD9, 0x02, 0x2F, // Tag 559
@@ -4122,7 +4122,7 @@ mod tests {
             ciborium::into_writer(&expected, &mut buffer).unwrap();
             assert_eq!(buffer, expected_bytes, "Serialization mismatch");
 
-            let actual: CertThumprintType =
+            let actual: CertThumbprintType =
                 ciborium::from_reader(expected_bytes.as_slice()).unwrap();
             assert_eq!(expected, actual, "Deserialization mismatch");
         }
@@ -4179,12 +4179,11 @@ mod tests {
         fn test_pkix_asn1_der_cert_type_serialize_deserialize() {
             // Create a sample DER certificate (using placeholder bytes)
             let cert_bytes = [0x30, 0x82, 0x01, 0xF1, 0x02, 0x01, 0x01, 0x30, 0x0D];
-            let tagged_bytes = TaggedBytes::from(Bytes::from(cert_bytes.to_vec()));
-            let expected = PkixAsn1DerCertType::from(tagged_bytes);
+            let bytes = Bytes::from(cert_bytes.to_vec());
+            let expected = PkixAsn1DerCertType::from(bytes);
 
             let expected_bytes = [
                 0xD9, 0x02, 0x32, // Tag 562
-                0xD9, 0x02, 0x30, // Tag 560 (for TaggedBytes)
                 0x49, // Bstr of length 9
                 0x30, 0x82, 0x01, 0xF1, 0x02, 0x01, 0x01, 0x30, 0x0D, // Certificate bytes
             ];
