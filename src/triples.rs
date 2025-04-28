@@ -167,25 +167,129 @@ impl<'de> Deserialize<'de> for ReferenceTripleRecord<'_> {
     }
 }
 /// Map describing an environment's characteristics
-#[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct EnvironmentMap<'a> {
     /// Optional classification information
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "0")]
     pub class: Option<ClassMap<'a>>,
     /// Optional instance identifier
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "1")]
     pub instance: Option<InstanceIdTypeChoice<'a>>,
     /// Optional group identifier
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "2")]
     pub group: Option<GroupIdTypeChoice>,
 }
 
+impl Serialize for EnvironmentMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            if let Some(class) = &self.class {
+                map.serialize_entry("class", class)?;
+            }
+            if let Some(instance) = &self.instance {
+                map.serialize_entry("instance", instance)?;
+            }
+            if let Some(group) = &self.group {
+                map.serialize_entry("group", group)?;
+            }
+        } else {
+            if let Some(class) = &self.class {
+                map.serialize_entry(&0, class)?;
+            }
+            if let Some(instance) = &self.instance {
+                map.serialize_entry(&1, instance)?;
+            }
+            if let Some(group) = &self.group {
+                map.serialize_entry(&2, group)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for EnvironmentMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct EnvironmentMapVisitor<'a> {
+            pub is_human_readable: bool,
+            data: PhantomData<&'a ()>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for EnvironmentMapVisitor<'a> {
+            type Value = EnvironmentMap<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map contianing EnvironmentMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut builder = EnvironmentMapBuilder::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("class") => {
+                                builder = builder.class(map.next_value::<ClassMap<'a>>()?);
+                            }
+                            Some("instance") => {
+                                builder =
+                                    builder.instance(map.next_value::<InstanceIdTypeChoice<'a>>()?);
+                            }
+                            Some("group") => {
+                                builder = builder.group(map.next_value::<GroupIdTypeChoice>()?);
+                            }
+                            Some(name) => {
+                                return Err(de::Error::custom(format!(
+                                    "unexpected EnvironmentMap field \"{name}\""
+                                )))
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                builder = builder.class(map.next_value::<ClassMap<'a>>()?);
+                            }
+                            Some(1) => {
+                                builder =
+                                    builder.instance(map.next_value::<InstanceIdTypeChoice<'a>>()?);
+                            }
+                            Some(2) => {
+                                builder = builder.group(map.next_value::<GroupIdTypeChoice>()?);
+                            }
+                            Some(key) => {
+                                return Err(de::Error::custom(format!(
+                                    "unexpected EnvironmentMap field {key}"
+                                )))
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                builder.build().map_err(de::Error::custom)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        return deserializer.deserialize_map(EnvironmentMapVisitor {
+            is_human_readable: is_hr,
+            data: PhantomData {},
+        });
+    }
+}
+
+#[derive(Default)]
 pub struct EnvironmentMapBuilder<'a> {
     /// Optional classification information
     pub class: Option<ClassMap<'a>>,
@@ -2953,5 +3057,115 @@ mod test {
         let crypto_key_de: CryptoKeyTypeChoice = serde_json::from_str(expected).unwrap();
 
         assert_eq!(crypto_key_de, crypto_key);
+    }
+
+    #[test]
+    fn test_environment_map_serde() {
+        let class_map = ClassMapBuilder::default()
+            .class_id(ClassIdTypeChoice::Oid(OidType::from(
+                ObjectIdentifier::try_from("1.2.3.4").unwrap(),
+            )))
+            .build()
+            .unwrap();
+
+        let thumbprint_bytes = [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80];
+        let instance_id = InstanceIdTypeChoice::CryptoKey(CryptoKeyTypeChoice::Thumbprint(
+            ThumbprintType::from(Digest {
+                alg: HashAlgorithm::Sha384,
+                val: Bytes::from(thumbprint_bytes.to_vec()),
+            }),
+        ));
+
+        let uuid_bytes: [u8; 16] = [
+            0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4, 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44,
+            0x00, 0x00,
+        ];
+        let group_id = GroupIdTypeChoice::Uuid(TaggedUuidType::from(UuidType::from(
+            FixedBytes::from(uuid_bytes),
+        )));
+
+        let env_map = EnvironmentMapBuilder::default()
+            .class(class_map)
+            .instance(instance_id.clone())
+            .group(group_id)
+            .build()
+            .unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0 [class]
+              0xbf, // value: map(indef)
+                0x00, // key: 0 [class_id]
+                0xd8, 0x6f, // value: tag 111
+                  0x43, // bstr(3)
+                    0x2a, 0x03, 0x04, // OID bytes
+              0xff, // break
+              0x01, // key: 1 [instance]
+              0xd9, 0x02, 0x2d, // value: tag(557)
+                0x82, // array(2)
+                  0x07, // 7 [SHA-384]
+                  0x48, // bstr(8)
+                    0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80,
+              0x02, // key: 2 [group]
+              0xd8, 0x25, // value: tag(37)
+                0x50, // bstr(16)
+                  0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4,
+                  0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00,
+            0xff, // break
+        ];
+
+        let mut buffer: Vec<u8> = vec![];
+        ciborium::into_writer(&env_map, &mut buffer).unwrap();
+
+        assert_eq!(buffer, expected);
+
+        let env_map_de: EnvironmentMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(env_map_de, env_map);
+
+        let expected = r#"{"class":{"class-id":{"type":"oid","value":"1.2.3.4"}},"instance":{"type":"thumbprint","value":"sha-384;ECAwQFBgcIA"},"group":{"type":"uuid","value":"550e8400-e29b-41d4-a716-446655440000"}}"#;
+
+        let json = serde_json::to_string(&env_map).unwrap();
+
+        assert_eq!(json, expected);
+
+        let env_map_de: EnvironmentMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(env_map_de, env_map);
+
+        let env_map = EnvironmentMapBuilder::default()
+            .instance(instance_id)
+            .build()
+            .unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x01, // key: 1 [instance]
+              0xd9, 0x02, 0x2d, // value: tag(557)
+                0x82, // array(2)
+                  0x07, // 7 [SHA-384]
+                  0x48, // bstr(8)
+                    0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80,
+            0xff, // break
+        ];
+
+        let mut buffer: Vec<u8> = vec![];
+        ciborium::into_writer(&env_map, &mut buffer).unwrap();
+
+        assert_eq!(buffer, expected);
+
+        let env_map_de: EnvironmentMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(env_map_de, env_map);
+
+        let expected = r#"{"instance":{"type":"thumbprint","value":"sha-384;ECAwQFBgcIA"}}"#;
+
+        let json = serde_json::to_string(&env_map).unwrap();
+
+        assert_eq!(json, expected);
+
+        let env_map_de: EnvironmentMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(env_map_de, env_map);
     }
 }
