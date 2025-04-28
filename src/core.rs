@@ -47,7 +47,7 @@ use std::{
 use base64::{self, engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use derive_more::{AsMut, AsRef, Constructor, Deref, DerefMut, From, TryFrom};
 use serde::{
-    de::{self, SeqAccess, Visitor},
+    de::{self, SeqAccess, Unexpected, Visitor},
     ser::{Error as _, SerializeMap, SerializeSeq},
     Deserialize, Deserializer, Serialize, Serializer,
 };
@@ -627,7 +627,7 @@ generate_tagged!(
     (555, PkixBase64CertType, Tstr<'a>, 'a, "pkix-base64-cert", "A PKIX certificate in base64 format using CBOR tag 555"),
     (556, PkixBase64CertPathType, Tstr<'a>, 'a, "pkix-base64-cert-path", "A PKIX certificate path in base64 format using CBOR tag 556"),
     (557, ThumbprintType, Digest, "thumbprint", "A cryptographic thumbprint using CBOR tag 557"),
-    (558, CoseKeyType, CoseKeySetOrKey<'a>, 'a, "cose-key", "CBOR tag 558 wrapper for COSE Key Structures"),
+    (558, CoseKeyType, CoseKeySetOrKey, "cose-key", "CBOR tag 558 wrapper for COSE Key Structures"),
     (559, CertThumprintType, Digest, "cert-thumbprint", "A certificate thumbprint using CBOR tag 559"),
     (560, TaggedBytes, Bytes, "bytes", "A generic byte string using CBOR tag 560"),
     (561, CertPathThumbprintType, Digest, "cert-path-thumbprint", "A certificate path thumbprint using CBOR tag 561"),
@@ -1188,14 +1188,14 @@ impl<'de> Deserialize<'de> for Digest {
 /// Represents either a COSE key set or a single COSE key
 #[repr(C)]
 #[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub enum CoseKeySetOrKey<'a> {
+pub enum CoseKeySetOrKey {
     /// A set of COSE keys
-    KeySet(Vec<CoseKey<'a>>),
+    KeySet(Vec<CoseKey>),
     /// A single COSE key
-    Key(CoseKey<'a>),
+    Key(CoseKey),
 }
 
-impl CoseKeySetOrKey<'_> {
+impl CoseKeySetOrKey {
     pub fn is_empty(&self) -> bool {
         match self {
             CoseKeySetOrKey::KeySet(keys) => keys.is_empty(),
@@ -1210,14 +1210,14 @@ impl CoseKeySetOrKey<'_> {
         }
     }
 
-    pub fn as_key_set(&self) -> Option<&Vec<CoseKey<'_>>> {
+    pub fn as_key_set(&self) -> Option<&[CoseKey]> {
         match self {
             CoseKeySetOrKey::KeySet(keys) => Some(keys),
             _ => None,
         }
     }
 
-    pub fn as_key(&self) -> Option<&CoseKey<'_>> {
+    pub fn as_key(&self) -> Option<&CoseKey> {
         match self {
             CoseKeySetOrKey::Key(key) => Some(key),
             _ => None,
@@ -1225,7 +1225,7 @@ impl CoseKeySetOrKey<'_> {
     }
 }
 
-impl Serialize for CoseKeySetOrKey<'_> {
+impl Serialize for CoseKeySetOrKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -1237,17 +1237,17 @@ impl Serialize for CoseKeySetOrKey<'_> {
     }
 }
 
-impl<'de, 'a> Deserialize<'de> for CoseKeySetOrKey<'a> {
-    fn deserialize<D>(deserializer: D) -> Result<CoseKeySetOrKey<'a>, D::Error>
+impl<'de> Deserialize<'de> for CoseKeySetOrKey {
+    fn deserialize<D>(deserializer: D) -> Result<CoseKeySetOrKey, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct CoseKeySetOrKeyVisitor<'a> {
-            _phantom: std::marker::PhantomData<&'a ()>,
+        struct CoseKeySetOrKeyVisitor {
+            is_human_readable: bool,
         }
 
-        impl<'de, 'a> Visitor<'de> for CoseKeySetOrKeyVisitor<'a> {
-            type Value = CoseKeySetOrKey<'a>;
+        impl<'de> Visitor<'de> for CoseKeySetOrKeyVisitor {
+            type Value = CoseKeySetOrKey;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("a COSE key (map) or key set (array of keys)")
@@ -1260,7 +1260,7 @@ impl<'de, 'a> Deserialize<'de> for CoseKeySetOrKey<'a> {
             {
                 // Read multiple keys into a vector
                 let mut keys = Vec::new();
-                while let Some(key) = seq.next_element::<CoseKey<'a>>()? {
+                while let Some(key) = seq.next_element::<CoseKey>()? {
                     keys.push(key);
                 }
 
@@ -1279,53 +1279,616 @@ impl<'de, 'a> Deserialize<'de> for CoseKeySetOrKey<'a> {
                 M: serde::de::MapAccess<'de>,
             {
                 // Deserialize the map as a CoseKey
-                let mut key =
-                    CoseKey::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
-
-                // Replace empty extension with None for cleaner representation
-                if let Some(extension) = key.extension.take() {
-                    if !extension.is_empty() {
-                        key.extension = Some(extension);
-                    }
-                }
+                let key =
+                    CoseKey::deserialize(MapAccessDeserializer::new(map, self.is_human_readable))?;
 
                 Ok(CoseKeySetOrKey::Key(key))
             }
         }
 
+        let is_hr = deserializer.is_human_readable();
         // Use deserialize_any to let serde determine the input type
         deserializer.deserialize_any(CoseKeySetOrKeyVisitor {
-            _phantom: std::marker::PhantomData,
+            is_human_readable: is_hr,
         })
     }
 }
 
+/// Builds a CoseKey, ensuring the constraints described in section 13 of RFC8152 are met.
+/// Key types not covered by RFC8152 are currently not supported.
+///
+/// # Returns
+///
+/// * `Ok(CoseKey)` - if kty has been set to a supported key type (OKP, EC2, and Symmetric), and
+///   constraints associated with the key type have been met.
+/// * `Err(CoreError::InvalidValue) - if kty is invalid or some of the constraints associated with
+///   the specified key type have not been met.
+///
+/// # Example
+///
+/// ```
+/// # use corim_rs::core::{CoseKeyBuilder, CoseKty, Bytes, CoseEllipticCurve, CoseKeyOperation};
+///
+/// let cose_key = CoseKeyBuilder::new()
+///     .kty(CoseKty::Ec2)
+///     .crv(CoseEllipticCurve::P256)
+///     .key_ops(vec![CoseKeyOperation::Sign])
+///     .x(Bytes::from(vec![
+///         0x7f, 0xcd, 0xce, 0x27, 0x70, 0xf6, 0xc4, 0x5d,
+///         0x41, 0x83, 0xcb, 0xee, 0x6f, 0xdb, 0x4b, 0x7b,
+///         0x58, 0x07, 0x33, 0x35, 0x7b, 0xe9, 0xef, 0x13,
+///         0xba, 0xcf, 0x6e, 0x3c, 0x7b, 0xd1, 0x54, 0x45,
+///     ]))
+///     .y(Bytes::from(vec![
+///         0xc7, 0xf1, 0x44, 0xcd, 0x1b, 0xbd, 0x9b, 0x7e,
+///         0x87, 0x2c, 0xdf, 0xed, 0xb9, 0xee, 0xb9, 0xf4,
+///         0xb3, 0x69, 0x5d, 0x6e, 0xa9, 0x0b, 0x24, 0xad,
+///         0x8a, 0x46, 0x23, 0x28, 0x85, 0x88, 0xe5, 0xad,
+///     ]))
+///     .d(Bytes::from(vec![
+///         0x8e, 0x9b, 0x10, 0x9e, 0x71, 0x90, 0x98, 0xbf,
+///         0x98, 0x04, 0x87, 0xdf, 0x1f, 0x5d, 0x77, 0xe9,
+///         0xcb, 0x29, 0x60, 0x6e, 0xbe, 0xd2, 0x26, 0x3b,
+///         0x5f, 0x57, 0xc2, 0x13, 0xdf, 0x84, 0xf4, 0xb2,
+///     ]))
+///     .build().unwrap();
+/// ```
+pub struct CoseKeyBuilder {
+    cose_key: CoseKey,
+}
+
+impl CoseKeyBuilder {
+    pub fn new() -> Self {
+        CoseKeyBuilder {
+            cose_key: CoseKey {
+                kty: CoseKty::Invalid,
+                kid: None,
+                alg: None,
+                key_ops: None,
+                base_iv: None,
+                crv: None,
+                x: None,
+                y: None,
+                d: None,
+                k: None,
+            },
+        }
+    }
+
+    pub fn get_kty(&self) -> CoseKty {
+        self.cose_key.kty.clone()
+    }
+
+    pub fn kty(mut self, kty: CoseKty) -> Self {
+        self.cose_key.kty = kty;
+        self
+    }
+
+    pub fn kid(mut self, kid: Bytes) -> Self {
+        self.cose_key.kid = Some(kid);
+        self
+    }
+
+    pub fn alg(mut self, alg: CoseAlgorithm) -> Self {
+        self.cose_key.alg = Some(alg);
+        self
+    }
+
+    pub fn key_ops(mut self, ops: Vec<CoseKeyOperation>) -> Self {
+        self.cose_key.key_ops = Some(ops);
+        self
+    }
+
+    pub fn base_iv(mut self, base_iv: Bytes) -> Self {
+        self.cose_key.base_iv = Some(base_iv);
+        self
+    }
+
+    pub fn crv(mut self, crv: CoseEllipticCurve) -> Self {
+        self.cose_key.crv = Some(crv);
+        self
+    }
+
+    pub fn x(mut self, x: Bytes) -> Self {
+        self.cose_key.x = Some(x);
+        self
+    }
+
+    pub fn y(mut self, y: Bytes) -> Self {
+        self.cose_key.y = Some(y);
+        self
+    }
+
+    pub fn d(mut self, d: Bytes) -> Self {
+        self.cose_key.d = Some(d);
+        self
+    }
+
+    pub fn k(mut self, k: Bytes) -> Self {
+        self.cose_key.k = Some(k);
+        self
+    }
+
+    pub fn build(self) -> Result<CoseKey, CoreError> {
+        match self.cose_key.kty {
+            CoseKty::Invalid => {
+                return Err(CoreError::InvalidValue("invalid key type".to_string()));
+            }
+
+            CoseKty::Okp => {
+                // check crv is set and is compatible with kty
+                match self.cose_key.crv {
+                    Some(CoseEllipticCurve::Ed448)
+                    | Some(CoseEllipticCurve::Ed25519)
+                    | Some(CoseEllipticCurve::X25519)
+                    | Some(CoseEllipticCurve::X448) => {}
+                    Some(crv) => {
+                        return Err(CoreError::InvalidValue(format!(
+                            "Invalid crv \"{}\" for OKP keys",
+                            crv
+                        )));
+                    }
+                    None => {
+                        return Err(CoreError::InvalidValue(
+                            "crv must be set when kty is OKP".to_string(),
+                        ));
+                    }
+                };
+
+                // if key_ops set, check fields required for the specified ops are set
+                if let Some(key_ops) = &self.cose_key.key_ops {
+                    if (key_ops.contains(&CoseKeyOperation::Sign)
+                        || key_ops.contains(&CoseKeyOperation::Encrypt))
+                        && self.cose_key.d.is_none()
+                    {
+                        return Err(CoreError::InvalidValue(
+                            "d field must set be set for OKP keys when key_ops contains \"sign\" or \"encrypt\"".to_string(),
+                        ));
+                    }
+
+                    if (key_ops.contains(&CoseKeyOperation::Verify)
+                        || key_ops.contains(&CoseKeyOperation::Decrypt))
+                        && self.cose_key.x.is_none()
+                    {
+                        return Err(CoreError::InvalidValue(
+                                "x field must set be set for OKP keys when key_ops contains \"verify\" or \"decrypt\"".to_string(),
+                            ));
+                    }
+                }
+
+                // check fields invalid for kty are not set
+                if self.cose_key.y.is_some() {
+                    return Err(CoreError::InvalidValue(
+                        "y field must not be set for OKP keys".to_string(),
+                    ));
+                }
+
+                if self.cose_key.k.is_some() {
+                    return Err(CoreError::InvalidValue(
+                        "k field must not be set for OKP keys".to_string(),
+                    ));
+                }
+            }
+
+            CoseKty::Ec2 => {
+                // check crv is set and is compatible with kty
+                match self.cose_key.crv {
+                    Some(CoseEllipticCurve::P256)
+                    | Some(CoseEllipticCurve::P384)
+                    | Some(CoseEllipticCurve::P521) => {}
+                    Some(crv) => {
+                        return Err(CoreError::InvalidValue(format!(
+                            "Invalid crv \"{}\" for EC2 keys",
+                            crv
+                        )));
+                    }
+                    None => {
+                        return Err(CoreError::InvalidValue(
+                            "crv must be set when kty is EC2".to_string(),
+                        ));
+                    }
+                };
+
+                // if key_ops set, check fields required for the specified ops are set
+                if let Some(key_ops) = &self.cose_key.key_ops {
+                    if (key_ops.contains(&CoseKeyOperation::Sign)
+                        || key_ops.contains(&CoseKeyOperation::Encrypt))
+                        && self.cose_key.d.is_none()
+                    {
+                        return Err(CoreError::InvalidValue(
+                                "d field must set be set for OKP keys when key_ops contains \"sign\" or \"encrypt\"".to_string(),
+                            ));
+                    }
+
+                    if key_ops.contains(&CoseKeyOperation::Verify)
+                        || key_ops.contains(&CoseKeyOperation::Decrypt)
+                    {
+                        if self.cose_key.x.is_none() {
+                            return Err(CoreError::InvalidValue(
+                                "x field must set be set for OKP keys when key_ops contains \"verify\" or \"decrypt\"".to_string(),
+                            ));
+                        }
+
+                        if self.cose_key.y.is_none() {
+                            return Err(CoreError::InvalidValue(
+                                "y field must set be set for OKP keys when key_ops contains \"verify\" or \"decrypt\"".to_string(),
+                            ));
+                        }
+                    }
+                }
+
+                // check fields invalid for kty are not set
+                if self.cose_key.k.is_some() {
+                    return Err(CoreError::InvalidValue(
+                        "k field must not be set for EC2 keys".to_string(),
+                    ));
+                }
+            }
+
+            CoseKty::Symmetric => {
+                // check required fields are set
+                if self.cose_key.k.is_none() {
+                    return Err(CoreError::InvalidValue(
+                        "k field must be set for Symmetric keys".to_string(),
+                    ));
+                }
+
+                // check fields invalid for kty are not set
+                if self.cose_key.crv.is_some() {
+                    return Err(CoreError::InvalidValue(
+                        "crv field must not be set for Symmetric keys".to_string(),
+                    ));
+                }
+
+                if self.cose_key.x.is_some() {
+                    return Err(CoreError::InvalidValue(
+                        "x field must not be set for Symmetric keys".to_string(),
+                    ));
+                }
+
+                if self.cose_key.y.is_some() {
+                    return Err(CoreError::InvalidValue(
+                        "y field must not be set for Symmetric keys".to_string(),
+                    ));
+                }
+
+                if self.cose_key.d.is_some() {
+                    return Err(CoreError::InvalidValue(
+                        "d field must not be set for Symmetric keys".to_string(),
+                    ));
+                }
+            }
+
+            kty => {
+                return Err(CoreError::InvalidValue(format!(
+                    "unsupported key type \"{}\"",
+                    kty
+                )));
+            }
+        }
+
+        Ok(self.cose_key)
+    }
+}
+
+impl Default for CoseKeyBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Represents a COSE key structure as defined in RFC 8152
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
-pub struct CoseKey<'a> {
+pub struct CoseKey {
     /// Key type identifier (kty)
-    #[serde(rename = "1")]
-    pub kty: Label<'a>,
+    pub kty: CoseKty,
     /// Key identifier (kid)
-    #[serde(rename = "2")]
-    pub kid: TaggedBytes,
+    pub kid: Option<Bytes>,
     /// Algorithm identifier (alg)
-    #[serde(rename = "3")]
-    pub alg: CoseAlgorithm,
+    pub alg: Option<CoseAlgorithm>,
     /// Allowed operations for this key
-    #[serde(rename = "4")]
-    pub key_ops: Vec<Label<'a>>,
+    pub key_ops: Option<Vec<CoseKeyOperation>>,
     /// Base initialization vector
-    #[serde(rename = "5")]
-    pub base_iv: TaggedBytes,
-    /// Optional extension fields
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(flatten)]
-    #[serde(deserialize_with = "empty_map_as_none")]
-    pub extension: Option<ExtensionMap<'a>>,
+    pub base_iv: Option<Bytes>,
+    /// COSE curve for OKP/EC2 keys
+    pub crv: Option<CoseEllipticCurve>,
+    /// Public Key X parameter for OKP/EC2 Keys
+    pub x: Option<Bytes>,
+    /// Public Key Y parameter for EC2 Keys
+    pub y: Option<Bytes>,
+    /// Private Key D parameter for OKP/EC2 Keys
+    pub d: Option<Bytes>,
+    /// Key value for Symmetric Keys
+    pub k: Option<Bytes>,
+}
+
+impl Serialize for CoseKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            map.serialize_entry("kty", &self.kty)?;
+
+            if let Some(kid) = &self.kid {
+                map.serialize_entry("kid", kid)?;
+            }
+            if let Some(alg) = &self.alg {
+                map.serialize_entry("alg", alg)?;
+            }
+            if let Some(key_ops) = &self.key_ops {
+                map.serialize_entry("key_ops", key_ops)?;
+            }
+            if let Some(base_iv) = &self.base_iv {
+                map.serialize_entry("base_iv", base_iv)?;
+            }
+            if let Some(crv) = &self.crv {
+                map.serialize_entry("crv", crv)?;
+            }
+            if let Some(x) = &self.x {
+                map.serialize_entry("x", x)?;
+            }
+            if let Some(y) = &self.y {
+                map.serialize_entry("y", y)?;
+            }
+            if let Some(d) = &self.d {
+                map.serialize_entry("d", d)?;
+            }
+            if let Some(k) = &self.k {
+                map.serialize_entry("k", k)?;
+            }
+        } else {
+            // crv and k both use label -1 when serialized. As they are used by different key
+            // types, it is not a problem, but we need to explicitly check that they are not
+            // both set here to avoid duplicate keys in the resulting map, which would confuse
+            // deserialization.
+            if self.crv.is_some() && self.k.is_some() {
+                return Err(serde::ser::Error::custom(
+                    "crv and k fields can't both be set",
+                ));
+            }
+
+            map.serialize_entry(&1, &self.kty)?;
+
+            if let Some(kid) = &self.kid {
+                map.serialize_entry(&2, kid)?;
+            }
+            if let Some(alg) = &self.alg {
+                map.serialize_entry(&3, alg)?;
+            }
+            if let Some(key_ops) = &self.key_ops {
+                map.serialize_entry(&4, key_ops)?;
+            }
+            if let Some(base_iv) = &self.base_iv {
+                map.serialize_entry(&5, base_iv)?;
+            }
+            if let Some(crv) = &self.crv {
+                map.serialize_entry(&-1, crv)?;
+            }
+            if let Some(x) = &self.x {
+                map.serialize_entry(&-2, x)?;
+            }
+            if let Some(y) = &self.y {
+                map.serialize_entry(&-3, y)?;
+            }
+            if let Some(d) = &self.d {
+                map.serialize_entry(&-4, d)?;
+            }
+            if let Some(k) = &self.k {
+                map.serialize_entry(&-1, k)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CoseKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CoseKeyVisitor {
+            is_human_readable: bool,
+        }
+
+        impl<'de> Visitor<'de> for CoseKeyVisitor {
+            type Value = CoseKey;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing the COSE key")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut kb = CoseKeyBuilder::new();
+                // used to cache the label -1 value until we have the key type and can resolve it
+                // to either crv or k field.
+                let mut cob: Option<CurveOrBytes> = None;
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("kty") => {
+                                kb = kb.kty(map.next_value::<CoseKty>()?);
+                            }
+                            Some("kid") => {
+                                kb = kb.kid(map.next_value::<Bytes>()?);
+                            }
+                            Some("alg") => {
+                                kb = kb.alg(map.next_value::<CoseAlgorithm>()?);
+                            }
+                            Some("key_ops") => {
+                                kb = kb.key_ops(map.next_value::<Vec<CoseKeyOperation>>()?);
+                            }
+                            Some("base_iv") => {
+                                kb = kb.base_iv(map.next_value::<Bytes>()?);
+                            }
+                            Some("crv") => {
+                                kb = kb.crv(map.next_value::<CoseEllipticCurve>()?);
+                            }
+                            Some("x") => {
+                                kb = kb.x(map.next_value::<Bytes>()?);
+                            }
+                            Some("y") => {
+                                kb = kb.y(map.next_value::<Bytes>()?);
+                            }
+                            Some("d") => {
+                                kb = kb.d(map.next_value::<Bytes>()?);
+                            }
+                            Some("k") => {
+                                kb = kb.k(map.next_value::<Bytes>()?);
+                            }
+                            Some(s) => {
+                                return Err(de::Error::custom(format!(
+                                    "unexpected CoseKey field \"{}\"",
+                                    s
+                                )))
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(1) => {
+                                kb = kb.kty(map.next_value::<CoseKty>()?);
+                            }
+                            Some(2) => {
+                                kb = kb.kid(map.next_value::<Bytes>()?);
+                            }
+                            Some(3) => {
+                                kb = kb.alg(map.next_value::<CoseAlgorithm>()?);
+                            }
+                            Some(4) => {
+                                kb = kb.key_ops(map.next_value::<Vec<CoseKeyOperation>>()?);
+                            }
+                            Some(5) => {
+                                kb = kb.base_iv(map.next_value::<Bytes>()?);
+                            }
+                            Some(-1) => {
+                                cob = Some(map.next_value::<CurveOrBytes>()?);
+                            }
+                            Some(-2) => {
+                                kb = kb.x(map.next_value::<Bytes>()?);
+                            }
+                            Some(-3) => {
+                                kb = kb.y(map.next_value::<Bytes>()?);
+                            }
+                            Some(-4) => {
+                                kb = kb.d(map.next_value::<Bytes>()?);
+                            }
+                            Some(i) => {
+                                return Err(de::Error::custom(format!(
+                                    "unexpected CoseKey field {}",
+                                    i
+                                )))
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                match cob {
+                    Some(CurveOrBytes::Curve(crv)) => match kb.get_kty() {
+                        CoseKty::Okp | CoseKty::Ec2 => {
+                            kb = kb.crv(crv);
+                        }
+                        kty => {
+                            return Err(de::Error::custom(format!(
+                                "found curve at label -1 for kty \"{}\"",
+                                kty
+                            )))
+                        }
+                    },
+                    Some(CurveOrBytes::Bytes(bytes)) => match kb.get_kty() {
+                        CoseKty::Symmetric => kb = kb.d(bytes),
+                        kty => {
+                            return Err(de::Error::custom(format!(
+                                "found bstr at label -1 for kty \"{}\"",
+                                kty
+                            )))
+                        }
+                    },
+                    None => (),
+                }
+
+                kb.build().map_err(de::Error::custom)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(CoseKeyVisitor {
+            is_human_readable: is_hr,
+        })
+    }
+}
+
+// When deserializing CoseKey, label -1 may refer to either crv or k field, depending on the key
+// type. Since we cannot guarantee that we'll see the key type (label 1) before label -1, we need
+// to deserialize as this, and then populate the correct field once the key type is known.
+enum CurveOrBytes {
+    Curve(CoseEllipticCurve),
+    Bytes(Bytes),
+}
+
+impl<'de> Deserialize<'de> for CurveOrBytes {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CurveOrBytesVisitor;
+
+        impl Visitor<'_> for CurveOrBytesVisitor {
+            type Value = CurveOrBytes;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str(
+                    "either a byte string key or integer curve ID, depending on kty field",
+                )
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(CurveOrBytes::Bytes(Bytes::from(v)))
+            }
+
+            fn visit_borrowed_bytes<E>(self, v: &'_ [u8]) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_bytes(v)
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(CurveOrBytes::Curve(
+                    CoseEllipticCurve::try_from(v).map_err(de::Error::custom)?,
+                ))
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v <= i64::MAX as u64 {
+                    self.visit_i64(v as i64)
+                } else {
+                    Err(de::Error::invalid_value(Unexpected::Unsigned(v), &self))
+                }
+            }
+        }
+
+        deserializer.deserialize_any(CurveOrBytesVisitor)
+    }
 }
 
 #[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -1956,7 +2519,7 @@ pub enum CoseAlgorithm {
     IvGeneration = 34,
 }
 
-const COSE_ALGORITHM_PRIVATE_BOUNDARY: i64 = -65536;
+const COSE_REGISTRY_PRIVATE_BOUNDARY: i64 = -65536;
 
 impl From<CoseAlgorithm> for i64 {
     fn from(value: CoseAlgorithm) -> Self {
@@ -2112,7 +2675,7 @@ impl TryFrom<i64> for CoseAlgorithm {
             33 => Ok(CoseAlgorithm::AesCcm64_128_256),
             34 => Ok(CoseAlgorithm::IvGeneration),
             v => {
-                if v < COSE_ALGORITHM_PRIVATE_BOUNDARY {
+                if v < COSE_REGISTRY_PRIVATE_BOUNDARY {
                     Ok(CoseAlgorithm::PrivateUse(v))
                 } else {
                     // If the value doesn't match any variant, return an error
@@ -2210,12 +2773,12 @@ impl TryFrom<&str> for CoseAlgorithm {
                         ))
                     })?;
 
-                    if v < COSE_ALGORITHM_PRIVATE_BOUNDARY {
+                    if v < COSE_REGISTRY_PRIVATE_BOUNDARY {
                         Ok(CoseAlgorithm::PrivateUse(v))
                     } else {
                         Err(CoreError::InvalidValue(format!(
                             "invalid COSE algorithm Private Use value {} (must be < {})",
-                            v, COSE_ALGORITHM_PRIVATE_BOUNDARY,
+                            v, COSE_REGISTRY_PRIVATE_BOUNDARY,
                         )))
                     }
                 } else {
@@ -2342,7 +2905,577 @@ impl<'de> Deserialize<'de> for CoseAlgorithm {
     }
 }
 
+/// COSE key types as defined in RFC 8152 and the IANA COSE Registry
+///
+/// These identify the key families and, thus, the set of key-type-specific parameters to be found
+/// inside the COSE key structure.
+///
+/// # Example
+///
+/// ```rust
+/// use corim_rs::core::CoseKty;
+///
+/// let okp = CoseKty::Okp;  // Octet Key Pair
+/// let ec2 = CoseKty::Ec2;  // Elliptic Curve w/ x/y coordinates
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[repr(i8)]
+pub enum CoseKty {
+    // key type is invalid/has not been set
+    Invalid,
+    /// Octet Key Pair
+    Okp = 1,
+    /// Elliptic Curve Keys w/ x- and y-coordinate pair
+    Ec2 = 2,
+    /// RSA Key
+    Rsa = 3,
+    /// Symmetric Keys
+    Symmetric = 4,
+    /// Public key for HSS/LMS hash-based digital signature
+    HssLms = 5,
+    /// WallnutDSA public key
+    WallnutDsa = 6,
+}
+
+impl From<CoseKty> for i8 {
+    fn from(value: CoseKty) -> Self {
+        value as i8
+    }
+}
+
+impl TryFrom<i8> for CoseKty {
+    type Error = CoreError;
+
+    fn try_from(value: i8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(CoseKty::Okp),
+            2 => Ok(CoseKty::Ec2),
+            3 => Ok(CoseKty::Rsa),
+            4 => Ok(CoseKty::Symmetric),
+            5 => Ok(CoseKty::HssLms),
+            6 => Ok(CoseKty::WallnutDsa),
+            i => Err(CoreError::InvalidValue(format!(
+                "{} is not a valid COSE key type (must be between 1 and 6)",
+                i
+            ))),
+        }
+    }
+}
+
+impl TryFrom<&str> for CoseKty {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "OKP" => Ok(CoseKty::Okp),
+            "EC2" => Ok(CoseKty::Ec2),
+            "Rsa" => Ok(CoseKty::Rsa),
+            "Symmetric" => Ok(CoseKty::Symmetric),
+            "HSS-LMS" => Ok(CoseKty::HssLms),
+            "WallnutDSA" => Ok(CoseKty::WallnutDsa),
+            s => Err(CoreError::InvalidValue(format!(
+                "\"{}\" is not a valid COSE key type",
+                s
+            ))),
+        }
+    }
+}
+
+impl Display for CoseKty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let kty = match self {
+            CoseKty::Invalid => "<INVALID>",
+            CoseKty::Okp => "OKP",
+            CoseKty::Ec2 => "EC2",
+            CoseKty::Rsa => "Rsa",
+            CoseKty::Symmetric => "Symmetric",
+            CoseKty::HssLms => "HSS-LMS",
+            CoseKty::WallnutDsa => "WallnutDSA",
+        };
+
+        f.write_str(kty)
+    }
+}
+
+impl Serialize for CoseKty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if *self == CoseKty::Invalid {
+            return Err(S::Error::custom("invalid key type"));
+        }
+
+        if serializer.is_human_readable() {
+            serializer.serialize_str(self.to_string().as_str())
+        } else {
+            serializer.serialize_i8(self.to_owned().into())
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CoseKty {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let kty = String::deserialize(deserializer)?;
+            Ok(CoseKty::try_from(kty.as_str()).map_err(de::Error::custom)?)
+        } else {
+            Ok(CoseKty::try_from(i8::deserialize(deserializer)?).map_err(de::Error::custom)?)
+        }
+    }
+}
+
+/// COSE key operations as defined in RFC 8152 and the IANA COSE Registry
+///
+/// These restrict the set of operations a COSE Key could be used for to the ones specified.
+///
+/// # Example
+///
+/// ```rust
+/// use corim_rs::core::CoseKeyOperation;
+///
+/// let sign = CoseKeyOperation::Sign;  // key used for signing
+/// let verify = CoseKeyOperation::Verify;  // key used for verification of signatures
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[repr(i8)]
+pub enum CoseKeyOperation {
+    /// The key is used to create signatures. Requires private key fields.
+    Sign = 1,
+    /// The key is used for verification of signatures.
+    Verify = 2,
+    /// The key is used for key transport encryption.
+    Encrypt = 3,
+    /// The key is used for key transport decryption. Requires private key fields.
+    Decrypt = 4,
+    /// The key is used for key wrap encryption.
+    WrapKeys = 5,
+    /// The key is used for key wrap decryption. Requires private key fields.
+    UnwrapKeys = 6,
+    /// The key is used for deriving keys.  Requires private key fields.
+    KeyDerive = 7,
+    /// The key is used for deriving bits not to be used as a key. Requires private key fields.
+    KeyDeriveBits = 8,
+    /// The key is used for creating MACs.
+    MacCreate = 9,
+    /// They key used for validating MACs.
+    MacVerify = 10,
+}
+
+impl From<CoseKeyOperation> for i8 {
+    fn from(value: CoseKeyOperation) -> Self {
+        value as i8
+    }
+}
+
+impl TryFrom<i8> for CoseKeyOperation {
+    type Error = CoreError;
+
+    fn try_from(value: i8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(CoseKeyOperation::Sign),
+            2 => Ok(CoseKeyOperation::Verify),
+            3 => Ok(CoseKeyOperation::Encrypt),
+            4 => Ok(CoseKeyOperation::Decrypt),
+            5 => Ok(CoseKeyOperation::WrapKeys),
+            6 => Ok(CoseKeyOperation::UnwrapKeys),
+            7 => Ok(CoseKeyOperation::KeyDerive),
+            8 => Ok(CoseKeyOperation::KeyDeriveBits),
+            9 => Ok(CoseKeyOperation::MacCreate),
+            10 => Ok(CoseKeyOperation::MacVerify),
+            i => Err(CoreError::InvalidValue(format!(
+                "{} is not a valid COSE key ops (must be between 1 and 10)",
+                i
+            ))),
+        }
+    }
+}
+
+impl TryFrom<&str> for CoseKeyOperation {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "sign" => Ok(CoseKeyOperation::Sign),
+            "verify" => Ok(CoseKeyOperation::Verify),
+            "encrypt" => Ok(CoseKeyOperation::Encrypt),
+            "decrypt" => Ok(CoseKeyOperation::Decrypt),
+            "wrapKey" => Ok(CoseKeyOperation::WrapKeys),
+            "unwrapKey" => Ok(CoseKeyOperation::UnwrapKeys),
+            "deriveKey" => Ok(CoseKeyOperation::KeyDerive),
+            "deriveBits" => Ok(CoseKeyOperation::KeyDeriveBits),
+            // unlike the other values, MAC ops are not taken from RFC7517, which does not define
+            // these operations. They are taken from the "Name" column of table 4 inside RFC8152;
+            // these do not constitute valid string values for CBOR serializations.
+            "MAC create" => Ok(CoseKeyOperation::MacCreate),
+            "MAC verify" => Ok(CoseKeyOperation::MacVerify),
+            i => Err(CoreError::InvalidValue(format!(
+                "{} is not a valid COSE key ops (must be between 1 and 10)",
+                i
+            ))),
+        }
+    }
+}
+
+impl Display for CoseKeyOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let op = match self {
+            CoseKeyOperation::Sign => "sign",
+            CoseKeyOperation::Verify => "verify",
+            CoseKeyOperation::Encrypt => "encrypt",
+            CoseKeyOperation::Decrypt => "decrypt",
+            CoseKeyOperation::WrapKeys => "wrapKey",
+            CoseKeyOperation::UnwrapKeys => "unwrapKey",
+            CoseKeyOperation::KeyDerive => "deriveKey",
+            CoseKeyOperation::KeyDeriveBits => "deriveBits",
+            CoseKeyOperation::MacCreate => "MAC create",
+            CoseKeyOperation::MacVerify => "MAC verify",
+        };
+
+        f.write_str(op)
+    }
+}
+
+impl Serialize for CoseKeyOperation {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(self.to_string().as_str())
+        } else {
+            serializer.serialize_i8(self.to_owned().into())
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CoseKeyOperation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CoseKeyOpsVisitor {
+            pub is_human_readable: bool,
+        }
+
+        impl Visitor<'_> for CoseKeyOpsVisitor {
+            type Value = CoseKeyOperation;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or integer COSE key operations identifier")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let op: CoseKeyOperation = v.try_into().map_err(de::Error::custom)?;
+
+                // RFC8152 states that string values for key operations match those defined by
+                // RFC7517, which does not define the MAC create and verify operations. Even though
+                // we define string representation for these for the sake of the non-normative JSON
+                // serialization, they are not valid for the normative CBOR serialization, where
+                // they must appear as ints.
+                if !self.is_human_readable
+                    && (op == CoseKeyOperation::MacVerify || op == CoseKeyOperation::MacCreate)
+                {
+                    Err(de::Error::custom(
+                        "string representation is not valid for MAC create and verify ops",
+                    ))
+                } else {
+                    Ok(op)
+                }
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(v.as_str())
+            }
+
+            fn visit_borrowed_str<E>(self, v: &'_ str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(v)
+            }
+
+            fn visit_i8<E>(self, v: i8) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                CoseKeyOperation::try_from(v).map_err(de::Error::custom)
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v <= i8::MAX as i64 && v >= i8::MIN as i64 {
+                    self.visit_i8(v as i8)
+                } else {
+                    Err(de::Error::invalid_value(Unexpected::Signed(v), &self))
+                }
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v <= i8::MAX as u64 && v > 0 {
+                    self.visit_i8(v as i8)
+                } else {
+                    Err(de::Error::invalid_value(Unexpected::Unsigned(v), &self))
+                }
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_any(CoseKeyOpsVisitor {
+            is_human_readable: is_hr,
+        })
+    }
+}
+
+/// COSE elliptic curves as defined in RFC 8152 and the IANA COSE Registry
+///
+///
+/// # Example
+///
+/// ```rust
+/// use corim_rs::core::CoseEllipticCurve;
+///
+/// let curve1 = CoseEllipticCurve::P256; // NIST P-256 curve, EC2 keys
+/// let curve2 = CoseEllipticCurve::Ed25519; // Ed25519 EdDSA curve, OKP keys
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[repr(i64)]
+pub enum CoseEllipticCurve {
+    /// Private Use
+    PrivateUse(i64),
+    /// NIST P-256 also known as secp256r1
+    P256 = 1,
+    /// NIST P-384 also known as secp384r1
+    P384 = 2,
+    /// NIST P-521 also known as secp521r1
+    P521 = 3,
+    /// X25519 for use w/ ECDH only
+    X25519 = 4,
+    /// X448 for use w/ ECDH only
+    X448 = 5,
+    /// Ed25519 for use w/ EdDSA only
+    Ed25519 = 6,
+    /// Ed448 for use w/ EdDSA only
+    Ed448 = 7,
+    /// SECG secp256k1 curve
+    Secp256k1 = 8,
+    /// BrainPoolP256r1
+    BrainpoolP256r1 = 256,
+    /// BrainPoolP320r1
+    BrainpoolP320r1 = 257,
+    /// BrainPoolP384r1
+    BrainpoolP384r1 = 258,
+    /// BrainPoolP512r1
+    BrainpoolP512r1 = 259,
+}
+
+impl From<CoseEllipticCurve> for i64 {
+    fn from(value: CoseEllipticCurve) -> Self {
+        match value {
+            CoseEllipticCurve::PrivateUse(v) => v,
+            CoseEllipticCurve::P256 => 1,
+            CoseEllipticCurve::P384 => 2,
+            CoseEllipticCurve::P521 => 3,
+            CoseEllipticCurve::X25519 => 4,
+            CoseEllipticCurve::X448 => 5,
+            CoseEllipticCurve::Ed25519 => 6,
+            CoseEllipticCurve::Ed448 => 7,
+            CoseEllipticCurve::Secp256k1 => 8,
+            CoseEllipticCurve::BrainpoolP256r1 => 256,
+            CoseEllipticCurve::BrainpoolP320r1 => 257,
+            CoseEllipticCurve::BrainpoolP384r1 => 258,
+            CoseEllipticCurve::BrainpoolP512r1 => 259,
+        }
+    }
+}
+
+impl TryFrom<i64> for CoseEllipticCurve {
+    type Error = CoreError;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(CoseEllipticCurve::P256),
+            2 => Ok(CoseEllipticCurve::P384),
+            3 => Ok(CoseEllipticCurve::P521),
+            4 => Ok(CoseEllipticCurve::X25519),
+            5 => Ok(CoseEllipticCurve::X448),
+            6 => Ok(CoseEllipticCurve::Ed25519),
+            7 => Ok(CoseEllipticCurve::Ed448),
+            8 => Ok(CoseEllipticCurve::Secp256k1),
+            256 => Ok(CoseEllipticCurve::BrainpoolP256r1),
+            257 => Ok(CoseEllipticCurve::BrainpoolP320r1),
+            258 => Ok(CoseEllipticCurve::BrainpoolP384r1),
+            259 => Ok(CoseEllipticCurve::BrainpoolP512r1),
+            v => {
+                if v < COSE_REGISTRY_PRIVATE_BOUNDARY {
+                    Ok(CoseEllipticCurve::PrivateUse(v))
+                } else {
+                    Err(CoreError::InvalidValue(format!(
+                        "expected a valid COSE elliptic curve identifier, found {}",
+                        value
+                    )))
+                }
+            }
+        }
+    }
+}
+
+impl TryFrom<&str> for CoseEllipticCurve {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "P-256" => Ok(CoseEllipticCurve::P256),
+            "P-384" => Ok(CoseEllipticCurve::P384),
+            "P-521" => Ok(CoseEllipticCurve::P521),
+            "X25519" => Ok(CoseEllipticCurve::X25519),
+            "X448" => Ok(CoseEllipticCurve::X448),
+            "Ed25519" => Ok(CoseEllipticCurve::Ed25519),
+            "Ed448" => Ok(CoseEllipticCurve::Ed448),
+            "secp256k1" => Ok(CoseEllipticCurve::Secp256k1),
+            "brainpoolP256r1" => Ok(CoseEllipticCurve::BrainpoolP256r1),
+            "brainpoolP320r1" => Ok(CoseEllipticCurve::BrainpoolP320r1),
+            "brainpoolP384r1" => Ok(CoseEllipticCurve::BrainpoolP384r1),
+            "brainpoolP512r1" => Ok(CoseEllipticCurve::BrainpoolP512r1),
+            s => {
+                if s.starts_with("PrivateUse(") {
+                    let v: i64 = s[11..s.len() - 1].parse().map_err(|_| {
+                        CoreError::InvalidValue(format!(
+                            "expected a valid COSE elliptic curve name, found \"{}\"",
+                            value
+                        ))
+                    })?;
+
+                    if v < COSE_REGISTRY_PRIVATE_BOUNDARY {
+                        Ok(CoseEllipticCurve::PrivateUse(v))
+                    } else {
+                        Err(CoreError::InvalidValue(format!(
+                            "invalid COSE elliptic curve Private Use value {} (must be < {})",
+                            v, COSE_REGISTRY_PRIVATE_BOUNDARY,
+                        )))
+                    }
+                } else {
+                    Err(CoreError::InvalidValue(format!(
+                        "expected a valid COSE elliptic curve name, found \"{}\"",
+                        value
+                    )))
+                }
+            }
+        }
+    }
+}
+
+impl Display for CoseEllipticCurve {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s: String;
+
+        let name = match self {
+            CoseEllipticCurve::PrivateUse(v) => {
+                s = format!("PrivateUse({})", v);
+                s.as_str()
+            }
+            CoseEllipticCurve::P256 => "P-256",
+            CoseEllipticCurve::P384 => "P-384",
+            CoseEllipticCurve::P521 => "P-521",
+            CoseEllipticCurve::X25519 => "X25519",
+            CoseEllipticCurve::X448 => "X448",
+            CoseEllipticCurve::Ed25519 => "Ed25519",
+            CoseEllipticCurve::Ed448 => "Ed448",
+            CoseEllipticCurve::Secp256k1 => "secp256k1",
+            CoseEllipticCurve::BrainpoolP256r1 => "brainpoolP256r1",
+            CoseEllipticCurve::BrainpoolP320r1 => "brainpoolP320r1",
+            CoseEllipticCurve::BrainpoolP384r1 => "brainpoolP384r1",
+            CoseEllipticCurve::BrainpoolP512r1 => "brainpoolP512r1",
+        };
+
+        f.write_str(name)
+    }
+}
+
+impl Serialize for CoseEllipticCurve {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(self.to_string().as_str())
+        } else {
+            serializer.serialize_i64(self.to_owned().into())
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CoseEllipticCurve {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            CoseEllipticCurve::try_from(String::deserialize(deserializer)?.as_str())
+                .map_err(de::Error::custom)
+        } else {
+            CoseEllipticCurve::try_from(i64::deserialize(deserializer)?).map_err(de::Error::custom)
+        }
+    }
+}
+
+// This is a wrapper of serde::de::value::MapAccessDeserializer that propagates is_human_readable value
+// that is given to it.
+#[derive(Clone, Debug)]
+pub(crate) struct MapAccessDeserializer<A> {
+    md: de::value::MapAccessDeserializer<A>,
+    is_hr: bool,
+}
+
+impl<A> MapAccessDeserializer<A> {
+    pub(crate) fn new(map: A, is_hr: bool) -> Self {
+        MapAccessDeserializer {
+            md: de::value::MapAccessDeserializer::new(map),
+            is_hr,
+        }
+    }
+}
+
+impl<'de, A> de::Deserializer<'de> for MapAccessDeserializer<A>
+where
+    A: de::MapAccess<'de>,
+{
+    type Error = A::Error;
+
+    fn is_human_readable(&self) -> bool {
+        self.is_hr
+    }
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        self.md.deserialize_any(visitor)
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct seq tuple
+        tuple_struct map struct identifier ignored_any enum
+    }
+}
+
 #[cfg(test)]
+#[rustfmt::skip::macros(vec)]
 mod tests {
     use super::*;
     mod hash_entry {
@@ -2892,6 +4025,7 @@ mod tests {
             let thumbprint_bytes = [0x55, 0x0E, 0x84, 0x00, 0xE2, 0x9B, 0x41, 0xD4, 0xA7, 0x16];
             let digest = Digest {
                 alg: HashAlgorithm::Sha256,
+
                 val: Bytes::from(thumbprint_bytes.to_vec()),
             };
             let expected = ThumbprintType::from(digest);
@@ -2914,41 +4048,49 @@ mod tests {
 
         #[test]
         fn test_cose_key_type_serialize_deserialize() {
-            // Create a basic COSE key
-            let key = CoseKey {
-                kty: Label::Int(1.into()), // EC2 key type
-                kid: TaggedBytes::from(Bytes::from(vec![0x01, 0x02, 0x03])),
-                alg: CoseAlgorithm::ES256,
-                key_ops: vec![Label::Int(1.into())], // sign operation
-                base_iv: TaggedBytes::from(Bytes::from(vec![0x04, 0x05, 0x06])),
-                extension: None,
-            };
+            let key = CoseKeyBuilder::new()
+                .kty(CoseKty::Ec2)
+                .kid(Bytes::from(vec![0x01, 0x02, 0x03]))
+                .alg(CoseAlgorithm::ES256)
+                .key_ops(vec![CoseKeyOperation::Sign])
+                .base_iv(Bytes::from(vec![0x04, 0x05, 0x06]))
+                .crv(CoseEllipticCurve::P256)
+                .x(Bytes::from(vec![0x07, 0x08, 0x09]))
+                .y(Bytes::from(vec![0x0a, 0x0b, 0x0c]))
+                .d(Bytes::from(vec![0x0d, 0x0e, 0x0f]))
+                .build()
+                .unwrap();
+
             let expected = CoseKeyType::from(CoseKeySetOrKey::Key(key));
 
-            let expected_bytes = [
-                0xD9, 0x02, 0x2E, // Tag 558
-                0xBF, // Map *
-                0x61, // (key) Text of one character
-                0x31, // '1'
-                0x01, // (value) unsigned integer 1
-                0x61, // (key) Text of one character
-                0x32, // '2'
-                0xD9, 0x02, 0x30, // Tag 560
-                0x43, // (value) Bstr with length of 3
-                0x01, 0x02, 0x03, // "\u0001\u0002\u0003"
-                0x61, // (key) Text of one character
-                0x33, // '3' (algorithm)
-                0x26, // (value) -7 (ES256)
-                0x61, // (key) Text of one character
-                0x34, // '4'
-                0x81, // (value) Array of 1 element
-                0x01, // Unsigned integer 1
-                0x61, // (key) Text of one character
-                0x35, // '5'
-                0xD9, 0x02, 0x30, // Tag 560
-                0x43, // (value) Bstr with length of 3
-                0x04, 0x05, 0x06, // "\u0004\u0005\u0006"
-                0xFF, // Primitive
+            let expected_bytes = vec![
+                0xd9, 0x02, 0x2e, // tag(558)
+                  0xbf,  // map(indef)
+                    0x01, // key: 1 [kty]
+                    0x02, // value: 2 [CoseKty::Ec2]
+                    0x02, // key: 2 [kid]
+                    0x43, // value: bstr(3)
+                      0x01, 0x02, 0x03,
+                    0x03, // key: 3 [alg]
+                    0x26, // value: -7 [CoseAlgorithm::ES256]
+                    0x04, // key: 4 [key_ops]
+                    0x81, // value: array(1)
+                      0x01, // 1 [CoseKeyOperation::Sign]
+                    0x05, // key: 5 [base_iv]
+                    0x43, // value: bstr(3)
+                      0x04, 0x05, 0x06,
+                    0x20, // key: -1 [crv]
+                    0x01, // value: 1 [CoseEllipticCurve::P256]
+                    0x21, // key: -2 [x]
+                    0x43, // value: bstr(3)
+                      0x07, 0x08, 0x09,
+                    0x22, // key: -3 [y]
+                    0x43, // value: bstr(3)
+                      0x0a, 0x0b, 0x0c,
+                    0x23, // key: -4 [d]
+                    0x43, // value: bstr(3)
+                      0x0d, 0x0e, 0x0f,
+                  0xff // break
             ];
 
             let mut buffer = vec![];
@@ -3101,7 +4243,7 @@ mod tests {
     }
 
     mod cose {
-        use super::CoseAlgorithm;
+        use super::*;
 
         #[test]
         fn test_cose_algorithm_serde() {
@@ -3173,6 +4315,105 @@ mod tests {
             assert_eq!(
                 err.to_string().as_str(),
                 "invalid value: invalid COSE algorithm Private Use value 42 (must be < -65536)",
+            );
+        }
+
+        #[test]
+        fn test_cose_kty_serde() {
+            let expected = vec![
+                0x01, // 1
+            ];
+
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&CoseKty::Okp, &mut buffer).unwrap();
+
+            assert_eq!(buffer, expected);
+
+            let kty: CoseKty = ciborium::from_reader(expected.as_slice()).unwrap();
+
+            assert_eq!(kty, CoseKty::Okp);
+
+            let expected = "\"OKP\"";
+
+            let json = serde_json::to_string(&CoseKty::Okp).unwrap();
+
+            assert_eq!(json.as_str(), expected);
+
+            let kty: CoseKty = serde_json::from_str(expected).unwrap();
+
+            assert_eq!(kty, CoseKty::Okp);
+        }
+
+        #[test]
+        fn test_cose_key_operation_serde() {
+            let expected = vec![
+                0x01, // 1
+            ];
+
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&CoseKeyOperation::Sign, &mut buffer).unwrap();
+
+            assert_eq!(buffer, expected);
+
+            let op: CoseKeyOperation = ciborium::from_reader(expected.as_slice()).unwrap();
+
+            assert_eq!(op, CoseKeyOperation::Sign);
+
+            let expected = "\"sign\"";
+
+            let json = serde_json::to_string(&CoseKeyOperation::Sign).unwrap();
+
+            assert_eq!(json.as_str(), expected);
+
+            let op: CoseKeyOperation = serde_json::from_str(expected).unwrap();
+
+            assert_eq!(op, CoseKeyOperation::Sign);
+        }
+
+        #[test]
+        fn test_cose_elliptic_curve_private_use_serde() {
+            let curve = CoseEllipticCurve::PrivateUse(-65537);
+
+            let expected = vec![
+                0x3a, 0x00, 0x01, 0x00, 0x00, // -65537
+            ];
+
+            let mut buffer = Vec::new();
+            ciborium::into_writer(&curve, &mut buffer).unwrap();
+
+            assert_eq!(buffer, expected);
+
+            let curve_de: CoseEllipticCurve = ciborium::from_reader(expected.as_slice()).unwrap();
+
+            assert_eq!(curve_de, curve);
+
+            let expected = "\"PrivateUse(-65537)\"";
+
+            let json = serde_json::to_string(&curve).unwrap();
+
+            assert_eq!(json.as_str(), expected);
+
+            let cruve_de: CoseEllipticCurve = serde_json::from_str(expected).unwrap();
+
+            assert_eq!(cruve_de, curve);
+
+            let err: serde_json::Error = serde_json::from_str::<CoseEllipticCurve>("\"foo\"")
+                .err()
+                .unwrap();
+
+            assert_eq!(
+                err.to_string().as_str(),
+                "invalid value: expected a valid COSE elliptic curve name, found \"foo\"",
+            );
+
+            let err: serde_json::Error =
+                serde_json::from_str::<CoseEllipticCurve>("\"PrivateUse(42)\"")
+                    .err()
+                    .unwrap();
+
+            assert_eq!(
+                err.to_string().as_str(),
+                "invalid value: invalid COSE elliptic curve Private Use value 42 (must be < -65536)",
             );
         }
     }
