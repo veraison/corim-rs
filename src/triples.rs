@@ -100,8 +100,8 @@ use crate::{
     CertThumbprintType, ConciseSwidTagId, CoseKeySetOrKey, CoseKeyType, Digest, ExtensionMap,
     Integer, MinSvnType, ObjectIdentifier, OidType, OneOrMore, PkixAsn1DerCertType,
     PkixBase64CertType, PkixBase64KeyType, RawValueType, Result, SvnType, TaggedBytes,
-    TaggedUuidType, Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint, Ulabel, UuidType,
-    VersionScheme,
+    TaggedUeidType, TaggedUuidType, Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint,
+    Ulabel, UuidType, VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
@@ -639,18 +639,18 @@ impl<'de> Deserialize<'de> for ClassIdTypeChoice {
 }
 
 /// Possible types for instance identifiers
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum InstanceIdTypeChoice<'a> {
     /// Unique Entity Identifier
-    Ueid(UeidType),
+    Ueid(TaggedUeidType),
     /// UUID identifier
-    Uuid(UuidType),
+    Uuid(TaggedUuidType),
     /// Cryptographic key identifier
     CryptoKey(CryptoKeyTypeChoice<'a>),
     /// Raw bytes
-    Bytes(Bytes),
+    Bytes(TaggedBytes),
 }
 
 impl InstanceIdTypeChoice<'_> {
@@ -663,7 +663,7 @@ impl InstanceIdTypeChoice<'_> {
 
     pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Uuid(uuid) => Some(uuid.as_ref()),
+            Self::Uuid(uuid) => Some(uuid.as_ref().as_slice()),
             _ => None,
         }
     }
@@ -692,7 +692,211 @@ impl InstanceIdTypeChoice<'_> {
 
 impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
     fn from(value: &'a [u8]) -> Self {
-        Self::Bytes(value.to_vec().into())
+        Self::Bytes(TaggedBytes::from(Bytes::from(value)))
+    }
+}
+
+impl<'de> Deserialize<'de> for InstanceIdTypeChoice<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let is_human_readable = deserializer.is_human_readable();
+
+        if is_human_readable {
+            let tagged_value = TaggedJsonValue::deserialize(deserializer)?;
+
+            match tagged_value.typ {
+                "pkix-base64-key" => {
+                    let tstr: Tstr = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(InstanceIdTypeChoice::CryptoKey(
+                        CryptoKeyTypeChoice::PkixBase64Key(PkixBase64KeyType::from(tstr)),
+                    ))
+                }
+                "pkix-base64-cert" => {
+                    let tstr: Tstr = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(InstanceIdTypeChoice::CryptoKey(
+                        CryptoKeyTypeChoice::PkixBase64Cert(PkixBase64CertType::from(tstr)),
+                    ))
+                }
+                "pkix-base64-cert-path" => {
+                    let tstr: Tstr = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(InstanceIdTypeChoice::CryptoKey(
+                        CryptoKeyTypeChoice::PkixBase64CertPath(PkixBase64CertPathType::from(tstr)),
+                    ))
+                }
+                "cose-key" => {
+                    let sok: CoseKeySetOrKey = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(InstanceIdTypeChoice::CryptoKey(
+                        CryptoKeyTypeChoice::CoseKey(CoseKeyType::from(sok)),
+                    ))
+                }
+                "thumbprint" => {
+                    let digest: Digest = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(InstanceIdTypeChoice::CryptoKey(
+                        CryptoKeyTypeChoice::Thumbprint(ThumbprintType::from(digest)),
+                    ))
+                }
+                "cert-thumbprint" => {
+                    let digest: Digest = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(InstanceIdTypeChoice::CryptoKey(
+                        CryptoKeyTypeChoice::CertThumbprint(CertThumbprintType::from(digest)),
+                    ))
+                }
+                "cert-path-thumbprint" => {
+                    let digest: Digest = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(InstanceIdTypeChoice::CryptoKey(
+                        CryptoKeyTypeChoice::CertPathThumbprint(CertPathThumbprintType::from(
+                            digest,
+                        )),
+                    ))
+                }
+                "pkix-asn1-der-cert" => {
+                    let bytes: Bytes = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(InstanceIdTypeChoice::CryptoKey(
+                        CryptoKeyTypeChoice::PkixAsn1DerCert(PkixAsn1DerCertType::from(bytes)),
+                    ))
+                }
+                "bytes" => {
+                    let bytes: Bytes = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    // TODO(setrofim): both instance-id-type-choice and crypto-key-type-choice
+                    // specify tagged-bytes as a variant. It is not possible to distinguish between
+                    // them (see https://github.com/ietf-rats-wg/draft-ietf-rats-corim/issues/428),
+                    // so we have to make a choice whether we treat tagged-bytes as an instance ID
+                    // or as a crypto key (that is an instance ID); both interpretations would be
+                    // valid according to the spec (until the above issue is fixed in some way).
+                    // Here, we're choosing to treat it as a generic ID, on the assumption that
+                    // this is more likely to be the intent.
+                    Ok(InstanceIdTypeChoice::Bytes(TaggedBytes::from(bytes)))
+                }
+                "uuid" => {
+                    let uuid: UuidType = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(InstanceIdTypeChoice::Uuid(TaggedUuidType::from(uuid)))
+                }
+                "ueid" => {
+                    let ueid: UeidType = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(InstanceIdTypeChoice::Ueid(TaggedUeidType::from(ueid)))
+                }
+                s => Err(de::Error::custom(format!(
+                    "unexpected InstanceIdTypeChoice type \"{s}\""
+                ))),
+            }
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Tag(tag, inner) => {
+                    // Re-serializing the inner Value so that we can deserialize it
+                    // into an appropriate type, once we figure out what that is
+                    // based on the tag.
+                    let mut buf: Vec<u8> = Vec::new();
+                    ciborium::into_writer(&inner, &mut buf).unwrap();
+
+                    match tag {
+                        554 => {
+                            let tstr: Tstr =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(InstanceIdTypeChoice::CryptoKey(
+                                CryptoKeyTypeChoice::PkixBase64Key(PkixBase64KeyType::from(tstr)),
+                            ))
+                        }
+                        555 => {
+                            let tstr: Tstr =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(InstanceIdTypeChoice::CryptoKey(
+                                CryptoKeyTypeChoice::PkixBase64Cert(PkixBase64CertType::from(tstr)),
+                            ))
+                        }
+                        556 => {
+                            let tstr: Tstr =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(InstanceIdTypeChoice::CryptoKey(
+                                CryptoKeyTypeChoice::PkixBase64CertPath(
+                                    PkixBase64CertPathType::from(tstr),
+                                ),
+                            ))
+                        }
+                        558 => {
+                            let sok: CoseKeySetOrKey =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(InstanceIdTypeChoice::CryptoKey(
+                                CryptoKeyTypeChoice::CoseKey(CoseKeyType::from(sok)),
+                            ))
+                        }
+                        557 => {
+                            let digest: Digest =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(InstanceIdTypeChoice::CryptoKey(
+                                CryptoKeyTypeChoice::Thumbprint(ThumbprintType::from(digest)),
+                            ))
+                        }
+                        559 => {
+                            let digest: Digest =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(InstanceIdTypeChoice::CryptoKey(
+                                CryptoKeyTypeChoice::CertThumbprint(CertThumbprintType::from(
+                                    digest,
+                                )),
+                            ))
+                        }
+                        561 => {
+                            let digest: Digest =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(InstanceIdTypeChoice::CryptoKey(
+                                CryptoKeyTypeChoice::CertPathThumbprint(
+                                    CertPathThumbprintType::from(digest),
+                                ),
+                            ))
+                        }
+                        562 => {
+                            let bytes: Bytes =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(InstanceIdTypeChoice::CryptoKey(
+                                CryptoKeyTypeChoice::PkixAsn1DerCert(PkixAsn1DerCertType::from(
+                                    bytes,
+                                )),
+                            ))
+                        }
+                        560 => {
+                            let bytes: Bytes =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            // TODO(setrofim): both instance-id-type-choice and crypto-key-type-choice
+                            // specify tagged-bytes as a variant. It is not possible to distinguish between
+                            // them (see https://github.com/ietf-rats-wg/draft-ietf-rats-corim/issues/428),
+                            // so we have to make a choice whether we treat tagged-bytes as an instance ID
+                            // or as a crypto key (that is an instance ID); both interpretations would be
+                            // valid according to the spec (until the above issue is fixed in some way).
+                            // Here, we're choosing to treat it as a generic ID, on the assumption that
+                            // this is more likely to be the intent.
+                            Ok(InstanceIdTypeChoice::Bytes(TaggedBytes::from(bytes)))
+                        }
+                        37 => {
+                            let uuid: UuidType =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(InstanceIdTypeChoice::Uuid(TaggedUuidType::from(uuid)))
+                        }
+                        550 => {
+                            let ueid: UeidType =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(InstanceIdTypeChoice::Ueid(TaggedUeidType::from(ueid)))
+                        }
+                        n => Err(de::Error::custom(format!(
+                            "unexpected InstanceIdTypeChoice tag {n}"
+                        ))),
+                    }
+                }
+                _ => Err(de::Error::custom("did not see a tag")),
+            }
+        }
     }
 }
 
