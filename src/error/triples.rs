@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 
+use crate::HashAlgorithm;
+
 #[derive(Debug)]
 pub enum TriplesError {
     EmptyTripleRecordCondition,
@@ -7,6 +9,7 @@ pub enum TriplesError {
     EmptyEnvironmentMap,
     EmptyMeasurementValuesMap,
     InvalidIpAddrType,
+    DigestAlreadyExists(String, HashAlgorithm),
     Unknown,
 }
 
@@ -33,6 +36,9 @@ impl std::fmt::Display for TriplesError {
             }
             Self::EmptyTripleRecordCondition => {
                 write!(f, "a TripleRecord must have at least one non-empty field")
+            }
+            Self::DigestAlreadyExists(label, alg) => {
+                write!(f, "{alg} digest for label {label} already exists")
             }
             Self::Unknown => write!(f, "unknown TriplesError encountered"),
         }
