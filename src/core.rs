@@ -49,7 +49,7 @@ use base64::{self, engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use derive_more::{AsMut, AsRef, Constructor, Deref, DerefMut, From, TryFrom};
 use serde::{
     de::{self, SeqAccess, Unexpected, Visitor},
-    ser::{Error as _, SerializeMap, SerializeSeq},
+    ser::{self, Error as _, SerializeMap, SerializeSeq},
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
@@ -191,10 +191,36 @@ impl<'de> Deserialize<'de> for Bytes {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, Clone, Default)]
+pub struct ExtensionMap<'a>(pub BTreeMap<Integer, ExtensionValue<'a>>);
+
+impl<'a> ExtensionMap<'a> {
+    pub fn insert(&mut self, key: Integer, value: ExtensionValue<'a>) {
+        self.0.insert(key, value);
+    }
+
+    pub fn serialize_map<M, O, E>(&self, map: &mut M, _is_human_readable: bool) -> Result<(), E>
+    where
+        M: ser::SerializeMap<Ok = O, Error = E>,
+    {
+        for (key, value) in self.0.iter() {
+            map.serialize_entry(key, value)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Empty for ExtensionMap<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// ExtensionMap represents the possible types that can be used in extensions
 #[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, TryFrom, Clone)]
 #[serde(untagged)]
-pub enum ExtensionMap<'a> {
+pub enum ExtensionValue<'a> {
     /// No value
     Null,
     /// Boolean values
@@ -208,12 +234,12 @@ pub enum ExtensionMap<'a> {
     /// A bstr
     Bytes(Bytes),
     /// An array of extension values
-    Array(Vec<ExtensionMap<'a>>),
+    Array(Vec<ExtensionValue<'a>>),
     /// A map of extension key-value pairs
-    Map(BTreeMap<Label<'a>, ExtensionMap<'a>>),
+    Map(BTreeMap<Label<'a>, ExtensionValue<'a>>),
 }
 
-impl Empty for ExtensionMap<'_> {
+impl Empty for ExtensionValue<'_> {
     fn is_empty(&self) -> bool {
         match self {
             Self::Null => true,
@@ -228,7 +254,7 @@ impl Empty for ExtensionMap<'_> {
     }
 }
 
-impl<'a> ExtensionMap<'a> {
+impl<'a> ExtensionValue<'a> {
     pub fn is_empty(&self) -> bool {
         match self {
             Self::Null => true,
@@ -309,7 +335,7 @@ impl<'a> ExtensionMap<'a> {
     }
 
     /// Attempts to extract an `Array` value as a reference to the vector.
-    pub fn as_array(&self) -> Option<&Vec<ExtensionMap<'a>>> {
+    pub fn as_array(&self) -> Option<&Vec<ExtensionValue<'a>>> {
         match self {
             Self::Array(a) => Some(a),
             _ => None,
@@ -317,7 +343,7 @@ impl<'a> ExtensionMap<'a> {
     }
 
     /// Attempts to extract a `Map` value as a reference to the map.
-    pub fn as_map(&self) -> Option<&BTreeMap<Label<'a>, ExtensionMap<'a>>> {
+    pub fn as_map(&self) -> Option<&BTreeMap<Label<'a>, ExtensionValue<'a>>> {
         match self {
             Self::Map(m) => Some(m),
             _ => None,

@@ -98,11 +98,12 @@ use std::{
 };
 
 use crate::{
-    core::PkixBase64CertPathType, empty_map_as_none, Bytes, CertPathThumbprintType,
-    CertThumbprintType, ConciseSwidTagId, CoseKeySetOrKey, CoseKeyType, Digest, ExtensionMap,
-    Integer, MinSvnType, ObjectIdentifier, OidType, PkixAsn1DerCertType, PkixBase64CertType,
-    PkixBase64KeyType, RawValueType, Result, SvnType, TaggedBytes, TaggedUeidType, TaggedUuidType,
-    Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint, Ulabel, UuidType, VersionScheme,
+    core::{ExtensionValue, PkixBase64CertPathType},
+    empty_map_as_none, Bytes, CertPathThumbprintType, CertThumbprintType, ConciseSwidTagId,
+    CoseKeySetOrKey, CoseKeyType, Digest, ExtensionMap, Integer, MinSvnType, ObjectIdentifier,
+    OidType, PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, Result,
+    SvnType, TaggedBytes, TaggedUeidType, TaggedUuidType, Text, ThumbprintType, TriplesError, Tstr,
+    UeidType, Uint, Ulabel, UuidType, VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
@@ -1778,54 +1779,252 @@ impl SvnTypeChoice {
 pub type DigestsType = Vec<Digest>;
 
 /// Status flags indicating various security and configuration states
-#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Default, Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct FlagsMap<'a> {
     /// Whether the environment is configured
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "0")]
     pub is_configured: Option<bool>,
     /// Whether the environment is in a secure state
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "1")]
     pub is_secure: Option<bool>,
     /// Whether the environment is in recovery mode
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "2")]
     pub is_recovery: Option<bool>,
     /// Whether debug features are enabled
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "3")]
     pub is_debug: Option<bool>,
     /// Whether replay protection is enabled
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "4")]
     pub is_replay_protected: Option<bool>,
     /// Whether integrity protection is enabled
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "5")]
     pub is_integrity_protected: Option<bool>,
     /// Whether runtime measurements are enabled
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "6")]
     pub is_runtime_meas: Option<bool>,
     /// Whether the environment is immutable
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "7")]
     pub is_immutable: Option<bool>,
     /// Whether the environment is part of the TCB
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "8")]
     pub is_tcb: Option<bool>,
     /// Whether confidentiality protection is enabled
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "9")]
     pub is_confidentiality_protected: Option<bool>,
     /// Optional extensible attributes
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "empty_map_as_none")]
-    #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
+}
+
+impl Serialize for FlagsMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            if let Some(is_configured) = self.is_configured {
+                map.serialize_entry("is-configured", &is_configured)?;
+            }
+            if let Some(is_secure) = self.is_secure {
+                map.serialize_entry("is-secure", &is_secure)?;
+            }
+            if let Some(is_recovery) = self.is_recovery {
+                map.serialize_entry("is-recovery", &is_recovery)?;
+            }
+            if let Some(is_debug) = self.is_debug {
+                map.serialize_entry("is-debug", &is_debug)?;
+            }
+            if let Some(is_replay_protected) = self.is_replay_protected {
+                map.serialize_entry("is-replay-protected", &is_replay_protected)?;
+            }
+            if let Some(is_integrity_protected) = self.is_integrity_protected {
+                map.serialize_entry("is-integrity-protected", &is_integrity_protected)?;
+            }
+            if let Some(is_runtime_meas) = self.is_runtime_meas {
+                map.serialize_entry("is-runtime-meas", &is_runtime_meas)?;
+            }
+            if let Some(is_immutable) = self.is_immutable {
+                map.serialize_entry("is-immutable", &is_immutable)?;
+            }
+            if let Some(is_tcb) = self.is_tcb {
+                map.serialize_entry("is-tcb", &is_tcb)?;
+            }
+            if let Some(is_confidentiality_protected) = self.is_confidentiality_protected {
+                map.serialize_entry(
+                    "is-confidentiality-protected",
+                    &is_confidentiality_protected,
+                )?;
+            }
+            if let Some(extensions) = &self.extensions {
+                extensions.serialize_map(&mut map, is_human_readable)?;
+            }
+        } else {
+            if let Some(is_configured) = self.is_configured {
+                map.serialize_entry(&0, &is_configured)?;
+            }
+            if let Some(is_secure) = self.is_secure {
+                map.serialize_entry(&1, &is_secure)?;
+            }
+            if let Some(is_recovery) = self.is_recovery {
+                map.serialize_entry(&2, &is_recovery)?;
+            }
+            if let Some(is_debug) = self.is_debug {
+                map.serialize_entry(&3, &is_debug)?;
+            }
+            if let Some(is_replay_protected) = self.is_replay_protected {
+                map.serialize_entry(&4, &is_replay_protected)?;
+            }
+            if let Some(is_integrity_protected) = self.is_integrity_protected {
+                map.serialize_entry(&5, &is_integrity_protected)?;
+            }
+            if let Some(is_runtime_meas) = self.is_runtime_meas {
+                map.serialize_entry(&6, &is_runtime_meas)?;
+            }
+            if let Some(is_immutable) = self.is_immutable {
+                map.serialize_entry(&7, &is_immutable)?;
+            }
+            if let Some(is_tcb) = self.is_tcb {
+                map.serialize_entry(&8, &is_tcb)?;
+            }
+            if let Some(is_confidentiality_protected) = self.is_confidentiality_protected {
+                map.serialize_entry(&9, &is_confidentiality_protected)?;
+            }
+            if let Some(extensions) = &self.extensions {
+                extensions.serialize_map(&mut map, is_human_readable)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for FlagsMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct FlagsMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for FlagsMapVisitor<'a> {
+            type Value = FlagsMap<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing FlagsMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut flags_map: FlagsMap = FlagsMap::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("is-configured") => {
+                                flags_map.is_configured = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-secure") => {
+                                flags_map.is_secure = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-recovery") => {
+                                flags_map.is_recovery = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-debug") => {
+                                flags_map.is_debug = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-replay-protected") => {
+                                flags_map.is_replay_protected = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-integrity-protected") => {
+                                flags_map.is_integrity_protected = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-runtime-meas") => {
+                                flags_map.is_runtime_meas = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-immutable") => {
+                                flags_map.is_immutable = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-tcb") => {
+                                flags_map.is_tcb = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-confidentiality-protected") => {
+                                flags_map.is_confidentiality_protected =
+                                    Some(map.next_value::<bool>()?);
+                            }
+                            Some(s) => {
+                                if let Some(ref mut extensions) = flags_map.extensions.as_mut() {
+                                    extensions.insert(
+                                        s.parse::<Integer>().map_err(de::Error::custom)?,
+                                        map.next_value::<ExtensionValue>()?,
+                                    );
+                                } else {
+                                    let mut extensions = ExtensionMap::default();
+                                    extensions.insert(
+                                        s.parse::<Integer>().map_err(de::Error::custom)?,
+                                        map.next_value::<ExtensionValue>()?,
+                                    );
+                                    flags_map.extensions = Some(extensions);
+                                }
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                flags_map.is_configured = Some(map.next_value::<bool>()?);
+                            }
+                            Some(1) => {
+                                flags_map.is_secure = Some(map.next_value::<bool>()?);
+                            }
+                            Some(2) => {
+                                flags_map.is_recovery = Some(map.next_value::<bool>()?);
+                            }
+                            Some(3) => {
+                                flags_map.is_debug = Some(map.next_value::<bool>()?);
+                            }
+                            Some(4) => {
+                                flags_map.is_replay_protected = Some(map.next_value::<bool>()?);
+                            }
+                            Some(5) => {
+                                flags_map.is_integrity_protected = Some(map.next_value::<bool>()?);
+                            }
+                            Some(6) => {
+                                flags_map.is_runtime_meas = Some(map.next_value::<bool>()?);
+                            }
+                            Some(7) => {
+                                flags_map.is_immutable = Some(map.next_value::<bool>()?);
+                            }
+                            Some(8) => {
+                                flags_map.is_tcb = Some(map.next_value::<bool>()?);
+                            }
+                            Some(9) => {
+                                flags_map.is_confidentiality_protected =
+                                    Some(map.next_value::<bool>()?);
+                            }
+                            Some(n) => {
+                                if let Some(ref mut extensions) = flags_map.extensions.as_mut() {
+                                    extensions
+                                        .insert(n.into(), map.next_value::<ExtensionValue>()?);
+                                } else {
+                                    let mut extensions = ExtensionMap::default();
+                                    extensions
+                                        .insert(n.into(), map.next_value::<ExtensionValue>()?);
+                                    flags_map.extensions = Some(extensions);
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                Ok(flags_map)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(FlagsMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Types of MAC addresses supporting both EUI-48 and EUI-64 formats
@@ -3101,7 +3300,7 @@ impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementTripleRecord<'a> {
 #[rustfmt::skip::macros(vec)]
 mod test {
     use super::*;
-    use crate::core::HashAlgorithm;
+    use crate::core::{ExtensionValue, HashAlgorithm};
     use crate::fixed_bytes::FixedBytes;
 
     #[test]
@@ -3685,5 +3884,111 @@ mod test {
         let addr_de: MacAddrTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
 
         assert_eq!(addr_de, addr);
+    }
+
+    #[test]
+    fn test_flags_map_serde() {
+        let fm = FlagsMap {
+            is_configured: Some(true),
+            is_secure: Some(false),
+            is_recovery: Some(true),
+            is_debug: Some(false),
+            is_replay_protected: Some(true),
+            is_integrity_protected: Some(false),
+            is_runtime_meas: Some(true),
+            is_immutable: Some(false),
+            is_tcb: Some(true),
+            is_confidentiality_protected: Some(false),
+            extensions: None,
+        };
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&fm, &mut actual).unwrap();
+
+        let expected = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0
+              0xf5, // value: true
+              0x01, // key: 1
+              0xf4, // value: false
+              0x02, // key: 2
+              0xf5, // value: true
+              0x03, // key: 3
+              0xf4, // value: false
+              0x04, // key: 4
+              0xf5, // value: true
+              0x05, // key: 5
+              0xf4, // value: false
+              0x06, // key: 6
+              0xf5, // value: true
+              0x07, // key: 7
+              0xf4, // value: false
+              0x08, // key: 8
+              0xf5, // value: true
+              0x09, // key: 9
+              0xf4, // value: false
+            0xff, // break
+        ];
+
+        assert_eq!(actual, expected);
+
+        let fm_de: FlagsMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(fm_de, fm);
+
+        let json = serde_json::to_string(&fm).unwrap();
+
+        let expected = r#"{"is-configured":true,"is-secure":false,"is-recovery":true,"is-debug":false,"is-replay-protected":true,"is-integrity-protected":false,"is-runtime-meas":true,"is-immutable":false,"is-tcb":true,"is-confidentiality-protected":false}"#;
+
+        assert_eq!(json, expected);
+
+        let fm_de: FlagsMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(fm_de, fm);
+
+        let fm = FlagsMap {
+            is_configured: Some(true),
+            is_secure: None,
+            is_recovery: None,
+            is_debug: None,
+            is_replay_protected: None,
+            is_integrity_protected: None,
+            is_runtime_meas: None,
+            is_immutable: None,
+            is_tcb: None,
+            is_confidentiality_protected: None,
+            extensions: Some(ExtensionMap(BTreeMap::from([(
+                Integer(-1),
+                ExtensionValue::Bool(true),
+            )]))),
+        };
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&fm, &mut actual).unwrap();
+
+        let expected = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0
+              0xf5, // value: true
+              0x20, // key: -1
+              0xf5, // value: true
+            0xff, // break
+        ];
+
+        assert_eq!(actual, expected);
+
+        let fm_de: FlagsMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(fm_de, fm);
+
+        let json = serde_json::to_string(&fm).unwrap();
+
+        let expected = r#"{"is-configured":true,"-1":true}"#;
+
+        assert_eq!(json, expected);
+
+        let fm_de: FlagsMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(fm_de, fm);
     }
 }
