@@ -91,6 +91,7 @@
 
 use std::{
     collections::{btree_map::Iter, BTreeMap},
+    fmt::Display,
     marker::PhantomData,
     net::{Ipv4Addr, Ipv6Addr},
     ops::{Deref, DerefMut, Index},
@@ -1931,9 +1932,8 @@ pub type Eui64AddrType = [u8; 8];
 ///
 /// Storage uses network byte order (big-endian) following RFC 791/8200.
 /// Implements the same traits as MacAddrTypeChoice for consistent handling.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
-#[serde(untagged)]
 pub enum IpAddrTypeChoice {
     /// IPv4 address
     Ipv4(Ipv4AddrType),
@@ -1982,6 +1982,39 @@ impl From<Ipv6AddrType> for IpAddrTypeChoice {
     }
 }
 
+impl From<IpAddrTypeChoice> for std::net::IpAddr {
+    fn from(value: IpAddrTypeChoice) -> Self {
+        match value {
+            IpAddrTypeChoice::Ipv4(addr) => Self::from(addr.to_owned()),
+            IpAddrTypeChoice::Ipv6(addr) => Self::from(addr.to_owned()),
+        }
+    }
+}
+
+impl From<&IpAddrTypeChoice> for std::net::IpAddr {
+    fn from(value: &IpAddrTypeChoice) -> Self {
+        match value {
+            IpAddrTypeChoice::Ipv4(addr) => Self::from(addr.to_owned()),
+            IpAddrTypeChoice::Ipv6(addr) => Self::from(addr.to_owned()),
+        }
+    }
+}
+
+impl From<std::net::IpAddr> for IpAddrTypeChoice {
+    fn from(value: std::net::IpAddr) -> Self {
+        match value {
+            std::net::IpAddr::V4(addrv4) => {
+                let octets: [u8; 4] = unsafe { std::mem::transmute(addrv4) };
+                IpAddrTypeChoice::Ipv4(octets)
+            }
+            std::net::IpAddr::V6(addrv6) => {
+                let octets: [u8; 16] = unsafe { std::mem::transmute(addrv6) };
+                IpAddrTypeChoice::Ipv6(octets)
+            }
+        }
+    }
+}
+
 impl TryFrom<&[u8]> for IpAddrTypeChoice {
     type Error = std::array::TryFromSliceError;
     fn try_from(value: &[u8]) -> std::result::Result<Self, Self::Error> {
@@ -1990,6 +2023,14 @@ impl TryFrom<&[u8]> for IpAddrTypeChoice {
             16 => Ok(Self::Ipv6(value.try_into()?)),
             _ => Err(<[u8; 0]>::try_from(&[][..]).unwrap_err()),
         }
+    }
+}
+
+impl TryFrom<&str> for IpAddrTypeChoice {
+    type Error = std::net::AddrParseError;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        Ok(value.parse::<std::net::IpAddr>()?.into())
     }
 }
 
@@ -2027,6 +2068,52 @@ impl AsMut<[u8]> for IpAddrTypeChoice {
         match self {
             Self::Ipv4(addr) => addr,
             Self::Ipv6(addr) => addr,
+        }
+    }
+}
+
+impl Display for IpAddrTypeChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ip_addr: std::net::IpAddr = self.into();
+        f.write_str(&format!("{}", ip_addr))
+    }
+}
+
+impl Serialize for IpAddrTypeChoice {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+
+        if is_human_readable {
+            self.to_string().serialize(serializer)
+        } else {
+            match self {
+                Self::Ipv4(octets) => serializer.serialize_bytes(octets.as_slice()),
+                Self::Ipv6(octets) => serializer.serialize_bytes(octets.as_slice()),
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for IpAddrTypeChoice {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let is_human_readable = deserializer.is_human_readable();
+
+        if is_human_readable {
+            String::deserialize(deserializer)?
+                .as_str()
+                .try_into()
+                .map_err(de::Error::custom)
+        } else {
+            Vec::<u8>::deserialize(deserializer)?
+                .as_slice()
+                .try_into()
+                .map_err(de::Error::custom)
         }
     }
 }
@@ -3422,5 +3509,57 @@ mod test {
 
             assert_eq!(regs_de, regs);
         }
+    }
+
+    #[test]
+    fn test_ip_addr_serde() {
+        let addr = IpAddrTypeChoice::Ipv4([127, 0, 0, 1]);
+
+        let json = serde_json::to_string(&addr).unwrap();
+
+        assert_eq!("\"127.0.0.1\"", json);
+
+        let addr_de: IpAddrTypeChoice = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(addr_de, addr);
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&addr, &mut actual).unwrap();
+
+        let expected = vec![
+            0x44, // bstr(4),
+              0x7f, 0x00, 0x00, 0x01,
+        ];
+
+        assert_eq!(actual, expected);
+
+        let addr_de: IpAddrTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(addr_de, addr);
+
+        let addr = IpAddrTypeChoice::Ipv6([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+
+        let json = serde_json::to_string(&addr).unwrap();
+
+        assert_eq!("\"::1\"", json);
+
+        let addr_de: IpAddrTypeChoice = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(addr_de, addr);
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&addr, &mut actual).unwrap();
+
+        let expected = vec![
+            0x50, // bstr(16),
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        ];
+
+        assert_eq!(actual, expected);
+
+        let addr_de: IpAddrTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(addr_de, addr);
     }
 }
