@@ -1835,9 +1835,8 @@ pub struct FlagsMap<'a> {
 /// - `Deref`/`DerefMut` for direct byte manipulation
 /// - `From` for construction from byte arrays
 /// - `TryFrom` for fallible construction from slices
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
-#[serde(untagged)]
 pub enum MacAddrTypeChoice {
     /// 48-bit EUI address
     Eui48Addr(Eui48AddrType),
@@ -1885,6 +1884,24 @@ impl TryFrom<&[u8]> for MacAddrTypeChoice {
     }
 }
 
+impl TryFrom<&str> for MacAddrTypeChoice {
+    type Error = TriplesError;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        let parts: Vec<u8> = value
+            .split("-")
+            .map(|x| u8::from_str_radix(x, 16).map_err(|_| TriplesError::InvalidMacAddrType))
+            .collect::<std::result::Result<Vec<u8>, TriplesError>>()?;
+
+        let n = parts.len();
+        match n {
+            6 => Ok(Self::Eui48Addr(parts.try_into().unwrap())),
+            8 => Ok(Self::Eui64Addr(parts.try_into().unwrap())),
+            _ => Err(TriplesError::InvalidMacAddrType),
+        }
+    }
+}
+
 impl AsRef<[u8]> for MacAddrTypeChoice {
     fn as_ref(&self) -> &[u8] {
         match self {
@@ -1919,6 +1936,62 @@ impl DerefMut for MacAddrTypeChoice {
         match self {
             Self::Eui48Addr(addr) => addr,
             Self::Eui64Addr(addr) => addr,
+        }
+    }
+}
+
+impl Display for MacAddrTypeChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Eui48Addr(addr) => write!(
+                f,
+                "{:02X?}-{:02X?}-{:02X?}-{:02X?}-{:02X?}-{:02X?}",
+                addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]
+            ),
+            Self::Eui64Addr(addr) => write!(
+                f,
+                "{:02X?}-{:02X?}-{:02X?}-{:02X?}-{:02X?}-{:02X?}-{:02X?}-{:02X?}",
+                addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7]
+            ),
+        }
+    }
+}
+
+impl Serialize for MacAddrTypeChoice {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+
+        if is_human_readable {
+            self.to_string().serialize(serializer)
+        } else {
+            match self {
+                Self::Eui48Addr(octets) => serializer.serialize_bytes(octets.as_slice()),
+                Self::Eui64Addr(octets) => serializer.serialize_bytes(octets.as_slice()),
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for MacAddrTypeChoice {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let is_human_readable = deserializer.is_human_readable();
+
+        if is_human_readable {
+            String::deserialize(deserializer)?
+                .as_str()
+                .try_into()
+                .map_err(de::Error::custom)
+        } else {
+            Vec::<u8>::deserialize(deserializer)?
+                .as_slice()
+                .try_into()
+                .map_err(de::Error::custom)
         }
     }
 }
@@ -3559,6 +3632,57 @@ mod test {
         assert_eq!(actual, expected);
 
         let addr_de: IpAddrTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(addr_de, addr);
+    }
+
+    #[test]
+    fn test_mac_addr_serde() {
+        let addr = MacAddrTypeChoice::Eui48Addr([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]);
+
+        let json = serde_json::to_string(&addr).unwrap();
+
+        assert_eq!("\"01-02-03-04-05-06\"", json);
+
+        let addr_de: MacAddrTypeChoice = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(addr_de, addr);
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&addr, &mut actual).unwrap();
+
+        let expected = vec![
+            0x46, // bstr(6),
+              0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+        ];
+
+        assert_eq!(actual, expected);
+
+        let addr_de: MacAddrTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(addr_de, addr);
+
+        let addr = MacAddrTypeChoice::Eui64Addr([0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x20]);
+
+        let json = serde_json::to_string(&addr).unwrap();
+
+        assert_eq!("\"0A-0B-0C-0D-0E-0F-10-20\"", json);
+
+        let addr_de: MacAddrTypeChoice = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(addr_de, addr);
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&addr, &mut actual).unwrap();
+
+        let expected = vec![
+            0x48, // bstr(8),
+              0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x20,
+        ];
+
+        assert_eq!(actual, expected);
+
+        let addr_de: MacAddrTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
 
         assert_eq!(addr_de, addr);
     }
