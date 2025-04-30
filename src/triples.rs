@@ -1727,16 +1727,117 @@ impl<'a> MeasurementValuesMapBuilder<'a> {
 }
 
 /// Version information with optional versioning scheme
-#[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct VersionMap<'a> {
     /// Version identifier string
     pub version: Text<'a>,
     /// Optional version numbering scheme
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub version_scheme: Option<VersionScheme<'a>>,
+}
+
+impl Serialize for VersionMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            map.serialize_entry("version", self.version.as_ref())?;
+
+            if let Some(scheme) = &self.version_scheme {
+                map.serialize_entry("version-scheme", scheme)?;
+            }
+        } else {
+            map.serialize_entry(&0, self.version.as_ref())?;
+
+            if let Some(scheme) = &self.version_scheme {
+                map.serialize_entry(&1, scheme)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for VersionMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct VersionMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for VersionMapVisitor<'a> {
+            type Value = VersionMap<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing VersionMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut version: Option<Text<'a>> = None;
+                let mut version_scheme: Option<VersionScheme<'a>> = None;
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("version") => {
+                                version = Some(map.next_value::<String>()?.into());
+                            }
+                            Some("version-scheme") => {
+                                version_scheme = Some(map.next_value::<VersionScheme>()?);
+                            }
+                            Some(name) => {
+                                return Err(de::Error::unknown_field(
+                                    name,
+                                    &["version", "version-scheme"],
+                                ));
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                version = Some(map.next_value::<String>()?.into());
+                            }
+                            Some(1) => {
+                                version_scheme = Some(map.next_value::<VersionScheme>()?);
+                            }
+                            Some(key) => {
+                                return Err(de::Error::custom(format!(
+                                    "unexpected key {key} for VersionMap"
+                                )))
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if let Some(version) = version {
+                    Ok(VersionMap {
+                        version,
+                        version_scheme,
+                    })
+                } else {
+                    Err(de::Error::missing_field("version"))
+                }
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(VersionMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Security version number types
@@ -4162,5 +4263,42 @@ mod test {
         let svn_de: SvnTypeChoice = serde_json::from_str(expected).unwrap();
 
         assert_eq!(svn_de, svn);
+    }
+
+    #[test]
+    fn test_version_map_serde() {
+        let vm = VersionMap {
+            version: "1.2.3a".into(),
+            version_scheme: Some(VersionScheme::MultipartnumericSuffix),
+        };
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&vm, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0 [version]
+              0x66, // value: tstr(6)
+                0x31, 0x2e, 0x32, 0x2e, 0x33, 0x61, // "1.2.3a"
+              0x01, // key: 1 [version-scheme]
+              0x02, // value: 2 [multipartnumeric+suffix]
+            0xff, // break
+        ];
+
+        assert_eq!(actual, expected);
+
+        let vm_de: VersionMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(vm_de, vm);
+
+        let actual = serde_json::to_string(&vm).unwrap();
+
+        let expected = r#"{"version":"1.2.3a","version-scheme":"multipartnumeric+suffix"}"#;
+
+        assert_eq!(actual, expected);
+
+        let vm_de: VersionMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(vm_de, vm);
     }
 }
