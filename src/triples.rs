@@ -1736,7 +1736,7 @@ pub struct VersionMap<'a> {
     pub version: Text<'a>,
     /// Optional version numbering scheme
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub version_scheme: Option<VersionScheme>,
+    pub version_scheme: Option<VersionScheme<'a>>,
 }
 
 /// Security version number types

@@ -115,7 +115,7 @@ pub struct ConciseSwidTag<'a> {
     /// Scheme used for version numbering
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "14")]
-    pub version_scheme: Option<VersionScheme>,
+    pub version_scheme: Option<VersionScheme<'a>>,
     /// Media type or environment context
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "10")]

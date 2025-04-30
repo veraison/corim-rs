@@ -2193,10 +2193,9 @@ impl<'de> Deserialize<'de> for RawValueTypeChoice {
 }
 
 /// Version scheme enumeration as defined in the specification
-#[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
-#[serde(untagged)]
-pub enum VersionScheme {
+#[repr(i64)]
+#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub enum VersionScheme<'a> {
     /// Multi-part numeric version (e.g., 1.2.3)
     Multipartnumeric = 1,
     /// Multi-part numeric version with suffix (e.g., 1.2.3-beta)
@@ -2207,6 +2206,194 @@ pub enum VersionScheme {
     Decimal = 4,
     /// Semantic versioning (e.g., 1.2.3-beta+build.123)
     Semver = 16384,
+    /// Unregisted schemes for Private Use. Must be either a string or an in in the range
+    /// [-256, -1].
+    PrivateUse(Label<'a>),
+}
+
+impl TryFrom<i64> for VersionScheme<'_> {
+    type Error = CoreError;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Multipartnumeric),
+            2 => Ok(Self::MultipartnumericSuffix),
+            3 => Ok(Self::Alphanumeric),
+            4 => Ok(Self::Decimal),
+            16384 => Ok(Self::Semver),
+            int @ -256..=-1 => Ok(Self::PrivateUse(Label::Int(int.into()))),
+            int => Err(CoreError::InvalidValue(format!(
+                "invalid version scheme {int}"
+            ))),
+        }
+    }
+}
+
+impl TryFrom<&VersionScheme<'_>> for i64 {
+    type Error = CoreError;
+
+    fn try_from(value: &VersionScheme<'_>) -> Result<Self, Self::Error> {
+        match value {
+            VersionScheme::Multipartnumeric => Ok(1),
+            VersionScheme::MultipartnumericSuffix => Ok(2),
+            VersionScheme::Alphanumeric => Ok(3),
+            VersionScheme::Decimal => Ok(4),
+            VersionScheme::Semver => Ok(5),
+            VersionScheme::PrivateUse(label) => match label {
+                Label::Int(int) => (*int).try_into().map_err(|e: crate::error::NumbersError| {
+                    CoreError::InvalidValue(e.to_string())
+                }),
+                Label::Text(text) => Err(CoreError::InvalidValue(format!(
+                    "Private Use version scheme \"{text}\" does not have an integer prepresention"
+                ))),
+            },
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for VersionScheme<'a> {
+    type Error = CoreError;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        match value {
+            "multipartnumeric" => Ok(Self::Multipartnumeric),
+            "multipartnumeric+suffix" => Ok(Self::MultipartnumericSuffix),
+            "alphanumeric" => Ok(Self::Alphanumeric),
+            "decimal" => Ok(Self::Decimal),
+            "semver" => Ok(Self::Semver),
+            label => match label.parse::<i128>() {
+                int @ Ok(-256..=-1) => Ok(Self::PrivateUse(Label::Int(Integer(int.unwrap())))),
+                Ok(int) => Err(CoreError::InvalidValue(format!(
+                    "invalid version scheme {int}"
+                ))),
+                Err(_) => Ok(Self::PrivateUse(Label::Text(label.into()))),
+            },
+        }
+    }
+}
+
+impl TryFrom<String> for VersionScheme<'_> {
+    type Error = CoreError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "multipartnumeric" => Ok(Self::Multipartnumeric),
+            "multipartnumeric+suffix" => Ok(Self::MultipartnumericSuffix),
+            "alphanumeric" => Ok(Self::Alphanumeric),
+            "decimal" => Ok(Self::Decimal),
+            "semver" => Ok(Self::Semver),
+            label => match label.parse::<i128>() {
+                int @ Ok(-256..=-1) => Ok(Self::PrivateUse(Label::Int(Integer(int.unwrap())))),
+                Ok(int) => Err(CoreError::InvalidValue(format!(
+                    "invalid version scheme {int}"
+                ))),
+                Err(_) => Ok(Self::PrivateUse(Label::Text(label.to_owned().into()))),
+            },
+        }
+    }
+}
+
+impl Display for VersionScheme<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let tmp: String;
+
+        let name = match self {
+            Self::Multipartnumeric => "multipartnumeric",
+            Self::MultipartnumericSuffix => "multipartnumeric+suffix",
+            Self::Alphanumeric => "alphanumeric",
+            Self::Decimal => "decimal",
+            Self::Semver => "semver",
+            Self::PrivateUse(label) => match label {
+                Label::Int(int) => {
+                    tmp = int.to_string();
+                    &tmp
+                }
+                Label::Text(text) => text.as_ref(),
+            },
+        };
+
+        f.write_str(name)
+    }
+}
+
+impl Serialize for VersionScheme<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+
+        if is_human_readable {
+            self.to_string().serialize(serializer)
+        } else {
+            match i64::try_from(self) {
+                Ok(int) => int.serialize(serializer),
+                Err(_) => self.to_string().serialize(serializer),
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for VersionScheme<'_> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct VersionSchemeVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'a> Visitor<'_> for VersionSchemeVisitor<'a> {
+            type Value = VersionScheme<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("int or string VersionScheme identifier")
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                VersionScheme::try_from(v).map_err(de::Error::custom)
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v > i64::MAX as u64 {
+                    return Err(de::Error::invalid_value(de::Unexpected::Unsigned(v), &self));
+                }
+
+                self.visit_i64(v as i64)
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                VersionScheme::try_from(v.to_owned()).map_err(de::Error::custom)
+            }
+
+            fn visit_borrowed_str<E>(self, v: &'_ str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(v)
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                VersionScheme::try_from(v).map_err(de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_any(VersionSchemeVisitor {
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Hashing algorithms listed in the [IANA Named Information Hash Algorithm
@@ -4559,5 +4746,98 @@ mod tests {
                 "invalid value: invalid COSE elliptic curve Private Use value 42 (must be < -65536)",
             );
         }
+    }
+
+    #[test]
+    fn test_version_scheme_serde() {
+        let vs = VersionScheme::Multipartnumeric;
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&vs, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0x01, // 1 [multipartnumeric]
+        ];
+
+        assert_eq!(actual, expected);
+
+        let vs_de: VersionScheme = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(vs_de, vs);
+
+        let actual = serde_json::to_string(&vs).unwrap();
+
+        let expected = "\"multipartnumeric\"";
+
+        assert_eq!(actual, expected);
+
+        let vs_de: VersionScheme = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(vs_de, vs);
+
+        let vs = VersionScheme::PrivateUse(Label::Text("foo".into()));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&vs, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0x63, // tstr(3),
+              0x66, 0x6f, 0x6f, // "foo"
+        ];
+
+        assert_eq!(actual, expected);
+
+        let vs_de: VersionScheme = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(vs_de, vs);
+
+        let actual = serde_json::to_string(&vs).unwrap();
+
+        let expected = "\"foo\"";
+
+        assert_eq!(actual, expected);
+
+        let vs_de: VersionScheme = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(vs_de, vs);
+
+        let vs = VersionScheme::PrivateUse(Label::Int(Integer(-1)));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&vs, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0x20, // -1
+        ];
+
+        assert_eq!(actual, expected);
+
+        let vs_de: VersionScheme = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(vs_de, vs);
+
+        let actual = serde_json::to_string(&vs).unwrap();
+
+        let expected = "\"-1\"";
+
+        assert_eq!(actual, expected);
+
+        let vs_de: VersionScheme = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(vs_de, vs);
+
+        let vs_de: VersionScheme = serde_json::from_str("16384").unwrap();
+
+        assert_eq!(vs_de, VersionScheme::Semver);
+
+        let err = serde_json::from_str::<VersionScheme>("42")
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(
+            err,
+            "invalid value: invalid version scheme 42 at line 1 column 2"
+        );
     }
 }
