@@ -1740,7 +1740,7 @@ pub struct VersionMap<'a> {
 }
 
 /// Security version number types
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum SvnTypeChoice {
@@ -1771,6 +1771,100 @@ impl SvnTypeChoice {
         match self {
             Self::TaggedMinSvn(svn) => Some(svn.clone()),
             _ => None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SvnTypeChoice {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct SvnTypeChoiceJsonVisitor;
+
+        impl<'de> Visitor<'de> for SvnTypeChoiceJsonVisitor {
+            type Value = SvnTypeChoice;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("either a uint, a tagged SVN, or a tagged MinSVN")
+            }
+
+            fn visit_u64<E>(self, v: u64) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(SvnTypeChoice::Svn(v.into()))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut typ: Option<&str> = None;
+                let mut value: Option<Uint> = None;
+
+                loop {
+                    match map.next_key::<&str>()? {
+                        Some("type") => {
+                            typ = Some(map.next_value()?);
+                        }
+                        Some("value") => {
+                            value = Some(map.next_value()?);
+                        }
+                        Some(name) => {
+                            return Err(de::Error::unknown_field(name, &["type", "value"]))
+                        }
+                        None => break,
+                    }
+                }
+
+                if value.is_none() {
+                    return Err(de::Error::missing_field("value"));
+                }
+
+                match typ {
+                    Some("svn") => Ok(SvnTypeChoice::TaggedSvn(SvnType::from(value.unwrap()))),
+                    Some("min-svn") => Ok(SvnTypeChoice::TaggedMinSvn(MinSvnType::from(
+                        value.unwrap(),
+                    ))),
+                    Some(s) => Err(de::Error::custom(format!(
+                        "unexpected type {s} for SvnTypeChoice"
+                    ))),
+                    None => Err(de::Error::missing_field("type")),
+                }
+            }
+        }
+
+        let is_human_readable = deserializer.is_human_readable();
+
+        if is_human_readable {
+            deserializer.deserialize_any(SvnTypeChoiceJsonVisitor)
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Tag(tag, inner) => {
+                    let value: i128 = match inner.as_ref() {
+                        &ciborium::Value::Integer(int) => Ok(int),
+                        value => Err(de::Error::custom(format!(
+                            "unexpected value {value:?} for SvnTypeChoice"
+                        ))),
+                    }?
+                    .into();
+
+                    match tag {
+                        552 => Ok(SvnTypeChoice::TaggedSvn(SvnType::from(Integer(value)))),
+                        553 => Ok(SvnTypeChoice::TaggedMinSvn(MinSvnType::from(Integer(
+                            value,
+                        )))),
+                        n => Err(de::Error::custom(format!(
+                            "unexpected tag {n} for SvnTypeChoice"
+                        ))),
+                    }
+                }
+                ciborium::Value::Integer(int) => Ok(SvnTypeChoice::Svn(i128::from(int).into())),
+                value => Err(de::Error::custom(format!(
+                    "unexpected value {value:?} for SvnTypeChoice"
+                ))),
+            }
         }
     }
 }
@@ -3990,5 +4084,83 @@ mod test {
         let fm_de: FlagsMap = serde_json::from_str(expected).unwrap();
 
         assert_eq!(fm_de, fm);
+    }
+
+    #[test]
+    fn test_svn_type_choice_serde() {
+        let svn = SvnTypeChoice::Svn(1.into());
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&svn, &mut actual).unwrap();
+
+        let expected = vec![
+            0x01 // 1
+        ];
+
+        assert_eq!(actual, expected);
+
+        let svn_de: SvnTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(svn_de, svn);
+
+        let json = serde_json::to_string(&svn).unwrap();
+
+        assert_eq!(json, "1");
+
+        let svn_de: SvnTypeChoice = serde_json::from_str("1").unwrap();
+
+        assert_eq!(svn_de, svn);
+
+        let svn = SvnTypeChoice::TaggedSvn(SvnType::from(Integer(1)));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&svn, &mut actual).unwrap();
+
+        let expected = vec![
+            0xd9, 0x02, 0x28, // tag(552)
+              0x01 // 1
+        ];
+
+        assert_eq!(actual, expected);
+
+        let svn_de: SvnTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(svn_de, svn);
+
+        let json = serde_json::to_string(&svn).unwrap();
+
+        let expected = r#"{"type":"svn","value":1}"#;
+
+        assert_eq!(json, expected);
+
+        let svn_de: SvnTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(svn_de, svn);
+
+        let svn = SvnTypeChoice::TaggedMinSvn(MinSvnType::from(Integer(1)));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&svn, &mut actual).unwrap();
+
+        let expected = vec![
+            0xd9, 0x02, 0x29, // tag(553)
+              0x01 // 1
+        ];
+
+        assert_eq!(actual, expected);
+
+        let svn_de: SvnTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(svn_de, svn);
+
+        let json = serde_json::to_string(&svn).unwrap();
+
+        let expected = r#"{"type":"min-svn","value":1}"#;
+
+        assert_eq!(json, expected);
+
+        let svn_de: SvnTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(svn_de, svn);
     }
 }
