@@ -180,10 +180,67 @@ impl<'de> Deserialize<'de> for Bytes {
     where
         D: Deserializer<'de>,
     {
+        struct BytesVisitor;
+
+        impl<'de> Visitor<'de> for BytesVisitor {
+            type Value = Bytes;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or a byte array")
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                v.try_into().map_err(de::Error::custom)
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                v.try_into().map_err(de::Error::custom)
+            }
+
+            fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(v)
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Bytes {
+                    bytes: Vec::from(v),
+                })
+            }
+
+            fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_bytes(v)
+            }
+
+            fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Bytes { bytes: v })
+            }
+        }
+
         if deserializer.is_human_readable() {
-            Ok(String::deserialize(deserializer)?
-                .try_into()
-                .map_err(de::Error::custom)?)
+            // note(setrofim): when deserializing complex structures, serde may internally use a
+            // number of intermediate deserializers. These do not propagate the
+            // is_human_readable() of the original deserializer and always return true. This means
+            // that we must be prepared to handle bytes as well as strings, even when dealing with
+            // ostensibly human-readable formats.
+            deserializer.deserialize_any(BytesVisitor)
         } else {
             let bytes = Vec::<u8>::deserialize(deserializer)?;
             Ok(Bytes { bytes })
@@ -225,14 +282,18 @@ pub enum ExtensionValue<'a> {
     Null,
     /// Boolean values
     Bool(Bool),
+    // note(setrofim): the Bytes variant MUST come BEFORE Int, Text, and Uint. When deserializing,
+    // the variants of an enum are attempted in order until one succeeds. Cow (aliased by Text) and
+    // Integer (aliased by Int and Uint) both provide deserialization from bytes, so we want to
+    // make sure that Bytes is attempted first.
+    /// A bstr
+    Bytes(Bytes),
     /// A signed integer
     Int(Int),
     /// A UTF-8 string value
     Text(Text<'a>),
     /// An unsigned integer
     Uint(Uint),
-    /// A bstr
-    Bytes(Bytes),
     /// An array of extension values
     Array(Vec<ExtensionValue<'a>>),
     /// A map of extension key-value pairs
