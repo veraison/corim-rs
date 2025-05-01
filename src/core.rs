@@ -2100,10 +2100,7 @@ impl<'de> Deserialize<'de> for MaskedRawValue {
 #[repr(C)]
 /// Container for raw values with optional masking
 pub struct RawValueType {
-    #[serde(rename = "4")]
     pub raw_value: RawValueTypeChoice,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "5")]
     pub raw_value_mask: Option<RawValueMaskType>,
 }
 
