@@ -678,6 +678,16 @@ impl AsMut<[u8]> for ObjectIdentifier {
     }
 }
 
+impl Display for ObjectIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let obj = oid::ObjectIdentifier::try_from(self.0.as_ref());
+        match obj {
+            Ok(oid) => f.write_str(Into::<String>::into(oid).as_str()),
+            Err(_) => f.write_str("<INVALID OID>"),
+        }
+    }
+}
+
 impl Serialize for ObjectIdentifier {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
