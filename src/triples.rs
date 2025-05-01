@@ -1464,14 +1464,14 @@ pub struct MeasurementMap<'a> {
 }
 
 /// Types of measured element identifiers
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum MeasuredElementTypeChoice<'a> {
     /// Object Identifier (OID)
     Oid(OidType),
     /// UUID identifier
-    Uuid(UuidType),
+    Uuid(TaggedUuidType),
     /// Unsigned integer
     UInt(Uint),
     /// Text string
@@ -1506,7 +1506,7 @@ impl MeasuredElementTypeChoice<'_> {
 
     pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Uuid(uuid) => Some(uuid.as_ref()),
+            Self::Uuid(uuid) => Some(uuid.as_ref().as_ref()),
             _ => None,
         }
     }
@@ -1529,6 +1529,135 @@ impl MeasuredElementTypeChoice<'_> {
 impl<'a> From<&'a str> for MeasuredElementTypeChoice<'a> {
     fn from(value: &'a str) -> Self {
         Self::Tstr(value.into())
+    }
+}
+
+impl<'de> Deserialize<'de> for MeasuredElementTypeChoice<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct MeasuredElementTypeChoiceVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for MeasuredElementTypeChoiceVisitor<'a> {
+            type Value = MeasuredElementTypeChoice<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a unit, string, or map")
+            }
+
+            fn visit_u64<E>(self, v: u64) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(MeasuredElementTypeChoice::UInt(v.into()))
+            }
+
+            fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(MeasuredElementTypeChoice::Tstr(v.to_owned().into()))
+            }
+
+            fn visit_borrowed_str<E>(self, v: &'de str) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(v)
+            }
+
+            fn visit_string<E>(self, v: String) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(MeasuredElementTypeChoice::Tstr(v.into()))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut typ: Option<&str> = None;
+                let mut value: Option<String> = None;
+
+                loop {
+                    match map.next_key::<&str>()? {
+                        Some("type") => {
+                            typ = Some(map.next_value()?);
+                        }
+                        Some("value") => {
+                            value = Some(map.next_value()?);
+                        }
+                        Some(name) => {
+                            return Err(de::Error::unknown_field(name, &["type", "value"]))
+                        }
+                        None => break,
+                    }
+                }
+
+                if value.is_none() {
+                    return Err(de::Error::missing_field("value"));
+                }
+
+                match typ {
+                    Some("oid") => Ok(MeasuredElementTypeChoice::Oid(OidType::from(
+                        ObjectIdentifier::try_from(value.unwrap().as_str())
+                            .map_err(|_| de::Error::custom("invalid OID bytes"))?,
+                    ))),
+                    Some("uuid") => Ok(MeasuredElementTypeChoice::Uuid(TaggedUuidType::from(
+                        UuidType::try_from(value.unwrap())
+                            .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
+                    ))),
+                    Some(s) => Err(de::Error::custom(format!(
+                        "unexpected type {s} for SvnTypeChoice"
+                    ))),
+                    None => Err(de::Error::missing_field("type")),
+                }
+            }
+        }
+
+        let is_human_readable = deserializer.is_human_readable();
+
+        if is_human_readable {
+            deserializer.deserialize_any(MeasuredElementTypeChoiceVisitor {
+                marker: PhantomData,
+            })
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Tag(tag, inner) => {
+                    let value: Vec<u8> = match inner.deref() {
+                        ciborium::Value::Bytes(bytes) => Ok(bytes.clone()),
+                        value => Err(de::Error::custom(format!(
+                            "unexpected value {value:?} for MeasuredElementTypeChoice"
+                        ))),
+                    }?;
+
+                    match tag {
+                        37 => Ok(MeasuredElementTypeChoice::Uuid(TaggedUuidType::from(
+                            UuidType::try_from(value.as_slice())
+                                .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
+                        ))),
+                        111 => Ok(MeasuredElementTypeChoice::Oid(OidType::from(
+                            ObjectIdentifier::try_from(value)
+                                .map_err(|_| de::Error::custom("invalid OID bytes"))?,
+                        ))),
+                        n => Err(de::Error::custom(format!(
+                            "unexpected tag {n} for MeasuredElementTypeChoice"
+                        ))),
+                    }
+                }
+                ciborium::Value::Text(text) => Ok(MeasuredElementTypeChoice::Tstr(text.into())),
+                ciborium::Value::Integer(int) => {
+                    Ok(MeasuredElementTypeChoice::UInt(i128::from(int).into()))
+                }
+                value => Err(de::Error::custom(format!(
+                    "unexpected value {value:?} for MeasuredElementTypeChoice"
+                ))),
+            }
+        }
     }
 }
 
@@ -4680,5 +4809,129 @@ mod test {
         let mvm_de: MeasurementValuesMap = serde_json::from_str(expected).unwrap();
 
         assert_eq!(mvm_de, mvm);
+    }
+
+    #[test]
+    fn test_measured_element_type_choice_serde() {
+        let metc = MeasuredElementTypeChoice::UInt(Integer(1));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&metc, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0x01, // 1
+        ];
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice =
+            ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let actual = serde_json::to_string(&metc).unwrap();
+
+        let expected = "1";
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let metc = MeasuredElementTypeChoice::Tstr("foo".into());
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&metc, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0x63, // tstr(3)
+              0x66, 0x6f, 0x6f, // "foo"
+        ];
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice =
+            ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let actual = serde_json::to_string(&metc).unwrap();
+
+        let expected = "\"foo\"";
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let metc = MeasuredElementTypeChoice::Oid(OidType::from(
+            ObjectIdentifier::try_from([0x55, 0x04, 0x03].as_slice()).unwrap(),
+        ));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&metc, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xd8, 0x6f, // tag(111)
+              0x43, // bstr(3)
+                0x55, 0x04, 0x03,
+        ];
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice =
+            ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let actual = serde_json::to_string(&metc).unwrap();
+
+        let expected = r#"{"type":"oid","value":"2.5.4.3"}"#;
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let metc = MeasuredElementTypeChoice::Uuid(TaggedUuidType::from(
+            UuidType::try_from(
+                [
+                    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+                    0x0e, 0x0f, 0x10,
+                ]
+                .as_slice(),
+            )
+            .unwrap(),
+        ));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&metc, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xd8, 0x25, // tag(37)
+              0x50, // bstr(16)
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+        ];
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice =
+            ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let actual = serde_json::to_string(&metc).unwrap();
+
+        let expected = r#"{"type":"uuid","value":"01020304-0506-0708-090a-0b0c0d0e0f10"}"#;
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(metc_de, metc);
     }
 }
