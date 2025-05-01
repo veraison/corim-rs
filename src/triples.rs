@@ -1445,22 +1445,136 @@ impl<'de> Deserialize<'de> for GroupIdTypeChoice {
 }
 
 /// Map containing measurement values and metadata
-#[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct MeasurementMap<'a> {
     /// Optional measurement key identifier
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "0")]
     pub mkey: Option<MeasuredElementTypeChoice<'a>>,
     /// Measurement values
-    #[serde(rename = "1")]
     pub mval: MeasurementValuesMap<'a>,
     /// Optional list of authorizing keys
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "2")]
     pub authorized_by: Option<Vec<CryptoKeyTypeChoice<'a>>>,
+}
+
+impl Serialize for MeasurementMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            if let Some(mkey) = &self.mkey {
+                map.serialize_entry("mkey", mkey)?;
+            }
+
+            map.serialize_entry("mval", &self.mval)?;
+
+            if let Some(authorized_by) = &self.authorized_by {
+                map.serialize_entry("authorized-by", authorized_by)?;
+            }
+        } else {
+            if let Some(mkey) = &self.mkey {
+                map.serialize_entry(&0, mkey)?;
+            }
+
+            map.serialize_entry(&1, &self.mval)?;
+
+            if let Some(authorized_by) = &self.authorized_by {
+                map.serialize_entry(&2, authorized_by)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for MeasurementMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct MeasurementMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for MeasurementMapVisitor<'a> {
+            type Value = MeasurementMap<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing MeasurementMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut mkey: Option<MeasuredElementTypeChoice<'a>> = None;
+                let mut mval: Option<MeasurementValuesMap<'a>> = None;
+                let mut authorized_by: Option<Vec<CryptoKeyTypeChoice<'a>>> = None;
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("mkey") => {
+                                mkey = Some(map.next_value::<MeasuredElementTypeChoice>()?);
+                            }
+                            Some("mval") => {
+                                mval = Some(map.next_value::<MeasurementValuesMap>()?);
+                            }
+                            Some("authorized-by") => {
+                                authorized_by = Some(map.next_value::<Vec<CryptoKeyTypeChoice>>()?);
+                            }
+                            Some(name) => {
+                                return Err(de::Error::unknown_field(
+                                    name,
+                                    &["mkey", "mval", "authorized-by"],
+                                ))
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                mkey = Some(map.next_value::<MeasuredElementTypeChoice>()?);
+                            }
+                            Some(1) => {
+                                mval = Some(map.next_value::<MeasurementValuesMap>()?);
+                            }
+                            Some(2) => {
+                                authorized_by = Some(map.next_value::<Vec<CryptoKeyTypeChoice>>()?);
+                            }
+                            Some(n) => {
+                                return Err(de::Error::custom(format!(
+                                    "unexpected index {n} for MeasurementMap"
+                                )))
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if let Some(mval) = mval {
+                    Ok(MeasurementMap {
+                        mkey,
+                        mval,
+                        authorized_by,
+                    })
+                } else {
+                    Err(de::Error::missing_field("mval"))
+                }
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(MeasurementMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Types of measured element identifiers
@@ -4933,5 +5047,57 @@ mod test {
         let metc_de: MeasuredElementTypeChoice = serde_json::from_str(expected).unwrap();
 
         assert_eq!(metc_de, metc);
+    }
+
+    #[test]
+    fn test_measurement_map_serde() {
+        let mm = MeasurementMap {
+            mkey: Some(MeasuredElementTypeChoice::UInt(Integer(1))),
+            mval: MeasurementValuesMapBuilder::default()
+                .name("foo".into())
+                .build()
+                .unwrap(),
+            authorized_by: Some(vec![CryptoKeyTypeChoice::Bytes(
+                TaggedBytes::from(Bytes::from([0x01, 0x02, 0x03].as_slice()))
+            )]),
+        };
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&mm, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0 [mkey]
+              0x01, // value: 1
+              0x01, // key: 1 [mval]
+              0xbf, // value: map(indef)
+                0x0b, // key: 11 [name]
+                0x63, // value: tstr(3)
+                 0x66, 0x6f, 0x6f, // "foo"
+              0xff, // break
+              0x02, // key: 2 [authorized-by]
+              0x81, // value: array(1)
+                0xd9, 0x02, 0x30, // tag(560) [tagged-bytes]
+                  0x43, // bstr(3)
+                    0x01, 0x02, 0x03,
+            0xff, // break
+        ];
+
+        assert_eq!(actual, expected);
+
+        let mm_de: MeasurementMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(mm_de, mm);
+
+        let actual = serde_json::to_string(&mm).unwrap();
+
+        let expected =
+            r#"{"mkey":1,"mval":{"name":"foo"},"authorized-by":[{"type":"bytes","value":"AQID"}]}"#;
+
+        assert_eq!(actual, expected);
+
+        let mm_de: MeasurementMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(mm_de, mm);
     }
 }
