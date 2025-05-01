@@ -98,7 +98,10 @@ use std::{
 };
 
 use crate::{
-    core::{ExtensionValue, PkixBase64CertPathType, RawValueMaskType, RawValueTypeChoice},
+    core::{
+        ExtensionValue, PkixBase64CertPathType, RawValueMaskType, RawValueTypeChoice,
+        TaggedJsonValue,
+    },
     empty::Empty as _,
     Bytes, CertPathThumbprintType, CertThumbprintType, ConciseSwidTagId, CoseKeySetOrKey,
     CoseKeyType, Digest, ExtensionMap, Integer, MinSvnType, ObjectIdentifier, OidType,
@@ -671,14 +674,6 @@ impl ClassIdTypeChoice {
             _ => None,
         }
     }
-}
-
-#[derive(Deserialize)]
-struct TaggedJsonValue<'a> {
-    #[serde(rename = "type")]
-    typ: &'a str,
-    #[serde(borrow)]
-    value: &'a serde_json::value::RawValue,
 }
 
 impl<'de> Deserialize<'de> for ClassIdTypeChoice {

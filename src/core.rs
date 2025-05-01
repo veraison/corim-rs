@@ -2149,44 +2149,66 @@ impl<'de> Deserialize<'de> for RawValueTypeChoice {
     where
         D: Deserializer<'de>,
     {
-        struct TagVisitor;
-
-        impl<'de> Visitor<'de> for TagVisitor {
-            type Value = RawValueTypeChoice;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter
-                    .write_str("a RawValueTypeChoice variant distinguished by CBOR tag (560, 563)")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: de::SeqAccess<'de>,
-            {
-                let tag: u16 = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::custom("missing tag"))?;
-
-                match tag {
-                    560 => {
-                        let value: TaggedBytes = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::custom("missing tagged value"))?;
-                        Ok(RawValueTypeChoice::TaggedBytes(value))
-                    }
-                    563 => {
-                        let value: TaggedMaskedRawValue = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::custom("missing tagged value"))?;
-                        Ok(RawValueTypeChoice::TaggedMaskedRawValue(value))
-                    }
-                    _ => Err(de::Error::custom(format!("unsupported CBOR tag: {}", tag))),
+        if deserializer.is_human_readable() {
+            let tagged_value = TaggedJsonValue::deserialize(deserializer)?;
+            match tagged_value.typ {
+                "bytes" => {
+                    let bytes: Bytes = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(RawValueTypeChoice::TaggedBytes(TaggedBytes::from(bytes)))
                 }
+                "masked-raw-value" => {
+                    let mrv: MaskedRawValue = serde_json::from_str(tagged_value.value.get())
+                        .map_err(de::Error::custom)?;
+                    Ok(RawValueTypeChoice::TaggedMaskedRawValue(
+                        TaggedMaskedRawValue::from(mrv),
+                    ))
+                }
+                s => Err(de::Error::custom(format!(
+                    "unexpected RawValueTypeChoice type \"{s}\""
+                ))),
+            }
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Tag(tag, inner) => {
+                    // Re-serializing the inner Value so that we can deserialize it
+                    // into an appropriate type, once we figure out what that is
+                    // based on the tag.
+                    let mut buf: Vec<u8> = Vec::new();
+                    ciborium::into_writer(&inner, &mut buf).unwrap();
+
+                    match tag {
+                        560 => {
+                            let bytes: Bytes =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(RawValueTypeChoice::TaggedBytes(TaggedBytes::from(bytes)))
+                        }
+                        563 => {
+                            let mrv: MaskedRawValue =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(RawValueTypeChoice::TaggedMaskedRawValue(
+                                TaggedMaskedRawValue::from(mrv),
+                            ))
+                        }
+                        n => Err(de::Error::custom(format!(
+                            "unexpected RawValueTypeChoice tag {n}"
+                        ))),
+                    }
+                }
+                _ => Err(de::Error::custom(
+                    "did not see a tag for RawValueTypeChoice",
+                )),
             }
         }
-
-        deserializer.deserialize_any(TagVisitor)
     }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct TaggedJsonValue<'a> {
+    #[serde(rename = "type")]
+    pub typ: &'a str,
+    #[serde(borrow)]
+    pub value: &'a serde_json::value::RawValue,
 }
 
 /// Version scheme enumeration as defined in the specification
