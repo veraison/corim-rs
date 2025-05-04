@@ -32,5 +32,8 @@ derive_more = { version = "^2", features = [
 base64 = "0.22.1"
 oid = { version = "0.2.1", features = ["serde", "serde_support"] }
 uuid = "1.16.0"
-serde_json = {version = "1.0.140", features = ["raw_value"]}
+serde_json = {version = "1.0.140", features = [
+    "raw_value",
+    "arbitrary_precision",
+]}
 
