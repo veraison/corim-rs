@@ -468,7 +468,10 @@ impl TryFrom<serde_json::Value> for ExtensionValue<'_> {
                     ))
                 }
             }
-            serde_json::Value::String(s) => Ok(Self::Text(s.into())),
+            serde_json::Value::String(s) => match URL_SAFE_NO_PAD.decode(&s) {
+                Ok(bytes) => Ok(Self::Bytes(bytes.into())),
+                Err(_) => Ok(Self::Text(s.into())),
+            },
             serde_json::Value::Array(a) => Ok(Self::Array(
                 a.into_iter()
                     .map(Self::try_from)
