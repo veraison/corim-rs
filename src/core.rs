@@ -41,6 +41,7 @@ use std::{
     borrow::Cow,
     collections::BTreeMap,
     fmt::Display,
+    marker::PhantomData,
     ops::{Deref, DerefMut, Index, IndexMut},
 };
 
@@ -847,8 +848,7 @@ impl<'a> From<&'a str> for Label<'a> {
 
 /// Represents an unsigned label that can be either text or unsigned integer
 #[repr(C)]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, TryFrom)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From, TryFrom)]
 pub enum Ulabel<'a> {
     /// Text label
     Text(Text<'a>),
@@ -883,6 +883,124 @@ impl Ulabel<'_> {
             Ulabel::Uint(value) => Some(*value),
             _ => None,
         }
+    }
+}
+
+impl From<u64> for Ulabel<'_> {
+    fn from(value: u64) -> Self {
+        Uint::from(value).into()
+    }
+}
+
+impl<'a> From<&'a str> for Ulabel<'a> {
+    fn from(value: &'a str) -> Self {
+        Tstr::from(value).into()
+    }
+}
+
+impl Display for Ulabel<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Ulabel::Text(t) => {
+                write!(f, "\"{t}\"")
+            }
+            Ulabel::Uint(u) => {
+                write!(f, "{u}")
+            }
+        }
+    }
+}
+
+impl Serialize for Ulabel<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+
+        if is_human_readable {
+            // to_string() will ensure that Text variants a quoted when they are serialized. This
+            // is necessary because JSON mandates string keys and we need to distinguish between
+            // labels Text("1") and Uint(1). Since 1 will be serialized as "1" when used as key, we
+            // must serialize "1" as "\"1\"" to preserve the distinction.
+            self.to_string().serialize(serializer)
+        } else {
+            match self {
+                Ulabel::Text(s) => s.serialize(serializer),
+                Ulabel::Uint(u) => u.serialize(serializer),
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Ulabel<'_> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct UlabelVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for UlabelVisitor<'a> {
+            type Value = Ulabel<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or uint contianing the label")
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Ulabel::Uint(v.into()))
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if self.is_human_readable {
+                    if v.is_empty() {
+                        return Err(de::Error::custom("empty label"));
+                    }
+
+                    // In JSON, both Text and Uint label keys are serialized as strings (as all
+                    // JSON keys must be strings). Text keys are distinguished by that they start
+                    // (and end) with a ".
+                    if v.chars().nth(0).unwrap() == '"' {
+                        Ok(Ulabel::Text(v[1..v.len() - 1].to_string().into()))
+                    } else {
+                        Ok(Ulabel::Uint(
+                            v.parse::<u64>().map_err(de::Error::custom)?.into(),
+                        ))
+                    }
+                } else {
+                    Ok(Ulabel::Text(v.to_string().into()))
+                }
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(&v)
+            }
+
+            fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(v)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_any(UlabelVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
     }
 }
 

@@ -90,23 +90,23 @@
 //! - [`ConditionalSeriesRecord`]: For defining measurement changes
 
 use std::{
+    collections::{btree_map::Iter, BTreeMap},
     marker::PhantomData,
     net::{Ipv4Addr, Ipv6Addr},
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Index},
 };
 
 use crate::{
     core::PkixBase64CertPathType, empty_map_as_none, Bytes, CertPathThumbprintType,
     CertThumbprintType, ConciseSwidTagId, CoseKeySetOrKey, CoseKeyType, Digest, ExtensionMap,
-    Integer, MinSvnType, ObjectIdentifier, OidType, OneOrMore, PkixAsn1DerCertType,
-    PkixBase64CertType, PkixBase64KeyType, RawValueType, Result, SvnType, TaggedBytes,
-    TaggedUeidType, TaggedUuidType, Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint,
-    Ulabel, UuidType, VersionScheme,
+    Integer, MinSvnType, ObjectIdentifier, OidType, PkixAsn1DerCertType, PkixBase64CertType,
+    PkixBase64KeyType, RawValueType, Result, SvnType, TaggedBytes, TaggedUeidType, TaggedUuidType,
+    Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint, Ulabel, UuidType, VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
     de::{self, SeqAccess, Visitor},
-    ser::{SerializeMap, SerializeSeq},
+    ser::{self, SerializeMap, SerializeSeq},
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
@@ -282,10 +282,10 @@ impl<'de> Deserialize<'de> for EnvironmentMap<'_> {
         }
 
         let is_hr = deserializer.is_human_readable();
-        return deserializer.deserialize_map(EnvironmentMapVisitor {
+        deserializer.deserialize_map(EnvironmentMapVisitor {
             is_human_readable: is_hr,
             data: PhantomData {},
-        });
+        })
     }
 }
 
@@ -2037,11 +2037,132 @@ pub type Ipv4AddrType = [u8; 4];
 pub type Ipv6AddrType = [u8; 16];
 
 /// Collection of integrity register values
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
 #[repr(C)]
-pub struct IntegrityRegisters<'a>(pub OneOrMore<Ulabel<'a>>);
+pub struct IntegrityRegisters<'a>(pub BTreeMap<Ulabel<'a>, Vec<Digest>>);
+
+impl IntegrityRegisters<'_> {
+    /// Returns whether the IntegrityRegisters is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the number of measured objects in the IntegrityRegisters.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Iterate over (Ulabel, Vec<Digest>) tuples contained in the IntegrityRegisters.
+    pub fn iter(&self) -> Iter<'_, Ulabel, Vec<Digest>> {
+        self.0.iter()
+    }
+}
+
+impl<'a> IntegrityRegisters<'a> {
+    /// Returns whether the provided digest matches the measured object associated with the label.
+    pub fn check(&self, label: &'a Ulabel<'a>, digest: Digest) -> bool {
+        for (key, digests) in self.iter() {
+            if key == label {
+                if digests.contains(&digest) {
+                    return true;
+                }
+
+                break;
+            }
+        }
+
+        false
+    }
+
+    /// Adds a digest to the measured object identified by label.
+    pub fn add_digest(&mut self, label: Ulabel<'a>, digest: Digest) -> Result<()> {
+        match self.0.get_mut(&label) {
+            Some(v) => {
+                for existing_digest in v.iter() {
+                    if existing_digest.alg == digest.alg {
+                        return Err(crate::Error::Triples(TriplesError::DigestAlreadyExists(
+                            label.to_string(),
+                            digest.alg,
+                        )));
+                    }
+                }
+                v.push(digest)
+            }
+            None => {
+                self.0.insert(label, vec![digest]);
+            }
+        };
+
+        Ok(())
+    }
+
+    /// Adds a digest to the measured object identified by label, replacing the existing digest
+    /// with that algorithm, if one is already registered for label. If a digest was replaced, the
+    /// old value is returned
+    pub fn replace_digest(&mut self, label: Ulabel<'a>, digest: Digest) -> Option<Digest> {
+        let mut replaced: Option<Digest> = None;
+
+        match self.0.get_mut(&label) {
+            Some(v) => {
+                for (i, existing_digest) in v.iter().enumerate() {
+                    if existing_digest.alg == digest.alg {
+                        replaced = Some(std::mem::replace(&mut v[i], digest.clone()));
+                        break;
+                    }
+                }
+
+                if replaced.is_none() {
+                    v.push(digest)
+                }
+            }
+            None => {
+                self.0.insert(label, vec![digest]);
+            }
+        };
+
+        replaced
+    }
+}
+
+impl<'a> Index<&Ulabel<'a>> for IntegrityRegisters<'a> {
+    type Output = Vec<Digest>;
+
+    fn index(&self, index: &Ulabel<'a>) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl Serialize for IntegrityRegisters<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.is_empty() {
+            return Err(ser::Error::custom(
+                "IntegrityRegisters must contain at least one entry",
+            ));
+        }
+
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for IntegrityRegisters<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let regs = IntegrityRegisters(BTreeMap::deserialize(deserializer)?);
+
+        if regs.is_empty() {
+            Err(de::Error::custom(
+                "IntegrityRegisters must contain at least one entry",
+            ))
+        } else {
+            Ok(regs)
+        }
+    }
+}
 
 /// Record containing an endorsement for a specific environmental condition
 #[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -3167,5 +3288,139 @@ mod test {
         let env_map_de: EnvironmentMap = serde_json::from_str(expected).unwrap();
 
         assert_eq!(env_map_de, env_map);
+    }
+
+    mod integ_regs {
+        use super::super::*;
+        use crate::core::*;
+
+        #[test]
+        fn test_add_replace_check() {
+            let mut regs = IntegrityRegisters::default();
+
+            assert!(regs.is_empty());
+            assert_eq!(regs.len(), 0);
+
+            regs.add_digest(
+                1.into(),
+                Digest::new(HashAlgorithm::Sha256, [1, 2, 3].as_ref().into()),
+            )
+            .unwrap();
+
+            regs.add_digest(
+                "1".into(), // "1" is different from 1
+                Digest::new(HashAlgorithm::Sha256, [4, 5, 6].as_ref().into()),
+            )
+            .unwrap();
+
+            let err = regs
+                .add_digest(
+                    1.into(),
+                    Digest::new(HashAlgorithm::Sha256, [7, 8, 9].as_ref().into()),
+                )
+                .err()
+                .unwrap()
+                .to_string();
+
+            assert_eq!(err, "sha-256 digest for label 1 already exists");
+
+            regs.add_digest(
+                1.into(), // OK because alg is different
+                Digest::new(HashAlgorithm::Sha384, [7, 8, 9].as_ref().into()),
+            )
+            .unwrap();
+
+            let old = regs
+                .replace_digest(
+                    1.into(),
+                    Digest::new(HashAlgorithm::Sha256, [10, 11, 12].as_ref().into()),
+                )
+                .unwrap();
+
+            assert_eq!(
+                old,
+                Digest::new(HashAlgorithm::Sha256, [1, 2, 3].as_ref().into())
+            );
+
+            assert_eq!(regs.len(), 2);
+
+            assert!(regs.check(
+                &1.into(),
+                Digest::new(HashAlgorithm::Sha256, [10, 11, 12].as_ref().into()),
+            ));
+
+            assert!(!regs.check(
+                &1.into(),
+                Digest::new(HashAlgorithm::Sha256, [1, 2, 3].as_ref().into()),
+            ));
+
+            assert!(!regs.check(
+                &2.into(),
+                Digest::new(HashAlgorithm::Sha256, [10, 11, 12].as_ref().into()),
+            ));
+        }
+
+        #[test]
+        fn test_serde() {
+            let mut regs = IntegrityRegisters::default();
+
+            assert!(regs.is_empty());
+            assert_eq!(regs.len(), 0);
+
+            regs.add_digest(
+                1.into(),
+                Digest::new(HashAlgorithm::Sha256, [1, 2, 3].as_ref().into()),
+            )
+            .unwrap();
+
+            regs.add_digest(
+                "foo".into(),
+                Digest::new(HashAlgorithm::Sha256, [4, 5, 6].as_ref().into()),
+            )
+            .unwrap();
+
+            let mut buffer: Vec<u8> = vec![];
+            ciborium::into_writer(&regs, &mut buffer).unwrap();
+
+            let expected: Vec<u8> = vec![
+                0xa2, // map(2)
+                  0x63, // key: tstr(3)
+                    0x66, 0x6f, 0x6f, // "foo"
+                  0x81, // value: array(1)
+                    0x82, // array(2)
+                      0x01, // 1 [sha-256]
+                      0x43, // bstr(3)
+                        0x04, 0x05, 0x06,
+                  0x01, // key: 1
+                  0x81, // value: array(1)
+                    0x82, // array(2)
+                      0x01, // 1 [sha-256]
+                      0x43, // bstr(3)
+                        0x01, 0x02, 0x03
+            ];
+
+            assert_eq!(buffer, expected);
+
+            let regs_de: IntegrityRegisters = ciborium::from_reader(expected.as_slice()).unwrap();
+
+            assert_eq!(regs_de, regs);
+
+            regs.add_digest(
+                "1".into(),
+                Digest::new(HashAlgorithm::Sha256, [1, 2, 3].as_ref().into()),
+            )
+            .unwrap();
+
+            let expected =
+                r#"{"\"1\"":["sha-256;AQID"],"\"foo\"":["sha-256;BAUG"],"1":["sha-256;AQID"]}"#;
+
+            let json = serde_json::to_string(&regs).unwrap();
+
+            assert_eq!(json, expected);
+
+            let regs_de: IntegrityRegisters = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(regs_de, regs);
+        }
     }
 }
