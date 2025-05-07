@@ -2073,7 +2073,7 @@ impl Default for CoseKeyBuilder {
 }
 
 /// Represents a COSE key structure as defined in RFC 8152
-#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Default, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct CoseKey {
     /// Key type identifier (kty)
@@ -2103,6 +2103,10 @@ impl Serialize for CoseKey {
     where
         S: Serializer,
     {
+        if self.kty == CoseKty::Invalid {
+            return Err(S::Error::custom("invalid kty"))
+        }
+
         let is_human_readable = serializer.is_human_readable();
         let mut map = serializer.serialize_map(None)?;
 
@@ -3619,10 +3623,11 @@ impl<'de> Deserialize<'de> for CoseAlgorithm {
 /// let okp = CoseKty::Okp;  // Octet Key Pair
 /// let ec2 = CoseKty::Ec2;  // Elliptic Curve w/ x/y coordinates
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
 #[repr(i8)]
 pub enum CoseKty {
     // key type is invalid/has not been set
+    #[default]
     Invalid,
     /// Octet Key Pair
     Okp = 1,
