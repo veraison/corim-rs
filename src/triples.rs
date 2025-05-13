@@ -338,7 +338,7 @@ impl<'a> EnvironmentMapBuilder<'a> {
 #[repr(C)]
 pub struct ClassMap<'a> {
     /// Optional class identifier
-    pub class_id: Option<ClassIdTypeChoice>,
+    pub class_id: Option<ClassIdTypeChoice<'a>>,
     /// Optional vendor name
     pub vendor: Option<Tstr<'a>>,
     /// Optional model identifier
@@ -484,7 +484,7 @@ impl<'de> Deserialize<'de> for ClassMap<'_> {
 #[derive(Default)]
 pub struct ClassMapBuilder<'a> {
     /// Optional class identifier
-    pub class_id: Option<ClassIdTypeChoice>,
+    pub class_id: Option<ClassIdTypeChoice<'a>>,
     /// Optional vendor name
     pub vendor: Option<Tstr<'a>>,
     /// Optional model identifier
@@ -496,7 +496,7 @@ pub struct ClassMapBuilder<'a> {
 }
 
 impl<'a> ClassMapBuilder<'a> {
-    pub fn class_id(mut self, value: ClassIdTypeChoice) -> Self {
+    pub fn class_id(mut self, value: ClassIdTypeChoice<'a>) -> Self {
         self.class_id = Some(value);
         self
     }
@@ -544,16 +544,18 @@ impl<'a> ClassMapBuilder<'a> {
 #[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
-pub enum ClassIdTypeChoice {
+pub enum ClassIdTypeChoice<'a> {
     /// Object Identifier (OID)
     Oid(OidType),
     /// UUID identifier
     Uuid(TaggedUuidType),
     /// Raw bytes
     Bytes(TaggedBytes),
+    /// Extensions
+    Extension(ExtensionValue<'a>)
 }
 
-impl ClassIdTypeChoice {
+impl ClassIdTypeChoice<'_> {
     /// Returns a byte slice reference to the underlying data regardless of variant type
     ///
     /// This method provides uniform access to the internal bytes of a ClassIdTypeChoice,
@@ -570,14 +572,15 @@ impl ClassIdTypeChoice {
     /// use corim_rs::Bytes;
     ///
     /// let id = ClassIdTypeChoice::Bytes(Bytes::from(vec![1, 2, 3, 4]));
-    /// let bytes = id.as_bytes();
+    /// let bytes = id.as_bytes().unwrap();
     /// assert_eq!(bytes, &[1, 2, 3, 4]);
     /// ```
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Oid(oid_type) => oid_type.as_ref(),
-            Self::Uuid(uuid_type) => uuid_type.as_ref().as_ref(),
-            Self::Bytes(bytes) => bytes.as_ref(),
+            Self::Oid(oid_type) => Some(oid_type.as_ref()),
+            Self::Uuid(uuid_type) => Some(uuid_type.as_ref().as_ref()),
+            Self::Bytes(bytes) => Some(bytes.as_ref()),
+            Self::Extension(ext) => ext.as_bytes(),
         }
     }
 
@@ -607,7 +610,7 @@ impl ClassIdTypeChoice {
     /// ```
     pub fn as_oid_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Oid(_) => Some(Self::as_bytes(self)),
+            Self::Oid(_) => Self::as_bytes(self),
             _ => None,
         }
     }
@@ -639,7 +642,7 @@ impl ClassIdTypeChoice {
     /// ```
     pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Uuid(_) => Some(Self::as_bytes(self)),
+            Self::Uuid(_) => Self::as_bytes(self),
             _ => None,
         }
     }
@@ -670,39 +673,84 @@ impl ClassIdTypeChoice {
     /// ```
     pub fn as_raw_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Bytes(_) => Some(Self::as_bytes(self)),
+            Self::Bytes(_) => Self::as_bytes(self),
             _ => None,
         }
     }
 }
 
-impl<'de> Deserialize<'de> for ClassIdTypeChoice {
+impl<'de> Deserialize<'de> for ClassIdTypeChoice<'_> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         if deserializer.is_human_readable() {
-            let tagged_value = TaggedJsonValue::deserialize(deserializer)?;
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::Object(map) => {
+                    if map.contains_key("type") && map.contains_key("value") && map.len() == 2 {
+                        let value = match &map["value"] {
+                            serde_json::Value::String(s) => Ok(s),
+                            v => Err(de::Error::custom(format!(
+                                "value must be a string, got {v:?}"
+                            ))),
+                        }?;
 
-            match tagged_value.typ {
-                "oid" => {
-                    let oid: ObjectIdentifier = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(ClassIdTypeChoice::Oid(OidType::from(oid)))
+                        match &map["type"] {
+                            serde_json::Value::String(typ) => match typ.as_str() {
+                                "oid" => Ok(ClassIdTypeChoice::Oid(OidType::from(
+                                    ObjectIdentifier::try_from(value.as_str())
+                                        .map_err(|_| de::Error::custom("invalid OID bytes"))?,
+                                ))),
+                                "uuid" => {
+                                    Ok(ClassIdTypeChoice::Uuid(TaggedUuidType::from(
+                                        UuidType::try_from(value.as_str())
+                                            .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
+                                    )))
+                                }
+                                "bytes" => {
+                                    Ok(ClassIdTypeChoice::Bytes(TaggedBytes::from(
+                                        Bytes::try_from(value.as_str())
+                                            .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
+                                    )))
+                                }
+                                s => Err(de::Error::custom(format!(
+                                    "unexpected type {s} for ClassIdTypeChoice"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!(
+                                "type must be as string, got {v:?}"
+                            ))),
+                        }
+                    } else if map.contains_key("tag") && map.contains_key("value") && map.len() == 2 {
+                        match &map["tag"] {
+                            serde_json::Value::Number(n) => match n.as_u64() {
+                                Some(u) => {
+                                    Ok(ClassIdTypeChoice::Extension(ExtensionValue::Tag(
+                                        u,
+                                        Box::new(
+                                            ExtensionValue::try_from(map["value"].clone())
+                                                .map_err(de::Error::custom)?,
+                                        ),
+                                    )))
+                                }
+                                None => Err(de::Error::custom(format!(
+                                    "a number must be an unsinged integer, got {n:?}"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!("invalid tag {v:?}"))),
+                        }
+                    } else {
+                        Ok(ClassIdTypeChoice::Extension(
+                            ExtensionValue::try_from(serde_json::Value::Object(map))
+                                .map_err(de::Error::custom)?,
+                        ))
+                    }
                 }
-                "uuid" => {
-                    let uuid: UuidType = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(ClassIdTypeChoice::Uuid(TaggedUuidType::from(uuid)))
+                value => {
+                    Ok(ClassIdTypeChoice::Extension(
+                        ExtensionValue::try_from(value).map_err(de::Error::custom)?
+                    ))
                 }
-                "bytes" => {
-                    let bytes: Bytes = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(ClassIdTypeChoice::Bytes(TaggedBytes::from(bytes)))
-                }
-                s => Err(de::Error::custom(format!(
-                    "unexpected ClassIdTypeChoice type \"{s}\""
-                ))),
             }
         } else {
             match ciborium::Value::deserialize(deserializer)? {
@@ -729,12 +777,18 @@ impl<'de> Deserialize<'de> for ClassIdTypeChoice {
                                 ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
                             Ok(ClassIdTypeChoice::Bytes(TaggedBytes::from(bytes)))
                         }
-                        n => Err(de::Error::custom(format!(
-                            "unexpected ClassIdTypeChoice tag {n}"
+                        n => Ok(ClassIdTypeChoice::Extension(ExtensionValue::Tag(
+                            n,
+                            Box::new(
+                                ExtensionValue::try_from(inner.deref().to_owned())
+                                    .map_err(de::Error::custom)?,
+                            ),
                         ))),
                     }
                 }
-                _ => Err(de::Error::custom("did not see a tag")),
+                value => Ok(ClassIdTypeChoice::Extension(
+                    ExtensionValue::try_from(value).map_err(de::Error::custom)?,
+                )),
             }
         }
     }
@@ -1590,6 +1644,8 @@ pub enum MeasuredElementTypeChoice<'a> {
     UInt(Uint),
     /// Text string
     Tstr(Tstr<'a>),
+    /// Extension
+    Extension(ExtensionValue<'a>),
 }
 
 impl MeasuredElementTypeChoice<'_> {
@@ -1599,6 +1655,7 @@ impl MeasuredElementTypeChoice<'_> {
             Self::Uuid(uuid) => uuid.is_empty(),
             Self::UInt(_) => false,
             Self::Tstr(tstr) => tstr.is_empty(),
+            Self::Extension(ext) => ext.is_empty(),
         }
     }
 
@@ -1608,6 +1665,7 @@ impl MeasuredElementTypeChoice<'_> {
             Self::Uuid(uuid) => uuid.len(),
             Self::UInt(_) => 4,
             Self::Tstr(tstr) => tstr.len(),
+            Self::Extension(ext) => ext.len(),
         }
     }
 
@@ -1628,6 +1686,7 @@ impl MeasuredElementTypeChoice<'_> {
     pub fn as_uint(&self) -> Option<Integer> {
         match self {
             Self::UInt(uint) => Some(*uint),
+            Self::Extension(ext) => ext.as_uint(),
             _ => None,
         }
     }
@@ -1635,6 +1694,7 @@ impl MeasuredElementTypeChoice<'_> {
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::Tstr(tstr) => Some(tstr),
+            Self::Extension(ext) => ext.as_str(),
             _ => None,
         }
     }
@@ -1651,125 +1711,126 @@ impl<'de> Deserialize<'de> for MeasuredElementTypeChoice<'_> {
     where
         D: Deserializer<'de>,
     {
-        struct MeasuredElementTypeChoiceVisitor<'a> {
-            marker: PhantomData<&'a str>,
-        }
-
-        impl<'de, 'a> Visitor<'de> for MeasuredElementTypeChoiceVisitor<'a> {
-            type Value = MeasuredElementTypeChoice<'a>;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a unit, string, or map")
-            }
-
-            fn visit_u64<E>(self, v: u64) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(MeasuredElementTypeChoice::UInt(v.into()))
-            }
-
-            fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(MeasuredElementTypeChoice::Tstr(v.to_owned().into()))
-            }
-
-            fn visit_borrowed_str<E>(self, v: &'de str) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                self.visit_str(v)
-            }
-
-            fn visit_string<E>(self, v: String) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(MeasuredElementTypeChoice::Tstr(v.into()))
-            }
-
-            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
-            where
-                A: de::MapAccess<'de>,
-            {
-                let mut typ: Option<&str> = None;
-                let mut value: Option<String> = None;
-
-                loop {
-                    match map.next_key::<&str>()? {
-                        Some("type") => {
-                            typ = Some(map.next_value()?);
-                        }
-                        Some("value") => {
-                            value = Some(map.next_value()?);
-                        }
-                        Some(name) => {
-                            return Err(de::Error::unknown_field(name, &["type", "value"]))
-                        }
-                        None => break,
-                    }
-                }
-
-                if value.is_none() {
-                    return Err(de::Error::missing_field("value"));
-                }
-
-                match typ {
-                    Some("oid") => Ok(MeasuredElementTypeChoice::Oid(OidType::from(
-                        ObjectIdentifier::try_from(value.unwrap().as_str())
-                            .map_err(|_| de::Error::custom("invalid OID bytes"))?,
-                    ))),
-                    Some("uuid") => Ok(MeasuredElementTypeChoice::Uuid(TaggedUuidType::from(
-                        UuidType::try_from(value.unwrap())
-                            .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
-                    ))),
-                    Some(s) => Err(de::Error::custom(format!(
-                        "unexpected type {s} for SvnTypeChoice"
-                    ))),
-                    None => Err(de::Error::missing_field("type")),
-                }
-            }
-        }
-
         let is_human_readable = deserializer.is_human_readable();
 
         if is_human_readable {
-            deserializer.deserialize_any(MeasuredElementTypeChoiceVisitor {
-                marker: PhantomData,
-            })
-        } else {
-            match ciborium::Value::deserialize(deserializer)? {
-                ciborium::Value::Tag(tag, inner) => {
-                    let value: Vec<u8> = match inner.deref() {
-                        ciborium::Value::Bytes(bytes) => Ok(bytes.clone()),
-                        value => Err(de::Error::custom(format!(
-                            "unexpected value {value:?} for MeasuredElementTypeChoice"
-                        ))),
-                    }?;
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::Object(map) => {
+                    if map.contains_key("type") && map.contains_key("value") && map.len() == 2 {
+                        let value = match &map["value"] {
+                            serde_json::Value::String(s) => Ok(s),
+                            v => Err(de::Error::custom(format!(
+                                "value must be a string, got {v:?}"
+                            ))),
+                        }?;
 
-                    match tag {
-                        37 => Ok(MeasuredElementTypeChoice::Uuid(TaggedUuidType::from(
-                            UuidType::try_from(value.as_slice())
-                                .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
-                        ))),
-                        111 => Ok(MeasuredElementTypeChoice::Oid(OidType::from(
-                            ObjectIdentifier::try_from(value)
-                                .map_err(|_| de::Error::custom("invalid OID bytes"))?,
-                        ))),
-                        n => Err(de::Error::custom(format!(
-                            "unexpected tag {n} for MeasuredElementTypeChoice"
-                        ))),
+                        match &map["type"] {
+                            serde_json::Value::String(typ) => match typ.as_str() {
+                                "oid" => Ok(MeasuredElementTypeChoice::Oid(OidType::from(
+                                    ObjectIdentifier::try_from(value.as_str())
+                                        .map_err(|_| de::Error::custom("invalid OID bytes"))?,
+                                ))),
+                                "uuid" => {
+                                    Ok(MeasuredElementTypeChoice::Uuid(TaggedUuidType::from(
+                                        UuidType::try_from(value.as_str())
+                                            .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
+                                    )))
+                                }
+                                s => Err(de::Error::custom(format!(
+                                    "unexpected type {s} for MeasuredElementTypeChoice"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!(
+                                "type must be as string, got {v:?}"
+                            ))),
+                        }
+                    } else if map.contains_key("tag") && map.contains_key("value") && map.len() == 2
+                    {
+                        match &map["tag"] {
+                            serde_json::Value::Number(n) => match n.as_u64() {
+                                Some(u) => {
+                                    Ok(MeasuredElementTypeChoice::Extension(ExtensionValue::Tag(
+                                        u,
+                                        Box::new(
+                                            ExtensionValue::try_from(map["value"].clone())
+                                                .map_err(de::Error::custom)?,
+                                        ),
+                                    )))
+                                }
+                                None => Err(de::Error::custom(format!(
+                                    "a number must be an unsinged integer, got {n:?}"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!("invalid tag {v:?}"))),
+                        }
+                    } else {
+                        Ok(MeasuredElementTypeChoice::Extension(
+                            ExtensionValue::try_from(serde_json::Value::Object(map))
+                                .map_err(de::Error::custom)?,
+                        ))
                     }
                 }
+                serde_json::Value::String(s) => Ok(MeasuredElementTypeChoice::Tstr(s.into())),
+                serde_json::Value::Number(n) => match n.as_u64() {
+                    Some(u) => Ok(MeasuredElementTypeChoice::UInt(u.into())),
+                    None => Err(de::Error::custom(format!(
+                        "a number must be an unsinged integer, got {n:?}"
+                    ))),
+                },
+                array @ serde_json::Value::Array(_) => Ok(MeasuredElementTypeChoice::Extension(
+                    ExtensionValue::try_from(array).map_err(de::Error::custom)?,
+                )),
+                serde_json::Value::Bool(b) => Ok(MeasuredElementTypeChoice::Extension(
+                    ExtensionValue::Bool(b),
+                )),
+                serde_json::Value::Null => {
+                    Ok(MeasuredElementTypeChoice::Extension(ExtensionValue::Null))
+                }
+            }
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Tag(tag, inner) => match tag {
+                    37 => {
+                        let value: Vec<u8> = match inner.deref() {
+                            ciborium::Value::Bytes(bytes) => Ok(bytes.clone()),
+                            value => Err(de::Error::custom(format!(
+                                "unexpected value {value:?} for MeasuredElementTypeChoice"
+                            ))),
+                        }?;
+
+                        Ok(MeasuredElementTypeChoice::Uuid(TaggedUuidType::from(
+                            UuidType::try_from(value.as_slice())
+                                .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
+                        )))
+                    }
+                    111 => {
+                        let value: Vec<u8> = match inner.deref() {
+                            ciborium::Value::Bytes(bytes) => Ok(bytes.clone()),
+                            value => Err(de::Error::custom(format!(
+                                "unexpected value {value:?} for MeasuredElementTypeChoice"
+                            ))),
+                        }?;
+
+                        Ok(MeasuredElementTypeChoice::Oid(OidType::from(
+                            ObjectIdentifier::try_from(value)
+                                .map_err(|_| de::Error::custom("invalid OID bytes"))?,
+                        )))
+                    }
+                    n => Ok(MeasuredElementTypeChoice::Extension(ExtensionValue::Tag(
+                        n,
+                        Box::new(
+                            ExtensionValue::try_from(inner.deref().to_owned())
+                                .map_err(de::Error::custom)?,
+                        ),
+                    ))),
+                },
                 ciborium::Value::Text(text) => Ok(MeasuredElementTypeChoice::Tstr(text.into())),
                 ciborium::Value::Integer(int) => {
                     Ok(MeasuredElementTypeChoice::UInt(i128::from(int).into()))
                 }
-                value => Err(de::Error::custom(format!(
-                    "unexpected value {value:?} for MeasuredElementTypeChoice"
-                ))),
+                value => Ok(MeasuredElementTypeChoice::Extension(
+                    ExtensionValue::try_from(value).map_err(de::Error::custom)?,
+                )),
             }
         }
     }
@@ -4024,8 +4085,23 @@ mod test {
 
         assert_eq!(
             err.to_string(),
-            "unexpected ClassIdTypeChoice type \"foo\"".to_string()
+            "unexpected type foo for ClassIdTypeChoice".to_string()
         );
+
+        let class_id_ext = ClassIdTypeChoice::Extension(ExtensionValue::Tag(
+                600,
+                Box::new(ExtensionValue::Bytes([0x01, 0x02, 0x03].as_slice().into())),
+        ));
+
+        let actual = serde_json::to_string(&class_id_ext).unwrap();
+
+        let expected = r#"{"tag":600,"value":"AQID"}"#;
+
+        assert_eq!(actual, expected);
+
+        let class_id_ext_de: ClassIdTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(class_id_ext_de, class_id_ext);
     }
 
     #[test]
@@ -4049,6 +4125,26 @@ mod test {
             ciborium::from_reader(expected.as_slice()).unwrap();
 
         assert_eq!(class_id_oid_de, class_id_oid);
+
+        let class_id_ext = ClassIdTypeChoice::Extension(ExtensionValue::Tag(
+                600,
+                Box::new(ExtensionValue::Bytes([0x01, 0x02, 0x03].as_slice().into())),
+        ));
+
+        let mut actual: Vec<u8> = Vec::new();
+        ciborium::into_writer(&class_id_ext, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xd9, 0x02, 0x58, // tag(600)
+              0x43, // bstr(3)
+                0x01, 0x02, 0x03,
+        ];
+
+        assert_eq!(actual, expected);
+
+        let class_id_ext_de: ClassIdTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(class_id_ext_de, class_id_ext);
     }
 
     #[test]
@@ -5041,6 +5137,38 @@ mod test {
         let actual = serde_json::to_string(&metc).unwrap();
 
         let expected = r#"{"type":"uuid","value":"01020304-0506-0708-090a-0b0c0d0e0f10"}"#;
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let metc = MeasuredElementTypeChoice::Extension(ExtensionValue::Tag(
+            1337,
+            Box::new(ExtensionValue::Text("test value".into())),
+        ));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&metc, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xd9, 0x05, 0x39, // tag(1337)
+              0x6a, // tstr(10)
+                0x74, 0x65, 0x73, 0x74, 0x20, 0x76, 0x61, 0x6c, // "test val"
+                0x75, 0x65,                                     // "ue"
+        ];
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice =
+            ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let actual = serde_json::to_string(&metc).unwrap();
+
+        let expected = r#"{"tag":1337,"value":"test value"}"#;
 
         assert_eq!(actual, expected);
 
