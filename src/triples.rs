@@ -98,11 +98,16 @@ use std::{
 };
 
 use crate::{
-    core::PkixBase64CertPathType, empty_map_as_none, Bytes, CertPathThumbprintType,
-    CertThumbprintType, ConciseSwidTagId, CoseKeySetOrKey, CoseKeyType, Digest, ExtensionMap,
-    Integer, MinSvnType, ObjectIdentifier, OidType, PkixAsn1DerCertType, PkixBase64CertType,
-    PkixBase64KeyType, RawValueType, Result, SvnType, TaggedBytes, TaggedUeidType, TaggedUuidType,
-    Text, ThumbprintType, TriplesError, Tstr, UeidType, Uint, Ulabel, UuidType, VersionScheme,
+    core::{
+        ExtensionValue, PkixBase64CertPathType, RawValueMaskType, RawValueTypeChoice,
+        TaggedJsonValue,
+    },
+    empty::Empty as _,
+    Bytes, CertPathThumbprintType, CertThumbprintType, ConciseSwidTagId, CoseKeySetOrKey,
+    CoseKeyType, Digest, ExtensionMap, Integer, MinSvnType, ObjectIdentifier, OidType,
+    PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, Result, SvnType,
+    TaggedBytes, TaggedUeidType, TaggedUuidType, Text, ThumbprintType, TriplesError, Tstr,
+    UeidType, Uint, Ulabel, UuidType, VersionScheme,
 };
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
@@ -669,14 +674,6 @@ impl ClassIdTypeChoice {
             _ => None,
         }
     }
-}
-
-#[derive(Deserialize)]
-struct TaggedJsonValue<'a> {
-    #[serde(rename = "type")]
-    typ: &'a str,
-    #[serde(borrow)]
-    value: &'a serde_json::value::RawValue,
 }
 
 impl<'de> Deserialize<'de> for ClassIdTypeChoice {
@@ -1448,33 +1445,147 @@ impl<'de> Deserialize<'de> for GroupIdTypeChoice {
 }
 
 /// Map containing measurement values and metadata
-#[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct MeasurementMap<'a> {
     /// Optional measurement key identifier
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "0")]
     pub mkey: Option<MeasuredElementTypeChoice<'a>>,
     /// Measurement values
-    #[serde(rename = "1")]
     pub mval: MeasurementValuesMap<'a>,
     /// Optional list of authorizing keys
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "2")]
     pub authorized_by: Option<Vec<CryptoKeyTypeChoice<'a>>>,
 }
 
+impl Serialize for MeasurementMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            if let Some(mkey) = &self.mkey {
+                map.serialize_entry("mkey", mkey)?;
+            }
+
+            map.serialize_entry("mval", &self.mval)?;
+
+            if let Some(authorized_by) = &self.authorized_by {
+                map.serialize_entry("authorized-by", authorized_by)?;
+            }
+        } else {
+            if let Some(mkey) = &self.mkey {
+                map.serialize_entry(&0, mkey)?;
+            }
+
+            map.serialize_entry(&1, &self.mval)?;
+
+            if let Some(authorized_by) = &self.authorized_by {
+                map.serialize_entry(&2, authorized_by)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for MeasurementMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct MeasurementMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for MeasurementMapVisitor<'a> {
+            type Value = MeasurementMap<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing MeasurementMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut mkey: Option<MeasuredElementTypeChoice<'a>> = None;
+                let mut mval: Option<MeasurementValuesMap<'a>> = None;
+                let mut authorized_by: Option<Vec<CryptoKeyTypeChoice<'a>>> = None;
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("mkey") => {
+                                mkey = Some(map.next_value::<MeasuredElementTypeChoice>()?);
+                            }
+                            Some("mval") => {
+                                mval = Some(map.next_value::<MeasurementValuesMap>()?);
+                            }
+                            Some("authorized-by") => {
+                                authorized_by = Some(map.next_value::<Vec<CryptoKeyTypeChoice>>()?);
+                            }
+                            Some(name) => {
+                                return Err(de::Error::unknown_field(
+                                    name,
+                                    &["mkey", "mval", "authorized-by"],
+                                ))
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                mkey = Some(map.next_value::<MeasuredElementTypeChoice>()?);
+                            }
+                            Some(1) => {
+                                mval = Some(map.next_value::<MeasurementValuesMap>()?);
+                            }
+                            Some(2) => {
+                                authorized_by = Some(map.next_value::<Vec<CryptoKeyTypeChoice>>()?);
+                            }
+                            Some(n) => {
+                                return Err(de::Error::custom(format!(
+                                    "unexpected index {n} for MeasurementMap"
+                                )))
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if let Some(mval) = mval {
+                    Ok(MeasurementMap {
+                        mkey,
+                        mval,
+                        authorized_by,
+                    })
+                } else {
+                    Err(de::Error::missing_field("mval"))
+                }
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(MeasurementMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
+}
+
 /// Types of measured element identifiers
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum MeasuredElementTypeChoice<'a> {
     /// Object Identifier (OID)
     Oid(OidType),
     /// UUID identifier
-    Uuid(UuidType),
+    Uuid(TaggedUuidType),
     /// Unsigned integer
     UInt(Uint),
     /// Text string
@@ -1509,7 +1620,7 @@ impl MeasuredElementTypeChoice<'_> {
 
     pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Uuid(uuid) => Some(uuid.as_ref()),
+            Self::Uuid(uuid) => Some(uuid.as_ref().as_ref()),
             _ => None,
         }
     }
@@ -1535,70 +1646,439 @@ impl<'a> From<&'a str> for MeasuredElementTypeChoice<'a> {
     }
 }
 
+impl<'de> Deserialize<'de> for MeasuredElementTypeChoice<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct MeasuredElementTypeChoiceVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for MeasuredElementTypeChoiceVisitor<'a> {
+            type Value = MeasuredElementTypeChoice<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a unit, string, or map")
+            }
+
+            fn visit_u64<E>(self, v: u64) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(MeasuredElementTypeChoice::UInt(v.into()))
+            }
+
+            fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(MeasuredElementTypeChoice::Tstr(v.to_owned().into()))
+            }
+
+            fn visit_borrowed_str<E>(self, v: &'de str) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(v)
+            }
+
+            fn visit_string<E>(self, v: String) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(MeasuredElementTypeChoice::Tstr(v.into()))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut typ: Option<&str> = None;
+                let mut value: Option<String> = None;
+
+                loop {
+                    match map.next_key::<&str>()? {
+                        Some("type") => {
+                            typ = Some(map.next_value()?);
+                        }
+                        Some("value") => {
+                            value = Some(map.next_value()?);
+                        }
+                        Some(name) => {
+                            return Err(de::Error::unknown_field(name, &["type", "value"]))
+                        }
+                        None => break,
+                    }
+                }
+
+                if value.is_none() {
+                    return Err(de::Error::missing_field("value"));
+                }
+
+                match typ {
+                    Some("oid") => Ok(MeasuredElementTypeChoice::Oid(OidType::from(
+                        ObjectIdentifier::try_from(value.unwrap().as_str())
+                            .map_err(|_| de::Error::custom("invalid OID bytes"))?,
+                    ))),
+                    Some("uuid") => Ok(MeasuredElementTypeChoice::Uuid(TaggedUuidType::from(
+                        UuidType::try_from(value.unwrap())
+                            .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
+                    ))),
+                    Some(s) => Err(de::Error::custom(format!(
+                        "unexpected type {s} for SvnTypeChoice"
+                    ))),
+                    None => Err(de::Error::missing_field("type")),
+                }
+            }
+        }
+
+        let is_human_readable = deserializer.is_human_readable();
+
+        if is_human_readable {
+            deserializer.deserialize_any(MeasuredElementTypeChoiceVisitor {
+                marker: PhantomData,
+            })
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Tag(tag, inner) => {
+                    let value: Vec<u8> = match inner.deref() {
+                        ciborium::Value::Bytes(bytes) => Ok(bytes.clone()),
+                        value => Err(de::Error::custom(format!(
+                            "unexpected value {value:?} for MeasuredElementTypeChoice"
+                        ))),
+                    }?;
+
+                    match tag {
+                        37 => Ok(MeasuredElementTypeChoice::Uuid(TaggedUuidType::from(
+                            UuidType::try_from(value.as_slice())
+                                .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
+                        ))),
+                        111 => Ok(MeasuredElementTypeChoice::Oid(OidType::from(
+                            ObjectIdentifier::try_from(value)
+                                .map_err(|_| de::Error::custom("invalid OID bytes"))?,
+                        ))),
+                        n => Err(de::Error::custom(format!(
+                            "unexpected tag {n} for MeasuredElementTypeChoice"
+                        ))),
+                    }
+                }
+                ciborium::Value::Text(text) => Ok(MeasuredElementTypeChoice::Tstr(text.into())),
+                ciborium::Value::Integer(int) => {
+                    Ok(MeasuredElementTypeChoice::UInt(i128::from(int).into()))
+                }
+                value => Err(de::Error::custom(format!(
+                    "unexpected value {value:?} for MeasuredElementTypeChoice"
+                ))),
+            }
+        }
+    }
+}
+
 /// Collection of measurement values and attributes. It is **HIGHLY** recommend to use MeasurementValuesMapBuilder
 /// to ensure the CDDL enforcement of at least one field being present.
-#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Default, Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct MeasurementValuesMap<'a> {
     /// Optional version information
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "0")]
     pub version: Option<VersionMap<'a>>,
     /// Optional security version number
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "1")]
     pub svn: Option<SvnTypeChoice>,
-    /// Optional cryptographic digest
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "2")]
-    pub digest: Option<DigestsType>,
+    /// Optiona cryptographic digests
+    pub digests: Option<DigestsType>,
     /// Optional status flags
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "3")]
     pub flags: Option<FlagsMap<'a>>,
     /// Optional raw measurement value
-    #[serde(flatten)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<RawValueType>,
     /// Optional MAC address
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "6")]
     pub mac_addr: Option<MacAddrTypeChoice>,
     /// Optional IP address
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "7")]
     pub ip_addr: Option<IpAddrTypeChoice>,
     /// Optional serial number
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "8")]
     pub serial_number: Option<Text<'a>>,
     /// Optional UEID
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "9")]
     pub ueid: Option<UeidType>,
     /// Optional UUID
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "10")]
     pub uuid: Option<UuidType>,
     /// Optional name
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "11")]
     pub name: Option<Text<'a>>,
     /// Optional cryptographic keys
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "13")]
     pub cryptokeys: Option<Vec<CryptoKeyTypeChoice<'a>>>,
     /// Optional integrity register values
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "14")]
     pub integrity_registers: Option<IntegrityRegisters<'a>>,
     /// Optional extensible attributes
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "empty_map_as_none")]
-    #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
 }
 
+impl Serialize for MeasurementValuesMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            if let Some(version) = &self.version {
+                map.serialize_entry("version", version)?;
+            }
+            if let Some(svn) = &self.svn {
+                map.serialize_entry("svn", svn)?;
+            }
+            if let Some(digests) = &self.digests {
+                map.serialize_entry("digests", digests)?;
+            }
+            if let Some(flags) = &self.flags {
+                map.serialize_entry("flags", flags)?;
+            }
+            if let Some(raw) = &self.raw {
+                map.serialize_entry("raw-value", &raw.raw_value)?;
+
+                if let Some(mask) = &raw.raw_value_mask {
+                    map.serialize_entry("raw-value-mask", mask)?;
+                }
+            }
+            if let Some(mac_addr) = &self.mac_addr {
+                map.serialize_entry("mac-addr", mac_addr)?;
+            }
+            if let Some(ip_addr) = &self.ip_addr {
+                map.serialize_entry("ip-addr", ip_addr)?;
+            }
+            if let Some(serial_number) = &self.serial_number {
+                map.serialize_entry("serial-number", serial_number)?;
+            }
+            if let Some(ueid) = &self.ueid {
+                map.serialize_entry("ueid", ueid)?;
+            }
+            if let Some(uuid) = &self.uuid {
+                map.serialize_entry("uuid", uuid)?;
+            }
+            if let Some(name) = &self.name {
+                map.serialize_entry("name", name)?;
+            }
+            if let Some(cryptokeys) = &self.cryptokeys {
+                map.serialize_entry("cryptokeys", cryptokeys)?;
+            }
+            if let Some(integrity_registers) = &self.integrity_registers {
+                map.serialize_entry("integrity-registers", integrity_registers)?;
+            }
+        } else {
+            if let Some(version) = &self.version {
+                map.serialize_entry(&0, version)?;
+            }
+            if let Some(svn) = &self.svn {
+                map.serialize_entry(&1, svn)?;
+            }
+            if let Some(digests) = &self.digests {
+                map.serialize_entry(&2, digests)?;
+            }
+            if let Some(flags) = &self.flags {
+                map.serialize_entry(&3, flags)?;
+            }
+            if let Some(raw) = &self.raw {
+                map.serialize_entry(&4, &raw.raw_value)?;
+
+                if let Some(mask) = &raw.raw_value_mask {
+                    map.serialize_entry(&5, mask)?;
+                }
+            }
+            if let Some(mac_addr) = &self.mac_addr {
+                map.serialize_entry(&6, mac_addr)?;
+            }
+            if let Some(ip_addr) = &self.ip_addr {
+                map.serialize_entry(&7, ip_addr)?;
+            }
+            if let Some(serial_number) = &self.serial_number {
+                map.serialize_entry(&8, serial_number)?;
+            }
+            if let Some(ueid) = &self.ueid {
+                map.serialize_entry(&9, ueid)?;
+            }
+            if let Some(uuid) = &self.uuid {
+                map.serialize_entry(&10, uuid)?;
+            }
+            if let Some(name) = &self.name {
+                map.serialize_entry(&11, name)?;
+            }
+            if let Some(cryptokeys) = &self.cryptokeys {
+                map.serialize_entry(&13, cryptokeys)?;
+            }
+            if let Some(integrity_registers) = &self.integrity_registers {
+                map.serialize_entry(&14, integrity_registers)?;
+            }
+        }
+
+        if let Some(extensions) = &self.extensions {
+            extensions.serialize_map(&mut map, is_human_readable)?;
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for MeasurementValuesMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct MeasurementValuesMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for MeasurementValuesMapVisitor<'a> {
+            type Value = MeasurementValuesMap<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing MeasurementValuesMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut builder = MeasurementValuesMapBuilder::default();
+                let mut raw_value: Option<RawValueTypeChoice> = None;
+                let mut raw_value_mask: Option<RawValueMaskType> = None;
+                let mut extensions = ExtensionMap::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("version") => {
+                                builder = builder.version(map.next_value::<VersionMap>()?);
+                            }
+                            Some("svn") => {
+                                builder = builder.svn(map.next_value::<SvnTypeChoice>()?);
+                            }
+                            Some("digests") => {
+                                builder = builder.digest(map.next_value::<DigestsType>()?);
+                            }
+                            Some("flags") => {
+                                builder = builder.flags(map.next_value::<FlagsMap>()?);
+                            }
+                            Some("raw-value") => {
+                                raw_value = Some(map.next_value::<RawValueTypeChoice>()?);
+                            }
+                            Some("raw-value-mask") => {
+                                raw_value_mask = Some(map.next_value::<RawValueMaskType>()?);
+                            }
+                            Some("mac-addr") => {
+                                builder = builder.mac_addr(map.next_value::<MacAddrTypeChoice>()?);
+                            }
+                            Some("ip-addr") => {
+                                builder = builder.ip_addr(map.next_value::<IpAddrTypeChoice>()?);
+                            }
+                            Some("serial-number") => {
+                                builder = builder.serial_number(map.next_value::<Text>()?);
+                            }
+                            Some("ueid") => {
+                                builder = builder.ueid(map.next_value::<UeidType>()?);
+                            }
+                            Some("uuid") => {
+                                builder = builder.uuid(map.next_value::<UuidType>()?);
+                            }
+                            Some("name") => {
+                                builder = builder.name(map.next_value::<Text>()?);
+                            }
+                            Some("cryptokeys") => {
+                                builder = builder
+                                    .cryptokeys(map.next_value::<Vec<CryptoKeyTypeChoice>>()?);
+                            }
+                            Some("integrity-registers") => {
+                                builder = builder
+                                    .integrity_registers(map.next_value::<IntegrityRegisters>()?);
+                            }
+                            Some(s) => {
+                                extensions.insert(
+                                    s.parse::<Integer>().map_err(de::Error::custom)?,
+                                    map.next_value::<ExtensionValue>()?,
+                                );
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                builder = builder.version(map.next_value::<VersionMap>()?);
+                            }
+                            Some(1) => {
+                                builder = builder.svn(map.next_value::<SvnTypeChoice>()?);
+                            }
+                            Some(2) => {
+                                builder = builder.digest(map.next_value::<DigestsType>()?);
+                            }
+                            Some(3) => {
+                                builder = builder.flags(map.next_value::<FlagsMap>()?);
+                            }
+                            Some(4) => {
+                                raw_value = Some(map.next_value::<RawValueTypeChoice>()?);
+                            }
+                            Some(5) => {
+                                raw_value_mask = Some(map.next_value::<RawValueMaskType>()?);
+                            }
+                            Some(6) => {
+                                builder = builder.mac_addr(map.next_value::<MacAddrTypeChoice>()?);
+                            }
+                            Some(7) => {
+                                builder = builder.ip_addr(map.next_value::<IpAddrTypeChoice>()?);
+                            }
+                            Some(8) => {
+                                builder = builder.serial_number(map.next_value::<Text>()?);
+                            }
+                            Some(9) => {
+                                builder = builder.ueid(map.next_value::<UeidType>()?);
+                            }
+                            Some(10) => {
+                                builder = builder.uuid(map.next_value::<UuidType>()?);
+                            }
+                            Some(11) => {
+                                builder = builder.name(map.next_value::<Text>()?);
+                            }
+                            Some(13) => {
+                                builder = builder
+                                    .cryptokeys(map.next_value::<Vec<CryptoKeyTypeChoice>>()?);
+                            }
+                            Some(14) => {
+                                builder = builder
+                                    .integrity_registers(map.next_value::<IntegrityRegisters>()?);
+                            }
+                            Some(n) => {
+                                extensions.insert(n.into(), map.next_value::<ExtensionValue>()?);
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if let Some(raw_value) = raw_value {
+                    builder = builder.raw(RawValueType {
+                        raw_value,
+                        raw_value_mask,
+                    });
+                } else if raw_value_mask.is_some() {
+                    return Err(de::Error::custom(
+                        "raw-value-mask (index 5) specified without a raw-value (index 4)",
+                    ));
+                }
+
+                if !extensions.is_empty() {
+                    builder = builder.extensions(extensions)
+                }
+
+                builder.build().map_err(de::Error::custom)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(MeasurementValuesMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
+}
+
+#[derive(Default)]
 pub struct MeasurementValuesMapBuilder<'a> {
     /// Optional version information
     pub version: Option<VersionMap<'a>>,
@@ -1709,7 +2189,7 @@ impl<'a> MeasurementValuesMapBuilder<'a> {
         Ok(MeasurementValuesMap {
             version: self.version,
             svn: self.svn,
-            digest: self.digest,
+            digests: self.digest,
             flags: self.flags,
             raw: self.raw,
             mac_addr: self.mac_addr,
@@ -1726,20 +2206,121 @@ impl<'a> MeasurementValuesMapBuilder<'a> {
 }
 
 /// Version information with optional versioning scheme
-#[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct VersionMap<'a> {
     /// Version identifier string
     pub version: Text<'a>,
     /// Optional version numbering scheme
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version_scheme: Option<VersionScheme>,
+    pub version_scheme: Option<VersionScheme<'a>>,
+}
+
+impl Serialize for VersionMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            map.serialize_entry("version", self.version.as_ref())?;
+
+            if let Some(scheme) = &self.version_scheme {
+                map.serialize_entry("version-scheme", scheme)?;
+            }
+        } else {
+            map.serialize_entry(&0, self.version.as_ref())?;
+
+            if let Some(scheme) = &self.version_scheme {
+                map.serialize_entry(&1, scheme)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for VersionMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct VersionMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for VersionMapVisitor<'a> {
+            type Value = VersionMap<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing VersionMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut version: Option<Text<'a>> = None;
+                let mut version_scheme: Option<VersionScheme<'a>> = None;
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("version") => {
+                                version = Some(map.next_value::<String>()?.into());
+                            }
+                            Some("version-scheme") => {
+                                version_scheme = Some(map.next_value::<VersionScheme>()?);
+                            }
+                            Some(name) => {
+                                return Err(de::Error::unknown_field(
+                                    name,
+                                    &["version", "version-scheme"],
+                                ));
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                version = Some(map.next_value::<String>()?.into());
+                            }
+                            Some(1) => {
+                                version_scheme = Some(map.next_value::<VersionScheme>()?);
+                            }
+                            Some(key) => {
+                                return Err(de::Error::custom(format!(
+                                    "unexpected key {key} for VersionMap"
+                                )))
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if let Some(version) = version {
+                    Ok(VersionMap {
+                        version,
+                        version_scheme,
+                    })
+                } else {
+                    Err(de::Error::missing_field("version"))
+                }
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(VersionMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Security version number types
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum SvnTypeChoice {
@@ -1774,58 +2355,350 @@ impl SvnTypeChoice {
     }
 }
 
+impl<'de> Deserialize<'de> for SvnTypeChoice {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct SvnTypeChoiceJsonVisitor;
+
+        impl<'de> Visitor<'de> for SvnTypeChoiceJsonVisitor {
+            type Value = SvnTypeChoice;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("either a uint, a tagged SVN, or a tagged MinSVN")
+            }
+
+            fn visit_u64<E>(self, v: u64) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(SvnTypeChoice::Svn(v.into()))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut typ: Option<&str> = None;
+                let mut value: Option<Uint> = None;
+
+                loop {
+                    match map.next_key::<&str>()? {
+                        Some("type") => {
+                            typ = Some(map.next_value()?);
+                        }
+                        Some("value") => {
+                            value = Some(map.next_value()?);
+                        }
+                        Some(name) => {
+                            return Err(de::Error::unknown_field(name, &["type", "value"]))
+                        }
+                        None => break,
+                    }
+                }
+
+                if value.is_none() {
+                    return Err(de::Error::missing_field("value"));
+                }
+
+                match typ {
+                    Some("svn") => Ok(SvnTypeChoice::TaggedSvn(SvnType::from(value.unwrap()))),
+                    Some("min-svn") => Ok(SvnTypeChoice::TaggedMinSvn(MinSvnType::from(
+                        value.unwrap(),
+                    ))),
+                    Some(s) => Err(de::Error::custom(format!(
+                        "unexpected type {s} for SvnTypeChoice"
+                    ))),
+                    None => Err(de::Error::missing_field("type")),
+                }
+            }
+        }
+
+        let is_human_readable = deserializer.is_human_readable();
+
+        if is_human_readable {
+            deserializer.deserialize_any(SvnTypeChoiceJsonVisitor)
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Tag(tag, inner) => {
+                    let value: i128 = match inner.as_ref() {
+                        &ciborium::Value::Integer(int) => Ok(int),
+                        value => Err(de::Error::custom(format!(
+                            "unexpected value {value:?} for SvnTypeChoice"
+                        ))),
+                    }?
+                    .into();
+
+                    match tag {
+                        552 => Ok(SvnTypeChoice::TaggedSvn(SvnType::from(Integer(value)))),
+                        553 => Ok(SvnTypeChoice::TaggedMinSvn(MinSvnType::from(Integer(
+                            value,
+                        )))),
+                        n => Err(de::Error::custom(format!(
+                            "unexpected tag {n} for SvnTypeChoice"
+                        ))),
+                    }
+                }
+                ciborium::Value::Integer(int) => Ok(SvnTypeChoice::Svn(i128::from(int).into())),
+                value => Err(de::Error::custom(format!(
+                    "unexpected value {value:?} for SvnTypeChoice"
+                ))),
+            }
+        }
+    }
+}
+
 /// Collection of one or more cryptographic digests
 pub type DigestsType = Vec<Digest>;
 
 /// Status flags indicating various security and configuration states
-#[derive(Default, Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Default, Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct FlagsMap<'a> {
     /// Whether the environment is configured
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "0")]
     pub is_configured: Option<bool>,
     /// Whether the environment is in a secure state
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "1")]
     pub is_secure: Option<bool>,
     /// Whether the environment is in recovery mode
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "2")]
     pub is_recovery: Option<bool>,
     /// Whether debug features are enabled
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "3")]
     pub is_debug: Option<bool>,
     /// Whether replay protection is enabled
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "4")]
     pub is_replay_protected: Option<bool>,
     /// Whether integrity protection is enabled
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "5")]
     pub is_integrity_protected: Option<bool>,
     /// Whether runtime measurements are enabled
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "6")]
     pub is_runtime_meas: Option<bool>,
     /// Whether the environment is immutable
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "7")]
     pub is_immutable: Option<bool>,
     /// Whether the environment is part of the TCB
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "8")]
     pub is_tcb: Option<bool>,
     /// Whether confidentiality protection is enabled
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "9")]
     pub is_confidentiality_protected: Option<bool>,
     /// Optional extensible attributes
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "empty_map_as_none")]
-    #[serde(flatten)]
     pub extensions: Option<ExtensionMap<'a>>,
+}
+
+impl Serialize for FlagsMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            if let Some(is_configured) = self.is_configured {
+                map.serialize_entry("is-configured", &is_configured)?;
+            }
+            if let Some(is_secure) = self.is_secure {
+                map.serialize_entry("is-secure", &is_secure)?;
+            }
+            if let Some(is_recovery) = self.is_recovery {
+                map.serialize_entry("is-recovery", &is_recovery)?;
+            }
+            if let Some(is_debug) = self.is_debug {
+                map.serialize_entry("is-debug", &is_debug)?;
+            }
+            if let Some(is_replay_protected) = self.is_replay_protected {
+                map.serialize_entry("is-replay-protected", &is_replay_protected)?;
+            }
+            if let Some(is_integrity_protected) = self.is_integrity_protected {
+                map.serialize_entry("is-integrity-protected", &is_integrity_protected)?;
+            }
+            if let Some(is_runtime_meas) = self.is_runtime_meas {
+                map.serialize_entry("is-runtime-meas", &is_runtime_meas)?;
+            }
+            if let Some(is_immutable) = self.is_immutable {
+                map.serialize_entry("is-immutable", &is_immutable)?;
+            }
+            if let Some(is_tcb) = self.is_tcb {
+                map.serialize_entry("is-tcb", &is_tcb)?;
+            }
+            if let Some(is_confidentiality_protected) = self.is_confidentiality_protected {
+                map.serialize_entry(
+                    "is-confidentiality-protected",
+                    &is_confidentiality_protected,
+                )?;
+            }
+            if let Some(extensions) = &self.extensions {
+                extensions.serialize_map(&mut map, is_human_readable)?;
+            }
+        } else {
+            if let Some(is_configured) = self.is_configured {
+                map.serialize_entry(&0, &is_configured)?;
+            }
+            if let Some(is_secure) = self.is_secure {
+                map.serialize_entry(&1, &is_secure)?;
+            }
+            if let Some(is_recovery) = self.is_recovery {
+                map.serialize_entry(&2, &is_recovery)?;
+            }
+            if let Some(is_debug) = self.is_debug {
+                map.serialize_entry(&3, &is_debug)?;
+            }
+            if let Some(is_replay_protected) = self.is_replay_protected {
+                map.serialize_entry(&4, &is_replay_protected)?;
+            }
+            if let Some(is_integrity_protected) = self.is_integrity_protected {
+                map.serialize_entry(&5, &is_integrity_protected)?;
+            }
+            if let Some(is_runtime_meas) = self.is_runtime_meas {
+                map.serialize_entry(&6, &is_runtime_meas)?;
+            }
+            if let Some(is_immutable) = self.is_immutable {
+                map.serialize_entry(&7, &is_immutable)?;
+            }
+            if let Some(is_tcb) = self.is_tcb {
+                map.serialize_entry(&8, &is_tcb)?;
+            }
+            if let Some(is_confidentiality_protected) = self.is_confidentiality_protected {
+                map.serialize_entry(&9, &is_confidentiality_protected)?;
+            }
+            if let Some(extensions) = &self.extensions {
+                extensions.serialize_map(&mut map, is_human_readable)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for FlagsMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct FlagsMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for FlagsMapVisitor<'a> {
+            type Value = FlagsMap<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing FlagsMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut flags_map: FlagsMap = FlagsMap::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("is-configured") => {
+                                flags_map.is_configured = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-secure") => {
+                                flags_map.is_secure = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-recovery") => {
+                                flags_map.is_recovery = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-debug") => {
+                                flags_map.is_debug = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-replay-protected") => {
+                                flags_map.is_replay_protected = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-integrity-protected") => {
+                                flags_map.is_integrity_protected = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-runtime-meas") => {
+                                flags_map.is_runtime_meas = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-immutable") => {
+                                flags_map.is_immutable = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-tcb") => {
+                                flags_map.is_tcb = Some(map.next_value::<bool>()?);
+                            }
+                            Some("is-confidentiality-protected") => {
+                                flags_map.is_confidentiality_protected =
+                                    Some(map.next_value::<bool>()?);
+                            }
+                            Some(s) => {
+                                if let Some(ref mut extensions) = flags_map.extensions.as_mut() {
+                                    extensions.insert(
+                                        s.parse::<Integer>().map_err(de::Error::custom)?,
+                                        map.next_value::<ExtensionValue>()?,
+                                    );
+                                } else {
+                                    let mut extensions = ExtensionMap::default();
+                                    extensions.insert(
+                                        s.parse::<Integer>().map_err(de::Error::custom)?,
+                                        map.next_value::<ExtensionValue>()?,
+                                    );
+                                    flags_map.extensions = Some(extensions);
+                                }
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                flags_map.is_configured = Some(map.next_value::<bool>()?);
+                            }
+                            Some(1) => {
+                                flags_map.is_secure = Some(map.next_value::<bool>()?);
+                            }
+                            Some(2) => {
+                                flags_map.is_recovery = Some(map.next_value::<bool>()?);
+                            }
+                            Some(3) => {
+                                flags_map.is_debug = Some(map.next_value::<bool>()?);
+                            }
+                            Some(4) => {
+                                flags_map.is_replay_protected = Some(map.next_value::<bool>()?);
+                            }
+                            Some(5) => {
+                                flags_map.is_integrity_protected = Some(map.next_value::<bool>()?);
+                            }
+                            Some(6) => {
+                                flags_map.is_runtime_meas = Some(map.next_value::<bool>()?);
+                            }
+                            Some(7) => {
+                                flags_map.is_immutable = Some(map.next_value::<bool>()?);
+                            }
+                            Some(8) => {
+                                flags_map.is_tcb = Some(map.next_value::<bool>()?);
+                            }
+                            Some(9) => {
+                                flags_map.is_confidentiality_protected =
+                                    Some(map.next_value::<bool>()?);
+                            }
+                            Some(n) => {
+                                if let Some(ref mut extensions) = flags_map.extensions.as_mut() {
+                                    extensions
+                                        .insert(n.into(), map.next_value::<ExtensionValue>()?);
+                                } else {
+                                    let mut extensions = ExtensionMap::default();
+                                    extensions
+                                        .insert(n.into(), map.next_value::<ExtensionValue>()?);
+                                    flags_map.extensions = Some(extensions);
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                Ok(flags_map)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(FlagsMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Types of MAC addresses supporting both EUI-48 and EUI-64 formats
@@ -3101,7 +3974,7 @@ impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementTripleRecord<'a> {
 #[rustfmt::skip::macros(vec)]
 mod test {
     use super::*;
-    use crate::core::HashAlgorithm;
+    use crate::core::{ExtensionValue, HashAlgorithm};
     use crate::fixed_bytes::FixedBytes;
 
     #[test]
@@ -3685,5 +4558,546 @@ mod test {
         let addr_de: MacAddrTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
 
         assert_eq!(addr_de, addr);
+    }
+
+    #[test]
+    fn test_flags_map_serde() {
+        let fm = FlagsMap {
+            is_configured: Some(true),
+            is_secure: Some(false),
+            is_recovery: Some(true),
+            is_debug: Some(false),
+            is_replay_protected: Some(true),
+            is_integrity_protected: Some(false),
+            is_runtime_meas: Some(true),
+            is_immutable: Some(false),
+            is_tcb: Some(true),
+            is_confidentiality_protected: Some(false),
+            extensions: None,
+        };
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&fm, &mut actual).unwrap();
+
+        let expected = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0
+              0xf5, // value: true
+              0x01, // key: 1
+              0xf4, // value: false
+              0x02, // key: 2
+              0xf5, // value: true
+              0x03, // key: 3
+              0xf4, // value: false
+              0x04, // key: 4
+              0xf5, // value: true
+              0x05, // key: 5
+              0xf4, // value: false
+              0x06, // key: 6
+              0xf5, // value: true
+              0x07, // key: 7
+              0xf4, // value: false
+              0x08, // key: 8
+              0xf5, // value: true
+              0x09, // key: 9
+              0xf4, // value: false
+            0xff, // break
+        ];
+
+        assert_eq!(actual, expected);
+
+        let fm_de: FlagsMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(fm_de, fm);
+
+        let json = serde_json::to_string(&fm).unwrap();
+
+        let expected = r#"{"is-configured":true,"is-secure":false,"is-recovery":true,"is-debug":false,"is-replay-protected":true,"is-integrity-protected":false,"is-runtime-meas":true,"is-immutable":false,"is-tcb":true,"is-confidentiality-protected":false}"#;
+
+        assert_eq!(json, expected);
+
+        let fm_de: FlagsMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(fm_de, fm);
+
+        let fm = FlagsMap {
+            is_configured: Some(true),
+            is_secure: None,
+            is_recovery: None,
+            is_debug: None,
+            is_replay_protected: None,
+            is_integrity_protected: None,
+            is_runtime_meas: None,
+            is_immutable: None,
+            is_tcb: None,
+            is_confidentiality_protected: None,
+            extensions: Some(ExtensionMap(BTreeMap::from([(
+                Integer(-1),
+                ExtensionValue::Bool(true),
+            )]))),
+        };
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&fm, &mut actual).unwrap();
+
+        let expected = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0
+              0xf5, // value: true
+              0x20, // key: -1
+              0xf5, // value: true
+            0xff, // break
+        ];
+
+        assert_eq!(actual, expected);
+
+        let fm_de: FlagsMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(fm_de, fm);
+
+        let json = serde_json::to_string(&fm).unwrap();
+
+        let expected = r#"{"is-configured":true,"-1":true}"#;
+
+        assert_eq!(json, expected);
+
+        let fm_de: FlagsMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(fm_de, fm);
+    }
+
+    #[test]
+    fn test_svn_type_choice_serde() {
+        let svn = SvnTypeChoice::Svn(1.into());
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&svn, &mut actual).unwrap();
+
+        let expected = vec![
+            0x01 // 1
+        ];
+
+        assert_eq!(actual, expected);
+
+        let svn_de: SvnTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(svn_de, svn);
+
+        let json = serde_json::to_string(&svn).unwrap();
+
+        assert_eq!(json, "1");
+
+        let svn_de: SvnTypeChoice = serde_json::from_str("1").unwrap();
+
+        assert_eq!(svn_de, svn);
+
+        let svn = SvnTypeChoice::TaggedSvn(SvnType::from(Integer(1)));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&svn, &mut actual).unwrap();
+
+        let expected = vec![
+            0xd9, 0x02, 0x28, // tag(552)
+              0x01 // 1
+        ];
+
+        assert_eq!(actual, expected);
+
+        let svn_de: SvnTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(svn_de, svn);
+
+        let json = serde_json::to_string(&svn).unwrap();
+
+        let expected = r#"{"type":"svn","value":1}"#;
+
+        assert_eq!(json, expected);
+
+        let svn_de: SvnTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(svn_de, svn);
+
+        let svn = SvnTypeChoice::TaggedMinSvn(MinSvnType::from(Integer(1)));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&svn, &mut actual).unwrap();
+
+        let expected = vec![
+            0xd9, 0x02, 0x29, // tag(553)
+              0x01 // 1
+        ];
+
+        assert_eq!(actual, expected);
+
+        let svn_de: SvnTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(svn_de, svn);
+
+        let json = serde_json::to_string(&svn).unwrap();
+
+        let expected = r#"{"type":"min-svn","value":1}"#;
+
+        assert_eq!(json, expected);
+
+        let svn_de: SvnTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(svn_de, svn);
+    }
+
+    #[test]
+    fn test_version_map_serde() {
+        let vm = VersionMap {
+            version: "1.2.3a".into(),
+            version_scheme: Some(VersionScheme::MultipartnumericSuffix),
+        };
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&vm, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0 [version]
+              0x66, // value: tstr(6)
+                0x31, 0x2e, 0x32, 0x2e, 0x33, 0x61, // "1.2.3a"
+              0x01, // key: 1 [version-scheme]
+              0x02, // value: 2 [multipartnumeric+suffix]
+            0xff, // break
+        ];
+
+        assert_eq!(actual, expected);
+
+        let vm_de: VersionMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(vm_de, vm);
+
+        let actual = serde_json::to_string(&vm).unwrap();
+
+        let expected = r#"{"version":"1.2.3a","version-scheme":"multipartnumeric+suffix"}"#;
+
+        assert_eq!(actual, expected);
+
+        let vm_de: VersionMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(vm_de, vm);
+    }
+
+    #[test]
+    fn test_measurement_values_map_serde() {
+        let mvm = MeasurementValuesMap {
+            version: Some(VersionMap {
+                version: "1.2".into(),
+                version_scheme: Some(VersionScheme::Decimal),
+            }),
+            svn: Some(SvnTypeChoice::Svn(Integer(1))),
+            digests: Some(vec![Digest{
+                alg: HashAlgorithm::Sha256,
+                val: Bytes::from(vec![0x01, 0x02, 0x03]),
+            }]),
+            flags: {
+                let mut fm = FlagsMap::default();
+                fm.is_configured = Some(true);
+                Some(fm)
+            },
+            raw: Some(RawValueType {
+                raw_value: RawValueTypeChoice::TaggedBytes(TaggedBytes::from(Bytes::from(
+                    vec![0x04,0x05,0x06],
+                ))),
+                raw_value_mask: None,
+            }),
+            mac_addr: Some(MacAddrTypeChoice::Eui48Addr([
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+            ])),
+            ip_addr: Some(IpAddrTypeChoice::Ipv4([0x7f, 0x00, 0x00, 0x01])),
+            serial_number: Some(Text::from("foo")),
+            ueid: Some(UeidType::from(Bytes::from(vec![
+                        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            ]))),
+            uuid: Some(UuidType::from(FixedBytes::<16>::from([
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+                0x0f, 0x10,
+            ]))),
+            name: Some(Text::from("bar")),
+            cryptokeys: Some(
+                vec![CryptoKeyTypeChoice::Thumbprint(ThumbprintType::from(Digest {
+                alg: HashAlgorithm::Sha384,
+                val: Bytes::from(vec![0x07, 0x08, 0x09]),
+            }))],
+            ),
+            integrity_registers: {
+                let mut regs = IntegrityRegisters::default();
+                regs.add_digest(
+                    1.into(),
+                    Digest::new(HashAlgorithm::Sha256, [1, 2, 3].as_ref().into()),
+                )
+                .unwrap();
+                Some(regs)
+            },
+            extensions: Some(ExtensionMap(BTreeMap::from([(
+                Integer(-1),
+                ExtensionValue::Bytes(Bytes::from(vec![0x0a, 0x0b, 0x0c])),
+            )]))),
+        };
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&mvm, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0 [version]
+              0xbf, // value: map(indef)
+                0x00,  // key: 0 [version]
+                0x63,  // value: tstr(3)
+                  0x31, 0x2e, 0x32, // "1.2"
+                0x01, // key: 1 [version-scheme]
+                0x04, // value: 4 [decimal]
+              0xff, // break
+              0x01, // key: 1 [svn]
+              0x01, // value: 1
+              0x02, // key: 2 [digests]
+              0x81, // value: array(1)
+                0x82, // array(2)
+                  0x01, // 1 [sha-256]
+                  0x43, // bstr(3)
+                    0x01, 0x02, 0x03,
+              0x03, // key: 3 [flags]
+              0xbf, // value: map(indef)
+                0x00, // key: 0 [is-configured]
+                0xf5, // value: true
+              0xff, // break
+              0x04, // key: 4 [raw-value]
+              0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                0x43, // bstr(3)
+                  0x04, 0x05, 0x06,
+              0x06, // key: 6 [mac-addr]
+              0x46, // value: bstr(6),
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+              0x07, // key: 7 [ip-addr]
+              0x44, // value: bstr(4),
+                0x7f, 0x00, 0x00, 0x01,
+              0x08, // key: 8 [serial-number]
+              0x63, // value: tstr(3)
+                0x66, 0x6f, 0x6f, // "foo"
+              0x09, // key: 9 [ueid]
+              0x47, // value: bstr(7),
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+              0x0a, // key: 10 [uuid]
+              0x50, // value: bstr(16),
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+              0x0b, // key: 11 [name]
+              0x63, // value: tstr(3)
+                0x62, 0x61, 0x72, // "bar"
+              0x0d, // key: 13 [cryptokeys]
+              0x81, // value: array(1)
+                0xd9, 0x02, 0x2d, // tag(557) [thumbprint]
+                  0x82, // array(2)
+                    0x07, // 7 [sha-384]
+                    0x43, // bstr(3)
+                      0x07, 0x08, 0x09,
+              0x0e, // key: 14 [integrity-registers]
+              0xa1, // value: map(1)
+                0x01, // key: 1
+                0x81, // value: array(1)
+                  0x82, // array(2)
+                    0x01, // 1 [sha-256]
+                    0x43, // bstr(3)
+                      0x01, 0x02, 0x03,
+              0x20, // key: -1 
+              0x43, // value: bstr(3),
+                0x0a, 0x0b, 0x0c,
+            0xff, // break
+        ];
+
+        assert_eq!(actual, expected);
+
+        let mvm_de: MeasurementValuesMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(mvm_de, mvm);
+
+        let actual = serde_json::to_string(&mvm).unwrap();
+
+        let expected = r#"{"version":{"version":"1.2","version-scheme":"decimal"},"svn":1,"digests":["sha-256;AQID"],"flags":{"is-configured":true},"raw-value":{"type":"bytes","value":"BAUG"},"mac-addr":"01-02-03-04-05-06","ip-addr":"127.0.0.1","serial-number":"foo","ueid":"AQIDBAUGBw","uuid":"01020304-0506-0708-090a-0b0c0d0e0f10","name":"bar","cryptokeys":[{"type":"thumbprint","value":"sha-384;BwgJ"}],"integrity-registers":{"1":["sha-256;AQID"]},"-1":"CgsM"}"#;
+
+        assert_eq!(actual, expected);
+
+        let mvm_de: MeasurementValuesMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(mvm_de, mvm);
+    }
+
+    #[test]
+    fn test_measured_element_type_choice_serde() {
+        let metc = MeasuredElementTypeChoice::UInt(Integer(1));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&metc, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0x01, // 1
+        ];
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice =
+            ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let actual = serde_json::to_string(&metc).unwrap();
+
+        let expected = "1";
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let metc = MeasuredElementTypeChoice::Tstr("foo".into());
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&metc, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0x63, // tstr(3)
+              0x66, 0x6f, 0x6f, // "foo"
+        ];
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice =
+            ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let actual = serde_json::to_string(&metc).unwrap();
+
+        let expected = "\"foo\"";
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let metc = MeasuredElementTypeChoice::Oid(OidType::from(
+            ObjectIdentifier::try_from([0x55, 0x04, 0x03].as_slice()).unwrap(),
+        ));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&metc, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xd8, 0x6f, // tag(111)
+              0x43, // bstr(3)
+                0x55, 0x04, 0x03,
+        ];
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice =
+            ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let actual = serde_json::to_string(&metc).unwrap();
+
+        let expected = r#"{"type":"oid","value":"2.5.4.3"}"#;
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let metc = MeasuredElementTypeChoice::Uuid(TaggedUuidType::from(
+            UuidType::try_from(
+                [
+                    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+                    0x0e, 0x0f, 0x10,
+                ]
+                .as_slice(),
+            )
+            .unwrap(),
+        ));
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&metc, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xd8, 0x25, // tag(37)
+              0x50, // bstr(16)
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+        ];
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice =
+            ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(metc_de, metc);
+
+        let actual = serde_json::to_string(&metc).unwrap();
+
+        let expected = r#"{"type":"uuid","value":"01020304-0506-0708-090a-0b0c0d0e0f10"}"#;
+
+        assert_eq!(actual, expected);
+
+        let metc_de: MeasuredElementTypeChoice = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(metc_de, metc);
+    }
+
+    #[test]
+    fn test_measurement_map_serde() {
+        let mm = MeasurementMap {
+            mkey: Some(MeasuredElementTypeChoice::UInt(Integer(1))),
+            mval: MeasurementValuesMapBuilder::default()
+                .name("foo".into())
+                .build()
+                .unwrap(),
+            authorized_by: Some(vec![CryptoKeyTypeChoice::Bytes(
+                TaggedBytes::from(Bytes::from([0x01, 0x02, 0x03].as_slice()))
+            )]),
+        };
+
+        let mut actual: Vec<u8> = vec![];
+        ciborium::into_writer(&mm, &mut actual).unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0 [mkey]
+              0x01, // value: 1
+              0x01, // key: 1 [mval]
+              0xbf, // value: map(indef)
+                0x0b, // key: 11 [name]
+                0x63, // value: tstr(3)
+                 0x66, 0x6f, 0x6f, // "foo"
+              0xff, // break
+              0x02, // key: 2 [authorized-by]
+              0x81, // value: array(1)
+                0xd9, 0x02, 0x30, // tag(560) [tagged-bytes]
+                  0x43, // bstr(3)
+                    0x01, 0x02, 0x03,
+            0xff, // break
+        ];
+
+        assert_eq!(actual, expected);
+
+        let mm_de: MeasurementMap = ciborium::from_reader(expected.as_slice()).unwrap();
+
+        assert_eq!(mm_de, mm);
+
+        let actual = serde_json::to_string(&mm).unwrap();
+
+        let expected =
+            r#"{"mkey":1,"mval":{"name":"foo"},"authorized-by":[{"type":"bytes","value":"AQID"}]}"#;
+
+        assert_eq!(actual, expected);
+
+        let mm_de: MeasurementMap = serde_json::from_str(expected).unwrap();
+
+        assert_eq!(mm_de, mm);
     }
 }

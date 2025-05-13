@@ -832,7 +832,7 @@ mod tests {
                     0xff, // break
                 0xff, // break
               0xa0, // map(0) -- COSE unprotected header
-              0x58, 0xc8, // bstr(200) -- COSE payload
+              0x58, 0xc5, // bstr(197) -- COSE payload
                 0xd9, 0x01, 0xf5, // tag(501) -- CoRIM
                   0xbf, // map(indef)
                     0x61, // key: tstr(1)
@@ -915,20 +915,18 @@ mod tests {
                                   0xff,
                                 0xff,
                                 0x81, // array(1)
-                                  0xa2, // map(2)
-                                    0x61, // key: tstr(1)
-                                      0x30, // "0"
+                                  0xbf, // map(indef)
+                                    0x00, // key: 0
                                     0x68, // value: str(8)
                                       0x53, 0x6f, 0x6d, 0x65, 0x20, 0x4b, 0x65, 0x79, // "Some Key"
-                                    0x61, // key: tstr(1)
-                                      0x31, // "1"
+                                    0x01, // key: 1
                                     0xbf, // value: map(indef)
-                                      0x62, // key: tstr(2)
-                                        0x31, 0x31, // "11"
+                                      0x0b, // key: 11
                                       0x69, // value: tstr(9)
                                         0x53, 0x6f, 0x6d, 0x65, 0x20, 0x4e, 0x61, 0x6d, // "Some Nam"
                                         0x65,                                           // "e"
                                     0xff, // break
+                                  0xff, // break
                           0xff, // break
                         0xff, // break
                   0xff, // break
@@ -954,7 +952,7 @@ mod tests {
                         name: Some("Some Name".into()),
                         version: None,
                         svn: None,
-                        digest: None,
+                        digests: None,
                         flags: None,
                         raw: None,
                         mac_addr: None,
