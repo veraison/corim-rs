@@ -1189,9 +1189,21 @@ impl Label<'_> {
     }
 }
 
+impl From<i64> for Label<'_> {
+    fn from(value: i64) -> Self {
+        Label::Int(value.into())
+    }
+}
+
 impl<'a> From<&'a str> for Label<'a> {
     fn from(value: &'a str) -> Self {
         Self::Text(std::borrow::Cow::Borrowed(value))
+    }
+}
+
+impl From<String> for Label<'_> {
+    fn from(value: String) -> Self {
+        Self::Text(std::borrow::Cow::Owned::<str>(value))
     }
 }
 
