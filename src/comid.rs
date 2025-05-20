@@ -95,7 +95,8 @@ use crate::{
     ReferenceTripleRecord, Result, Text, Tstr, Uint, Uri, UuidType,
 };
 use derive_more::{Constructor, From, TryFrom};
-use serde::{ser::SerializeMap, Deserialize, Serialize};
+use serde::{de, ser::SerializeMap, Deserialize, Serialize};
+use std::fmt::Display;
 
 /// A tag version number represented as an unsigned integer
 pub type TagVersionType = Uint;
@@ -442,9 +443,8 @@ pub struct ComidEntityMap<'a> {
 ///
 /// Each role type represents a specific responsibility that an entity
 /// may have in relation to a module or tag.
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
-#[serde(untagged)]
 pub enum ComidRoleTypeChoice {
     /// Entity that created the tag (value: 0)
     ///
@@ -461,6 +461,83 @@ pub enum ComidRoleTypeChoice {
     /// This role indicates the entity responsible for ongoing maintenance,
     /// updates, and support for the module described by the tag.
     Maintainer = 2,
+}
+
+impl From<&ComidRoleTypeChoice> for i64 {
+    fn from(value: &ComidRoleTypeChoice) -> Self {
+        match value {
+            ComidRoleTypeChoice::TagCreator => 0,
+            ComidRoleTypeChoice::Creator => 1,
+            ComidRoleTypeChoice::Maintainer => 2,
+        }
+    }
+}
+
+impl TryFrom<i64> for ComidRoleTypeChoice {
+    type Error = ComidError;
+
+    fn try_from(value: i64) -> std::result::Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ComidRoleTypeChoice::TagCreator),
+            1 => Ok(ComidRoleTypeChoice::Creator),
+            2 => Ok(ComidRoleTypeChoice::Maintainer),
+            i => Err(ComidError::InvalidComidRole(i.into())),
+        }
+    }
+}
+
+impl TryFrom<&str> for ComidRoleTypeChoice {
+    type Error = ComidError;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        match value {
+            "tag-creator" => Ok(ComidRoleTypeChoice::TagCreator),
+            "creator" => Ok(ComidRoleTypeChoice::Creator),
+            "maintainer" => Ok(ComidRoleTypeChoice::Maintainer),
+            s => Err(ComidError::InvalidComidRole(s.to_string().into())),
+        }
+    }
+}
+
+impl Display for ComidRoleTypeChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ComidRoleTypeChoice::TagCreator => "tag-creator",
+            ComidRoleTypeChoice::Creator => "creator",
+            ComidRoleTypeChoice::Maintainer => "maintainer",
+        })
+    }
+}
+
+impl Serialize for ComidRoleTypeChoice {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if serializer.is_human_readable() {
+            self.to_string().serialize(serializer)
+        } else {
+            i64::from(self).serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ComidRoleTypeChoice {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            String::deserialize(deserializer)?
+                .as_str()
+                .try_into()
+                .map_err(de::Error::custom)
+        } else {
+            i64::deserialize(deserializer)?
+                .try_into()
+                .map_err(de::Error::custom)
+        }
+    }
 }
 
 /// Reference to another tag and its relationship to this one
@@ -826,17 +903,86 @@ impl<'a> TriplesMapBuilder<'a> {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     #[test]
-//     fn test_tagged_concise_mid_tag_serialize_deserialize_ciborium() {
-//         let expected_bytes: [u8; 50] = [
+#[cfg(test)]
+#[rustfmt::skip::macros(vec)]
+mod tests {
+    use super::*;
 
-//             0xD2, 0x02, 0xFA, // Tag 506
-//             0xBF, // Map *
-//             0x61, // (key) Text of one character
-//             0x31, // '1'
-//             0xBF
-//         ];
-//     }
-// }
+    #[test]
+    fn test_comid_role_serde() {
+        struct TestCase {
+            role: ComidRoleTypeChoice,
+            expected_json: &'static str,
+            expected_cbor: Vec<u8>,
+        }
+
+        let test_cases: Vec<TestCase> = vec![
+            TestCase {
+                role: ComidRoleTypeChoice::TagCreator,
+                expected_json: "\"tag-creator\"",
+                expected_cbor: vec![0x00],
+            },
+            TestCase {
+                role: ComidRoleTypeChoice::Creator,
+                expected_json: "\"creator\"",
+                expected_cbor: vec![0x01],
+            },
+            TestCase {
+                role: ComidRoleTypeChoice::Maintainer,
+                expected_json: "\"maintainer\"",
+                expected_cbor: vec![0x02],
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            let actual_json = serde_json::to_string(&tc.role).unwrap();
+
+            assert_eq!(actual_json, tc.expected_json);
+
+            let role_de: ComidRoleTypeChoice = serde_json::from_str(actual_json.as_str()).unwrap();
+
+            assert_eq!(role_de, tc.role);
+
+            let mut actual_cbor: Vec<u8> = vec![];
+            ciborium::into_writer(&tc.role, &mut actual_cbor).unwrap();
+
+            assert_eq!(actual_cbor, tc.expected_cbor);
+
+            let role_de: ComidRoleTypeChoice =
+                ciborium::from_reader(actual_cbor.as_slice()).unwrap();
+
+            assert_eq!(role_de, tc.role);
+        }
+
+        let actual_err = serde_json::from_str::<ComidRoleTypeChoice>("\"foo\"")
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(actual_err, "invalid CoMID role foo");
+
+        let actual_err = serde_json::from_str::<ComidRoleTypeChoice>("1")
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(
+            actual_err,
+            "invalid type: integer `1`, expected a string at line 1 column 1"
+        );
+
+        let actual_err = ciborium::from_reader::<ComidRoleTypeChoice, _>([0x03].as_slice())
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(actual_err, "Semantic(None, \"invalid CoMID role 3\")");
+
+        let actual_err = ciborium::from_reader::<ComidRoleTypeChoice, _>([0xf4].as_slice())
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(actual_err, "Semantic(None, \"invalid type: boolean `false`, expected integer\")");
+    }
+}
