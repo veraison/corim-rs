@@ -2104,7 +2104,7 @@ impl Serialize for CoseKey {
         S: Serializer,
     {
         if self.kty == CoseKty::Invalid {
-            return Err(S::Error::custom("invalid kty"))
+            return Err(S::Error::custom("invalid kty"));
         }
 
         let is_human_readable = serializer.is_human_readable();

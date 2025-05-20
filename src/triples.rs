@@ -552,7 +552,7 @@ pub enum ClassIdTypeChoice<'a> {
     /// Raw bytes
     Bytes(TaggedBytes),
     /// Extensions
-    Extension(ExtensionValue<'a>)
+    Extension(ExtensionValue<'a>),
 }
 
 impl ClassIdTypeChoice<'_> {
@@ -701,18 +701,14 @@ impl<'de> Deserialize<'de> for ClassIdTypeChoice<'_> {
                                     ObjectIdentifier::try_from(value.as_str())
                                         .map_err(|_| de::Error::custom("invalid OID bytes"))?,
                                 ))),
-                                "uuid" => {
-                                    Ok(ClassIdTypeChoice::Uuid(TaggedUuidType::from(
-                                        UuidType::try_from(value.as_str())
-                                            .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
-                                    )))
-                                }
-                                "bytes" => {
-                                    Ok(ClassIdTypeChoice::Bytes(TaggedBytes::from(
-                                        Bytes::try_from(value.as_str())
-                                            .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
-                                    )))
-                                }
+                                "uuid" => Ok(ClassIdTypeChoice::Uuid(TaggedUuidType::from(
+                                    UuidType::try_from(value.as_str())
+                                        .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
+                                ))),
+                                "bytes" => Ok(ClassIdTypeChoice::Bytes(TaggedBytes::from(
+                                    Bytes::try_from(value.as_str())
+                                        .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
+                                ))),
                                 s => Err(de::Error::custom(format!(
                                     "unexpected type {s} for ClassIdTypeChoice"
                                 ))),
@@ -721,18 +717,17 @@ impl<'de> Deserialize<'de> for ClassIdTypeChoice<'_> {
                                 "type must be as string, got {v:?}"
                             ))),
                         }
-                    } else if map.contains_key("tag") && map.contains_key("value") && map.len() == 2 {
+                    } else if map.contains_key("tag") && map.contains_key("value") && map.len() == 2
+                    {
                         match &map["tag"] {
                             serde_json::Value::Number(n) => match n.as_u64() {
-                                Some(u) => {
-                                    Ok(ClassIdTypeChoice::Extension(ExtensionValue::Tag(
-                                        u,
-                                        Box::new(
-                                            ExtensionValue::try_from(map["value"].clone())
-                                                .map_err(de::Error::custom)?,
-                                        ),
-                                    )))
-                                }
+                                Some(u) => Ok(ClassIdTypeChoice::Extension(ExtensionValue::Tag(
+                                    u,
+                                    Box::new(
+                                        ExtensionValue::try_from(map["value"].clone())
+                                            .map_err(de::Error::custom)?,
+                                    ),
+                                ))),
                                 None => Err(de::Error::custom(format!(
                                     "a number must be an unsinged integer, got {n:?}"
                                 ))),
@@ -746,11 +741,9 @@ impl<'de> Deserialize<'de> for ClassIdTypeChoice<'_> {
                         ))
                     }
                 }
-                value => {
-                    Ok(ClassIdTypeChoice::Extension(
-                        ExtensionValue::try_from(value).map_err(de::Error::custom)?
-                    ))
-                }
+                value => Ok(ClassIdTypeChoice::Extension(
+                    ExtensionValue::try_from(value).map_err(de::Error::custom)?,
+                )),
             }
         } else {
             match ciborium::Value::deserialize(deserializer)? {
@@ -4089,8 +4082,8 @@ mod test {
         );
 
         let class_id_ext = ClassIdTypeChoice::Extension(ExtensionValue::Tag(
-                600,
-                Box::new(ExtensionValue::Bytes([0x01, 0x02, 0x03].as_slice().into())),
+            600,
+            Box::new(ExtensionValue::Bytes([0x01, 0x02, 0x03].as_slice().into())),
         ));
 
         let actual = serde_json::to_string(&class_id_ext).unwrap();
@@ -4127,8 +4120,8 @@ mod test {
         assert_eq!(class_id_oid_de, class_id_oid);
 
         let class_id_ext = ClassIdTypeChoice::Extension(ExtensionValue::Tag(
-                600,
-                Box::new(ExtensionValue::Bytes([0x01, 0x02, 0x03].as_slice().into())),
+            600,
+            Box::new(ExtensionValue::Bytes([0x01, 0x02, 0x03].as_slice().into())),
         ));
 
         let mut actual: Vec<u8> = Vec::new();
@@ -4142,7 +4135,8 @@ mod test {
 
         assert_eq!(actual, expected);
 
-        let class_id_ext_de: ClassIdTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
+        let class_id_ext_de: ClassIdTypeChoice =
+            ciborium::from_reader(expected.as_slice()).unwrap();
 
         assert_eq!(class_id_ext_de, class_id_ext);
     }
