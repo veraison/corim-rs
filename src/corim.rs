@@ -907,7 +907,7 @@ mod tests {
                               0x62, // key: tstr(2)
                                 0x33, 0x33, // "33"
                               0x81, // value: array(1)
-                                0xf6, // null
+                                0x00, // 0 [tag-creator]
                             0xff, // break(map)
                           0x61, // key: tstr(1)
                             0x34, // "4"
