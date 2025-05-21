@@ -843,7 +843,7 @@ mod tests {
                     0xff, // break
                 0xff, // break
               0xa0, // map(0) -- COSE unprotected header
-              0x58, 0xc5, // bstr(197) -- COSE payload
+              0x58, 0xc1, // bstr(193) -- COSE payload
                 0xd9, 0x01, 0xf5, // tag(501) -- CoRIM
                   0xbf, // map(indef)
                     0x61, // key: tstr(1)
@@ -899,13 +899,11 @@ mod tests {
                             0x32, // "2"
                           0x81, // value: array(1)
                             0xbf, // map(indef)
-                              0x62, // key: tstr(2)
-                                0x33, 0x31, // "31"
+                              0x00, // key: 0
                               0x6f, // value: tstr(15)
                                 0x53, 0x6f, 0x6d, 0x65, 0x20, 0x43, 0x6f, 0x4d,
                                 0x49, 0x44, 0x20, 0x4e, 0x61, 0x6d, 0x65,
-                              0x62, // key: tstr(2)
-                                0x33, 0x33, // "33"
+                              0x02, // key: 2
                               0x81, // value: array(1)
                                 0x00, // 0 [tag-creator]
                             0xff, // break(map)
@@ -1035,7 +1033,7 @@ mod tests {
                             entity_name: "Some CoMID Name".into(),
                             reg_id: None,
                             role: vec![ComidRoleTypeChoice::TagCreator],
-                            extension: None,
+                            extensions: None,
                         }]),
                         linked_tags: None,
                         triples,
