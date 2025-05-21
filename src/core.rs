@@ -659,6 +659,12 @@ impl<'de> Deserialize<'de> for ExtensionValue<'_> {
 #[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct UuidType(pub FixedBytes<16>);
 
+impl From<[u8; 16]> for UuidType {
+    fn from(value: [u8; 16]) -> Self {
+        Self(FixedBytes::<16>(value))
+    }
+}
+
 impl TryFrom<&[u8]> for UuidType {
     type Error = std::array::TryFromSliceError;
 
@@ -779,6 +785,14 @@ impl TryFrom<&[u8]> for UeidType {
     }
 }
 
+impl TryFrom<Vec<u8>> for UeidType {
+    type Error = CoreError;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::try_from(value.as_slice())
+    }
+}
+
 impl TryFrom<&str> for UeidType {
     type Error = CoreError;
 
@@ -796,6 +810,12 @@ impl TryFrom<String> for UeidType {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Self::try_from(<std::string::String as AsRef<str>>::as_ref(&value))
+    }
+}
+
+impl From<&UeidType> for Vec<u8> {
+    fn from(value: &UeidType) -> Self {
+        value.0.bytes.clone()
     }
 }
 
@@ -975,6 +995,206 @@ generate_tagged!(
     (562, PkixAsn1DerCertType, Bytes, "pkix-asn1-der-cert", "A PKIX certificate in ASN.1 DER format using CBOR tag 562"),
     (563, TaggedMaskedRawValue, MaskedRawValue, "masked-raw-value", "Represents a masked raw value with its mask"),
 );
+
+impl From<i64> for IntegerTime {
+    fn from(value: i64) -> Self {
+        Int::from(value).into()
+    }
+}
+
+impl<'a> From<&'a str> for Uri<'a> {
+    fn from(value: &'a str) -> Self {
+        Text::from(value).into()
+    }
+}
+
+impl From<[u8; 16]> for TaggedUuidType {
+    fn from(value: [u8; 16]) -> Self {
+        UuidType::from(value).into()
+    }
+}
+
+impl TryFrom<&[u8]> for TaggedUuidType {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Ok(UuidType::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<&str> for TaggedUuidType {
+    type Error = uuid::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(UuidType::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<String> for TaggedUuidType {
+    type Error = uuid::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(UuidType::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<&str> for OidType {
+    type Error = oid::ObjectIdentifierError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(ObjectIdentifier::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<&[u8]> for OidType {
+    type Error = oid::ObjectIdentifierError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Ok(ObjectIdentifier::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<Vec<u8>> for OidType {
+    type Error = oid::ObjectIdentifierError;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        Ok(ObjectIdentifier::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<&[u8]> for TaggedUeidType {
+    type Error = CoreError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Ok(UeidType::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<&str> for TaggedUeidType {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(UeidType::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<String> for TaggedUeidType {
+    type Error = CoreError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(UeidType::try_from(value)?.into())
+    }
+}
+
+impl From<u64> for SvnType {
+    fn from(value: u64) -> Self {
+        Uint::from(value).into()
+    }
+}
+
+impl From<u64> for MinSvnType {
+    fn from(value: u64) -> Self {
+        Uint::from(value).into()
+    }
+}
+
+impl<'a> From<&'a str> for PkixBase64KeyType<'a> {
+    fn from(value: &'a str) -> Self {
+        Tstr::from(value).into()
+    }
+}
+
+impl<'a> From<&'a str> for PkixBase64CertType<'a> {
+    fn from(value: &'a str) -> Self {
+        Tstr::from(value).into()
+    }
+}
+
+impl<'a> From<&'a str> for PkixBase64CertPathType<'a> {
+    fn from(value: &'a str) -> Self {
+        Tstr::from(value).into()
+    }
+}
+
+impl TryFrom<&str> for ThumbprintType {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Digest::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<&str> for CertThumbprintType {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Digest::try_from(value)?.into())
+    }
+}
+
+impl From<&[u8]> for TaggedBytes {
+    fn from(value: &[u8]) -> Self {
+        Bytes::from(value).into()
+    }
+}
+
+impl TryFrom<&str> for TaggedBytes {
+    type Error = base64::DecodeError;
+
+    fn try_from(v: &str) -> Result<Self, Self::Error> {
+        Ok(Bytes::try_from(v)?.into())
+    }
+}
+
+impl TryFrom<String> for TaggedBytes {
+    type Error = base64::DecodeError;
+
+    fn try_from(v: String) -> Result<Self, Self::Error> {
+        Ok(Bytes::try_from(v)?.into())
+    }
+}
+
+impl From<&TaggedBytes> for Vec<u8> {
+    fn from(value: &TaggedBytes) -> Self {
+        value.0 .0.as_ref().into()
+    }
+}
+
+impl TryFrom<&str> for CertPathThumbprintType {
+    type Error = CoreError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Digest::try_from(value)?.into())
+    }
+}
+
+impl From<&[u8]> for PkixAsn1DerCertType {
+    fn from(value: &[u8]) -> Self {
+        Bytes::from(value).into()
+    }
+}
+
+impl TryFrom<&str> for PkixAsn1DerCertType {
+    type Error = base64::DecodeError;
+
+    fn try_from(v: &str) -> Result<Self, Self::Error> {
+        Ok(Bytes::try_from(v)?.into())
+    }
+}
+
+impl TryFrom<String> for PkixAsn1DerCertType {
+    type Error = base64::DecodeError;
+
+    fn try_from(v: String) -> Result<Self, Self::Error> {
+        Ok(Bytes::try_from(v)?.into())
+    }
+}
+
+impl From<&PkixAsn1DerCertType> for Vec<u8> {
+    fn from(value: &PkixAsn1DerCertType) -> Self {
+        value.0 .0.as_ref().into()
+    }
+}
 
 /// Represents a value that can be either text or bytes
 #[repr(C)]
@@ -4542,7 +4762,7 @@ mod tests {
                 0x00, 0x00,
             ];
             // Test value
-            let expected = TaggedUuidType::from(UuidType::from(FixedBytes::from(uuid_bytes)));
+            let expected = TaggedUuidType::from(UuidType::from(uuid_bytes));
 
             // Expected CBOR bytes: Tag 37 (D825) + Byte string (0x16 bytes)
             let expected_bytes = [
