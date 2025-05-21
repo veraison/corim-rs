@@ -4029,13 +4029,10 @@ impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementTripleRecord<'a> {
 mod test {
     use super::*;
     use crate::core::{ExtensionValue, HashAlgorithm};
-    use crate::fixed_bytes::FixedBytes;
 
     #[test]
     fn test_class_id_json_serde() {
-        let class_id_oid = ClassIdTypeChoice::Oid(OidType::from(
-            ObjectIdentifier::try_from("1.2.3.4").unwrap(),
-        ));
+        let class_id_oid = ClassIdTypeChoice::Oid(OidType::try_from("1.2.3.4").unwrap());
 
         let actual = serde_json::to_string(&class_id_oid).unwrap();
 
@@ -4060,9 +4057,9 @@ mod test {
 
         assert_eq!(class_id_bytes, other);
 
-        let class_id_uuid = ClassIdTypeChoice::Uuid(TaggedUuidType::from(
-            UuidType::try_from("550e8400-e29b-41d4-a716-446655440000").unwrap(),
-        ));
+        let class_id_uuid = ClassIdTypeChoice::Uuid(
+            TaggedUuidType::try_from("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+        );
 
         let actual = serde_json::to_string(&class_id_uuid).unwrap();
 
@@ -4236,9 +4233,7 @@ mod test {
 
         let expected = r#"{"type":"uuid","value":"550e8400-e29b-41d4-a716-446655440000"}"#;
 
-        let group_id = GroupIdTypeChoice::Uuid(TaggedUuidType::from(UuidType::from(
-            FixedBytes::from(uuid_bytes),
-        )));
+        let group_id = GroupIdTypeChoice::Uuid(TaggedUuidType::from(uuid_bytes));
 
         let actual = serde_json::to_string(&group_id).unwrap();
 
@@ -4324,9 +4319,7 @@ mod test {
             0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4, 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44,
             0x00, 0x00,
         ];
-        let group_id = GroupIdTypeChoice::Uuid(TaggedUuidType::from(UuidType::from(
-            FixedBytes::from(uuid_bytes),
-        )));
+        let group_id = GroupIdTypeChoice::Uuid(TaggedUuidType::from(uuid_bytes));
 
         let env_map = EnvironmentMapBuilder::default()
             .class(class_map)
@@ -4899,13 +4892,16 @@ mod test {
             ])),
             ip_addr: Some(IpAddrTypeChoice::Ipv4([0x7f, 0x00, 0x00, 0x01])),
             serial_number: Some(Text::from("foo")),
-            ueid: Some(UeidType::from(Bytes::from(vec![
+            ueid: Some(
+                UeidType::try_from(vec![
                         0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-            ]))),
-            uuid: Some(UuidType::from(FixedBytes::<16>::from([
+            ])
+                .unwrap(),
+            ),
+            uuid: Some(UuidType::from([
                 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
                 0x0f, 0x10,
-            ]))),
+            ])),
             name: Some(Text::from("bar")),
             cryptokeys: Some(
                 vec![CryptoKeyTypeChoice::Thumbprint(ThumbprintType::from(Digest {
@@ -5070,9 +5066,9 @@ mod test {
 
         assert_eq!(metc_de, metc);
 
-        let metc = MeasuredElementTypeChoice::Oid(OidType::from(
-            ObjectIdentifier::try_from([0x55, 0x04, 0x03].as_slice()).unwrap(),
-        ));
+        let metc = MeasuredElementTypeChoice::Oid(
+            OidType::try_from([0x55, 0x04, 0x03].as_slice()).unwrap(),
+        );
 
         let mut actual: Vec<u8> = vec![];
         ciborium::into_writer(&metc, &mut actual).unwrap();
@@ -5100,8 +5096,8 @@ mod test {
 
         assert_eq!(metc_de, metc);
 
-        let metc = MeasuredElementTypeChoice::Uuid(TaggedUuidType::from(
-            UuidType::try_from(
+        let metc = MeasuredElementTypeChoice::Uuid(
+            TaggedUuidType::try_from(
                 [
                     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
                     0x0e, 0x0f, 0x10,
@@ -5109,7 +5105,7 @@ mod test {
                 .as_slice(),
             )
             .unwrap(),
-        ));
+        );
 
         let mut actual: Vec<u8> = vec![];
         ciborium::into_writer(&metc, &mut actual).unwrap();
@@ -5180,7 +5176,7 @@ mod test {
                 .build()
                 .unwrap(),
             authorized_by: Some(vec![CryptoKeyTypeChoice::Bytes(
-                TaggedBytes::from(Bytes::from([0x01, 0x02, 0x03].as_slice()))
+                TaggedBytes::from([0x01, 0x02, 0x03].as_slice())
             )]),
         };
 
