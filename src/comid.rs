@@ -343,18 +343,115 @@ impl<'a> ConciseMidTag<'a> {
 }
 
 /// Identification information for a tag
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct TagIdentityMap<'a> {
     /// Unique identifier for the tag
-    #[serde(rename = "0")]
     pub tag_id: TagIdTypeChoice<'a>,
     /// Optional version number for the tag
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "1")]
     pub tag_version: Option<TagVersionType>,
+}
+
+impl Serialize for TagIdentityMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            map.serialize_entry("tag-id", &self.tag_id)?;
+
+            if let Some(tag_version) = &self.tag_version {
+                map.serialize_entry("tag-version", tag_version)?;
+            }
+        } else {
+            map.serialize_entry(&0, &self.tag_id)?;
+
+            if let Some(tag_version) = &self.tag_version {
+                map.serialize_entry(&1, tag_version)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for TagIdentityMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct TagIdentityMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for TagIdentityMapVisitor<'a> {
+            type Value = TagIdentityMap<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing TagIdentityMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut tag_id: Option<TagIdTypeChoice> = None;
+                let mut tag_version: Option<TagVersionType> = None;
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("tag-id") => {
+                                tag_id = Some(map.next_value::<TagIdTypeChoice>()?);
+                            }
+                            Some("tag-version") => {
+                                tag_version = Some(map.next_value::<TagVersionType>()?);
+                            }
+                            Some(s) => {
+                                return Err(de::Error::unknown_field(s, &["tag-id", "tag-version"]))
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                tag_id = Some(map.next_value::<TagIdTypeChoice>()?);
+                            }
+                            Some(1) => {
+                                tag_version = Some(map.next_value::<TagVersionType>()?);
+                            }
+                            Some(n) => {
+                                return Err(de::Error::unknown_field(
+                                    n.to_string().as_str(),
+                                    &["0-1"],
+                                ))
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if tag_id.is_none() {
+                    return Err(de::Error::missing_field("tag-id"));
+                }
+
+                Ok(TagIdentityMap {
+                    tag_id: tag_id.unwrap(),
+                    tag_version,
+                })
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(TagIdentityMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Represents either a string or UUID tag identifier
@@ -1231,5 +1328,43 @@ mod tests {
         let entity_map_de: ComidEntityMap = serde_json::from_str(actual_json.as_str()).unwrap();
 
         assert_eq!(entity_map_de, entity_map);
+    }
+
+    #[test]
+    fn test_tag_identity_map() {
+        let tag_identity = TagIdentityMap {
+            tag_id: TagIdTypeChoice::Tstr("foo".into()),
+            tag_version: Some(1.into()),
+        };
+
+        let mut actual_cbor: Vec<u8> = vec![];
+        ciborium::into_writer(&tag_identity, &mut actual_cbor).unwrap();
+
+        let expected_cbor: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0 [tag-id]
+              0x63, // value: tstr(3)
+                0x66, 0x6f, 0x6f, // "foo"
+              0x01, // key: 1 [tag-version]
+              0x01, // value: 1
+            0xff,
+        ];
+
+        assert_eq!(actual_cbor, expected_cbor);
+
+        let tag_identity_de: TagIdentityMap =
+            ciborium::from_reader(actual_cbor.as_slice()).unwrap();
+
+        assert_eq!(tag_identity_de, tag_identity);
+
+        let actual_json = serde_json::to_string(&tag_identity).unwrap();
+
+        let expected_json = r#"{"tag-id":"foo","tag-version":1}"#;
+
+        assert_eq!(actual_json, expected_json);
+
+        let tag_identity_de: TagIdentityMap = serde_json::from_str(actual_json.as_str()).unwrap();
+
+        assert_eq!(tag_identity_de, tag_identity);
     }
 }
