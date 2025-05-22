@@ -889,12 +889,12 @@ mod tests {
                             0x65, 0x6e, 0x5f, 0x55, 0x53, // "en_US"
                           0x61, // key: tstr(1)
                             0x31, // "1"
-                          0xa1, // value: map(1)
-                            0x61, // key: tstr(1)
-                              0x30, // "0"
+                          0xbf, // value: map(1)
+                            0x00, // key: 0 [tag-id]
                             0x6b, // value: tstr(11)
                               0x53, 0x6f, 0x6d, 0x65, 0x20, 0x54, 0x61, 0x67, // "Some Tag"
                               0x20, 0x49, 0x44,                               // " ID"
+                          0xff, // break
                           0x61, // key: tstr(1)
                             0x32, // "2"
                           0x81, // value: array(1)
