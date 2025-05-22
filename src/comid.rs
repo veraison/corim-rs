@@ -848,9 +848,8 @@ pub struct LinkedTagMap<'a> {
 ///
 /// This enum defines how tags can be related to each other,
 /// supporting versioning and supplemental information scenarios.
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
-#[serde(untagged)]
 pub enum TagRelTypeChoice {
     /// This tag supplements the linked tag by providing additional information
     /// without replacing or invalidating the linked tag's content
@@ -863,6 +862,79 @@ pub enum TagRelTypeChoice {
     /// Use this relationship type when creating a new version of a tag that supersedes
     /// an older version.
     Replaces,
+}
+
+impl TryFrom<i64> for TagRelTypeChoice {
+    type Error = ComidError;
+
+    fn try_from(value: i64) -> std::result::Result<Self, Self::Error> {
+        match value {
+            0 => Ok(TagRelTypeChoice::Supplements),
+            1 => Ok(TagRelTypeChoice::Replaces),
+            n => Err(ComidError::InvalidTagRelationship(n.into())),
+        }
+    }
+}
+
+impl From<&TagRelTypeChoice> for i64 {
+    fn from(value: &TagRelTypeChoice) -> Self {
+        match value {
+            TagRelTypeChoice::Supplements => 0,
+            TagRelTypeChoice::Replaces => 1,
+        }
+    }
+}
+
+impl TryFrom<&str> for TagRelTypeChoice {
+    type Error = ComidError;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        match value {
+            "supplements" => Ok(TagRelTypeChoice::Supplements),
+            "replaces" => Ok(TagRelTypeChoice::Replaces),
+            s => Err(ComidError::InvalidTagRelationship(s.to_string().into())),
+        }
+    }
+}
+
+impl Display for TagRelTypeChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TagRelTypeChoice::Supplements => "supplements",
+            TagRelTypeChoice::Replaces => "replaces",
+        })
+    }
+}
+
+impl Serialize for TagRelTypeChoice {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if serializer.is_human_readable() {
+            self.to_string().serialize(serializer)
+        } else {
+            i64::from(self).serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TagRelTypeChoice {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            String::deserialize(deserializer)?
+                .as_str()
+                .try_into()
+                .map_err(de::Error::custom)
+        } else {
+            i64::deserialize(deserializer)?
+                .try_into()
+                .map_err(de::Error::custom)
+        }
+    }
 }
 
 /// Collection of different types of triples describing the module characteristics. It is
@@ -1366,5 +1438,81 @@ mod tests {
         let tag_identity_de: TagIdentityMap = serde_json::from_str(actual_json.as_str()).unwrap();
 
         assert_eq!(tag_identity_de, tag_identity);
+    }
+
+    #[test]
+    fn test_tag_rel_type_choice_serde() {
+        struct TestCase {
+            tag_rel: TagRelTypeChoice,
+            expected_json: &'static str,
+            expected_cbor: Vec<u8>,
+        }
+
+        let test_cases: Vec<TestCase> = vec![
+            TestCase {
+                tag_rel: TagRelTypeChoice::Supplements,
+                expected_json: "\"supplements\"",
+                expected_cbor: vec![0x00],
+            },
+            TestCase {
+                tag_rel: TagRelTypeChoice::Replaces,
+                expected_json: "\"replaces\"",
+                expected_cbor: vec![0x01],
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            let actual_json = serde_json::to_string(&tc.tag_rel).unwrap();
+
+            assert_eq!(actual_json, tc.expected_json);
+
+            let tag_rel_de: TagRelTypeChoice = serde_json::from_str(actual_json.as_str()).unwrap();
+
+            assert_eq!(tag_rel_de, tc.tag_rel);
+
+            let mut actual_cbor: Vec<u8> = vec![];
+            ciborium::into_writer(&tc.tag_rel, &mut actual_cbor).unwrap();
+
+            assert_eq!(actual_cbor, tc.expected_cbor);
+
+            let tag_rel_de: TagRelTypeChoice =
+                ciborium::from_reader(actual_cbor.as_slice()).unwrap();
+
+            assert_eq!(tag_rel_de, tc.tag_rel);
+        }
+
+        let actual_err = serde_json::from_str::<TagRelTypeChoice>("\"foo\"")
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(actual_err, "invalid tag relationship foo");
+
+        let actual_err = serde_json::from_str::<TagRelTypeChoice>("1")
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(
+            actual_err,
+            "invalid type: integer `1`, expected a string at line 1 column 1"
+        );
+
+        let actual_err = ciborium::from_reader::<TagRelTypeChoice, _>([0x03].as_slice())
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(actual_err, "Semantic(None, \"invalid tag relationship 3\")");
+
+        let actual_err = ciborium::from_reader::<TagRelTypeChoice, _>([0xf4].as_slice())
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(
+            actual_err,
+            "Semantic(None, \"invalid type: boolean `false`, expected integer\")"
+        );
     }
 }
