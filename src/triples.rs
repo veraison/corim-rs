@@ -3581,7 +3581,7 @@ impl<'de> Deserialize<'de> for DomainDependencyTripleRecord<'_> {
 }
 
 /// Types of domain identifiers
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(untagged)]
 pub enum DomainTypeChoice<'a> {
     /// Unsigned integer identifier
@@ -3589,9 +3589,11 @@ pub enum DomainTypeChoice<'a> {
     /// Text string identifier
     Text(Text<'a>),
     /// UUID identifier
-    Uuid(UuidType),
+    Uuid(TaggedUuidType),
     /// Object Identifier (OID)
     Oid(OidType),
+    /// Extensions
+    Extension(ExtensionValue<'a>),
 }
 
 impl DomainTypeChoice<'_> {
@@ -3611,7 +3613,7 @@ impl DomainTypeChoice<'_> {
 
     pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::Uuid(value) => Some(value.as_ref()),
+            Self::Uuid(value) => Some(value.as_ref().as_ref()),
             _ => None,
         }
     }
@@ -3620,6 +3622,128 @@ impl DomainTypeChoice<'_> {
         match self {
             Self::Oid(value) => Some(value.as_ref()),
             _ => None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DomainTypeChoice<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::Object(map) => {
+                    if map.contains_key("type") && map.contains_key("value") && map.len() == 2 {
+                        let value = match &map["value"] {
+                            serde_json::Value::String(s) => Ok(s),
+                            v => Err(de::Error::custom(format!(
+                                "value must be a string, got {v:?}"
+                            ))),
+                        }?;
+
+                        match &map["type"] {
+                            serde_json::Value::String(typ) => match typ.as_str() {
+                                "oid" => Ok(DomainTypeChoice::Oid(OidType::from(
+                                    ObjectIdentifier::try_from(value.as_str())
+                                        .map_err(|_| de::Error::custom("invalid OID bytes"))?,
+                                ))),
+                                "uuid" => Ok(DomainTypeChoice::Uuid(TaggedUuidType::from(
+                                    UuidType::try_from(value.as_str())
+                                        .map_err(|_| de::Error::custom("invalid UUID bytes"))?,
+                                ))),
+                                s => Err(de::Error::custom(format!(
+                                    "unexpected type {s} for DomainTypeChoice"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!(
+                                "type must be as string, got {v:?}"
+                            ))),
+                        }
+                    } else if map.contains_key("tag") && map.contains_key("value") && map.len() == 2
+                    {
+                        match &map["tag"] {
+                            serde_json::Value::Number(n) => match n.as_u64() {
+                                Some(u) => Ok(DomainTypeChoice::Extension(ExtensionValue::Tag(
+                                    u,
+                                    Box::new(
+                                        ExtensionValue::try_from(map["value"].clone())
+                                            .map_err(de::Error::custom)?,
+                                    ),
+                                ))),
+                                None => Err(de::Error::custom(format!(
+                                    "a number must be an unsinged integer, got {n:?}"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!("invalid tag {v:?}"))),
+                        }
+                    } else {
+                        Ok(DomainTypeChoice::Extension(
+                            ExtensionValue::try_from(serde_json::Value::Object(map))
+                                .map_err(de::Error::custom)?,
+                        ))
+                    }
+                }
+                serde_json::Value::String(s) => Ok(DomainTypeChoice::Text(s.into())),
+                serde_json::Value::Number(n) => {
+                    if n.is_u64() {
+                        Ok(DomainTypeChoice::Uint(n.as_u64().unwrap().into()))
+                    } else if n.is_i64() {
+                        Ok(DomainTypeChoice::Extension(ExtensionValue::Int(
+                            n.as_i64().unwrap().into(),
+                        )))
+                    } else {
+                        Err(de::Error::custom(
+                            "floating point DomainTypeChoice extensions not supported",
+                        ))
+                    }
+                }
+                value => Ok(DomainTypeChoice::Extension(
+                    value.try_into().map_err(de::Error::custom)?,
+                )),
+            }
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Tag(tag, inner) => {
+                    // Re-serializing the inner Value so that we can deserialize it
+                    // into an appropriate type, once we figure out what that is
+                    // based on the tag.
+                    let mut buf: Vec<u8> = Vec::new();
+                    ciborium::into_writer(&inner, &mut buf).unwrap();
+
+                    match tag {
+                        111 => {
+                            let oid: ObjectIdentifier =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(DomainTypeChoice::Oid(OidType::from(oid)))
+                        }
+                        37 => {
+                            let uuid: UuidType =
+                                ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                            Ok(DomainTypeChoice::Uuid(TaggedUuidType::from(uuid)))
+                        }
+                        n => Ok(DomainTypeChoice::Extension(ExtensionValue::Tag(
+                            n,
+                            Box::new(
+                                ExtensionValue::try_from(inner.deref().to_owned())
+                                    .map_err(de::Error::custom)?,
+                            ),
+                        ))),
+                    }
+                }
+                ciborium::Value::Text(s) => Ok(DomainTypeChoice::Text(s.into())),
+                ciborium::Value::Integer(i) => {
+                    let val: i128 = i.into();
+                    if val >= 0 {
+                        Ok(DomainTypeChoice::Uint(val.into()))
+                    } else {
+                        Ok(DomainTypeChoice::Extension(ExtensionValue::Int(val.into())))
+                    }
+                }
+                value => Ok(DomainTypeChoice::Extension(
+                    value.try_into().map_err(de::Error::custom)?,
+                )),
+            }
         }
     }
 }
@@ -5217,5 +5341,70 @@ mod test {
         let mm_de: MeasurementMap = serde_json::from_str(expected).unwrap();
 
         assert_eq!(mm_de, mm);
+    }
+
+    #[test]
+    fn test_domain_type_choice_serde() {
+        struct TestCase<'a> {
+            value: DomainTypeChoice<'a>,
+            expected_cbor: Vec<u8>,
+            expected_json: &'static str,
+        }
+
+        let test_cases: Vec<TestCase> = vec! [
+            TestCase{
+                value: DomainTypeChoice::Uint(1.into()),
+                expected_cbor: vec![0x01],
+                expected_json: "1",
+            },
+            TestCase{
+                value: DomainTypeChoice::Text("foo".into()),
+                expected_cbor: vec![
+                    0x63, // tstr(3)
+                      0x66, 0x6f, 0x6f, // "foo"
+                ],
+                expected_json: "\"foo\"",
+            },
+            TestCase{
+                value: DomainTypeChoice::Oid("1.2.3.4".try_into().unwrap()),
+                expected_cbor: vec![
+                    0xd8, 0x6f, // tag(111) [oid]
+                      0x43, // bstr(3)
+                        0x2a, 0x03, 0x04, // OID bytes
+                ],
+                expected_json: r#"{"type":"oid","value":"1.2.3.4"}"#,
+            },
+            TestCase{
+                value: DomainTypeChoice::Uuid("550e8400-e29b-41d4-a716-446655440000".try_into().unwrap()),
+                expected_cbor: vec![
+                    0xd8, 0x25, // tag(37) [uuid]
+                      0x50, // bstr(16)
+                        0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4, // UUID bytes
+                        0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00,
+                ],
+                expected_json: r#"{"type":"uuid","value":"550e8400-e29b-41d4-a716-446655440000"}"#,
+            },
+            TestCase{
+                value: DomainTypeChoice::Extension(
+                    ExtensionValue::Tag(1337, Box::new(ExtensionValue::Bool(true))),
+                ),
+                expected_cbor: vec![
+                    0xd9, 0x05, 0x39, // tag(1337)
+                      0xf5, // true
+                ],
+                expected_json: r#"{"tag":1337,"value":true}"#,
+            }
+        ];
+
+        for tc in test_cases.into_iter() {
+            let mut actual_cbor: Vec<u8> = vec![];
+            ciborium::into_writer(&tc.value, &mut actual_cbor).unwrap();
+
+            assert_eq!(actual_cbor, tc.expected_cbor);
+
+            let actual_json = serde_json::to_string(&tc.value).unwrap();
+
+            assert_eq!(actual_json, tc.expected_json);
+        }
     }
 }
