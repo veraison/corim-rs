@@ -909,17 +909,116 @@ impl<'de> Deserialize<'de> for ComidRoleTypeChoice {
 }
 
 /// Reference to another tag and its relationship to this one
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct LinkedTagMap<'a> {
     /// Identifier of the linked tag
-    #[serde(rename = "0")]
     pub linked_tag_id: TagIdTypeChoice<'a>,
     /// Relationship type between the tags
-    #[serde(rename = "1")]
     pub tag_rel: TagRelTypeChoice,
+}
+
+impl Serialize for LinkedTagMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            map.serialize_entry("linked-tag-id", &self.linked_tag_id)?;
+            map.serialize_entry("tag-rel", &self.tag_rel)?;
+        } else {
+            map.serialize_entry(&0, &self.linked_tag_id)?;
+            map.serialize_entry(&1, &self.tag_rel)?;
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for LinkedTagMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct LinkedTagMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for LinkedTagMapVisitor<'a> {
+            type Value = LinkedTagMap<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing LinkedTagMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut tag_id: Option<TagIdTypeChoice> = None;
+                let mut tag_rel: Option<TagRelTypeChoice> = None;
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("linked-tag-id") => {
+                                tag_id = Some(map.next_value::<TagIdTypeChoice>()?);
+                            }
+                            Some("tag-rel") => {
+                                tag_rel = Some(map.next_value::<TagRelTypeChoice>()?);
+                            }
+                            Some(s) => {
+                                return Err(de::Error::unknown_field(
+                                    s,
+                                    &["linked-tag-id", "tag-rel"],
+                                ))
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                tag_id = Some(map.next_value::<TagIdTypeChoice>()?);
+                            }
+                            Some(1) => {
+                                tag_rel = Some(map.next_value::<TagRelTypeChoice>()?);
+                            }
+                            Some(n) => {
+                                return Err(de::Error::unknown_field(
+                                    n.to_string().as_str(),
+                                    &["linked-tag-id", "tag-rel"],
+                                ))
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if tag_id.is_none() {
+                    return Err(de::Error::missing_field("linked-tag-id"));
+                }
+
+                if tag_rel.is_none() {
+                    return Err(de::Error::missing_field("tag-rel"));
+                }
+
+                Ok(LinkedTagMap {
+                    linked_tag_id: tag_id.unwrap(),
+                    tag_rel: tag_rel.unwrap(),
+                })
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(LinkedTagMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Types of relationships between tags
@@ -1592,5 +1691,47 @@ mod tests {
             actual_err,
             "Semantic(None, \"invalid type: boolean `false`, expected integer\")"
         );
+    }
+
+    #[test]
+    fn test_linked_tag_map_serde() {
+        let linked_tag_map = LinkedTagMap {
+            linked_tag_id: TagIdTypeChoice::Uuid(
+                "550e8400-e29b-41d4-a716-446655440000".try_into().unwrap(),
+            ),
+            tag_rel: TagRelTypeChoice::Replaces,
+        };
+
+        let mut actual_cbor: Vec<u8> = vec![];
+        ciborium::into_writer(&linked_tag_map, &mut actual_cbor).unwrap();
+
+        let expected_cbor: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0 [linked-tag-id]
+              0x50, // value: bstr(16)
+                0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4,
+                0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00,
+              0x01, // key: 1 [tag-rel]
+              0x01, // value: 1 [replaces]
+            0xff, // break
+        ];
+
+        assert_eq!(actual_cbor, expected_cbor);
+
+        let linked_tag_map_de: LinkedTagMap =
+            ciborium::from_reader(actual_cbor.as_slice()).unwrap();
+
+        assert_eq!(linked_tag_map_de, linked_tag_map);
+
+        let actual_json = serde_json::to_string(&linked_tag_map).unwrap();
+
+        let expected_json =
+            r#"{"linked-tag-id":"550e8400-e29b-41d4-a716-446655440000","tag-rel":"replaces"}"#;
+
+        assert_eq!(actual_json, expected_json);
+
+        let linked_tag_map_de: LinkedTagMap = serde_json::from_str(actual_json.as_str()).unwrap();
+
+        assert_eq!(linked_tag_map_de, linked_tag_map);
     }
 }
