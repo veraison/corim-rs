@@ -100,7 +100,7 @@ use serde::{
     ser::SerializeMap,
     Deserialize, Serialize,
 };
-use std::{fmt::Display, marker::PhantomData};
+use std::{borrow::Cow, fmt::Display, marker::PhantomData};
 
 /// A tag version number represented as an unsigned integer
 pub type TagVersionType = Uint;
@@ -459,7 +459,7 @@ impl<'de> Deserialize<'de> for TagIdentityMap<'_> {
 /// This enum allows CoMID tags to be identified by either a text string
 /// or a UUID, following the schema definition in the CoRIM specification.
 /// Tag identifiers are used in the tag identity map and for linking between tags.
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum TagIdTypeChoice<'a> {
@@ -513,7 +513,85 @@ impl TagIdTypeChoice<'_> {
 
 impl<'a> From<&'a str> for TagIdTypeChoice<'a> {
     fn from(value: &'a str) -> Self {
-        TagIdTypeChoice::Tstr(Tstr::from(value))
+        match UuidType::try_from(value) {
+            Ok(uuid) => TagIdTypeChoice::Uuid(uuid),
+            Err(_) => TagIdTypeChoice::Tstr(value.into()),
+        }
+    }
+}
+
+impl From<[u8; 16]> for TagIdTypeChoice<'_> {
+    fn from(value: [u8; 16]) -> Self {
+        TagIdTypeChoice::Uuid(UuidType::from(value))
+    }
+}
+
+impl TryFrom<&[u8]> for TagIdTypeChoice<'_> {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(value: &[u8]) -> std::result::Result<Self, Self::Error> {
+        Ok(TagIdTypeChoice::Uuid(UuidType::try_from(value)?))
+    }
+}
+
+impl<'de> Deserialize<'de> for TagIdTypeChoice<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct TagIdTypeChoiceVisitor<'a> {
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for TagIdTypeChoiceVisitor<'a> {
+            type Value = TagIdTypeChoice<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or 16 bytes of a UUID")
+            }
+
+            fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_string(v.to_string())
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                TagIdTypeChoice::try_from(v).map_err(de::Error::custom)
+            }
+
+            fn visit_string<E>(self, v: String) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                match UuidType::try_from(v.as_str()) {
+                    Ok(uuid) => Ok(TagIdTypeChoice::Uuid(uuid)),
+                    Err(_) => Ok(TagIdTypeChoice::Tstr(Tstr::from(Cow::Owned::<str>(v)))),
+                }
+            }
+
+            fn visit_borrowed_str<E>(self, v: &'de str) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(v)
+            }
+
+            fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_bytes(v)
+            }
+        }
+
+        deserializer.deserialize_any(TagIdTypeChoiceVisitor {
+            marker: PhantomData,
+        })
     }
 }
 
