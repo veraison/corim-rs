@@ -3392,19 +3392,118 @@ impl<'de, 'a> Deserialize<'de> for IdentityTripleRecord<'a> {
 /// Conditions that must be met for a triple record to be valid.It is
 /// **HIGHLY** recommended to use the TriplesRecordConditionBuilder, to ensure the CDDL enforcement of
 /// at least one field being present.
-#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct TriplesRecordCondition<'a> {
     /// Optional measurement key identifier
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "0")]
     pub mkey: Option<MeasuredElementTypeChoice<'a>>,
     /// Keys authorized to verify the condition
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "1")]
     pub authorized_by: Option<Vec<CryptoKeyTypeChoice<'a>>>,
 }
 
+impl Serialize for TriplesRecordCondition<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            if let Some(mkey) = &self.mkey {
+                map.serialize_entry("mkey", mkey)?;
+            }
+
+            if let Some(authorized_by) = &self.authorized_by {
+                map.serialize_entry("authorized-by", authorized_by)?;
+            }
+        } else {
+            if let Some(mkey) = &self.mkey {
+                map.serialize_entry(&0, mkey)?;
+            }
+
+            if let Some(authorized_by) = &self.authorized_by {
+                map.serialize_entry(&1, authorized_by)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for TriplesRecordCondition<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TriplesRecordConditionVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for TriplesRecordConditionVisitor<'a> {
+            type Value = TriplesRecordCondition<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing TriplesRecordCondition fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut builder = TriplesRecordConditionBuilder::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("mkey") => {
+                                builder =
+                                    builder.mkey(map.next_value::<MeasuredElementTypeChoice>()?);
+                            }
+                            Some("authorized-by") => {
+                                builder = builder
+                                    .authorized_by(map.next_value::<Vec<CryptoKeyTypeChoice>>()?);
+                            }
+                            Some(s) => {
+                                return Err(de::Error::unknown_field(s, &["mkey", "authorized-by"]))
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                builder =
+                                    builder.mkey(map.next_value::<MeasuredElementTypeChoice>()?);
+                            }
+                            Some(1) => {
+                                builder = builder
+                                    .authorized_by(map.next_value::<Vec<CryptoKeyTypeChoice>>()?);
+                            }
+                            Some(n) => {
+                                return Err(de::Error::unknown_field(
+                                    n.to_string().as_str(),
+                                    &["0-1"],
+                                ))
+                            }
+                            None => break,
+                        }
+                    };
+                }
+
+                builder.build().map_err(de::Error::custom)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(TriplesRecordConditionVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
+}
+
+#[derive(Default)]
 pub struct TriplesRecordConditionBuilder<'a> {
     /// Optional measurement key identifier
     pub mkey: Option<MeasuredElementTypeChoice<'a>>,
