@@ -843,7 +843,7 @@ mod tests {
                     0xff, // break
                 0xff, // break
               0xa0, // map(0) -- COSE unprotected header
-              0x58, 0xc0, // bstr(192) -- COSE payload
+              0x58, 0xbc, // bstr(188) -- COSE payload
                 0xd9, 0x01, 0xf5, // tag(501) -- CoRIM
                   0xbf, // map(indef)
                     0x61, // key: tstr(1)
@@ -883,20 +883,17 @@ mod tests {
                         0xff,  // break(map)
                       0xd9, 0x01, 0xfa, // tag (506) -- CoMID
                         0xbf, // map(indef)
-                          0x61, // key: tstr(1)
-                            0x30, // "0"
+                          0x00, // key: 0
                           0x65, // value: tstr(5)
                             0x65, 0x6e, 0x5f, 0x55, 0x53, // "en_US"
-                          0x61, // key: tstr(1)
-                            0x31, // "1"
+                          0x01, // key: 1
                           0xbf, // value: map(1)
                             0x00, // key: 0 [tag-id]
                             0x6b, // value: tstr(11)
                               0x53, 0x6f, 0x6d, 0x65, 0x20, 0x54, 0x61, 0x67, // "Some Tag"
                               0x20, 0x49, 0x44,                               // " ID"
                           0xff, // break
-                          0x61, // key: tstr(1)
-                            0x32, // "2"
+                          0x02, // key: 2
                           0x81, // value: array(1)
                             0xbf, // map(indef)
                               0x00, // key: 0
@@ -907,8 +904,7 @@ mod tests {
                               0x81, // value: array(1)
                                 0x00, // 0 [tag-creator]
                             0xff, // break(map)
-                          0x61, // key: tstr(1)
-                            0x34, // "4"
+                          0x04, // key: 4
                           0xbf, // value: map(indef)
                             0x00, // key: 0
                             0x81, // value: array(1)
@@ -1036,7 +1032,7 @@ mod tests {
                         }]),
                         linked_tags: None,
                         triples,
-                        extension: None,
+                        extensions: None,
                     }
                     .into(),
                 ],

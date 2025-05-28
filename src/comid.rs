@@ -62,7 +62,7 @@
 //!     entities: Some(vec![entity].into()),
 //!     linked_tags: None,
 //!     triples,
-//!     extension: None,
+//!     extensions: None,
 //! };
 //! ```
 //!
@@ -87,7 +87,7 @@
 
 use crate::{
     core::{RawValueType, TaggedBytes},
-    empty_map_as_none, generate_tagged,
+    generate_tagged,
     triples::{EnvironmentMap, MeasuredElementTypeChoice, MeasurementMap, MeasurementValuesMap},
     AttestKeyTripleRecord, ComidError, ConditionalEndorsementSeriesTripleRecord,
     ConditionalEndorsementTripleRecord, CoswidTripleRecord, DomainDependencyTripleRecord,
@@ -114,34 +114,21 @@ generate_tagged!((
     "A Concise Module Identifier (CoMID) structured tag"
 ),);
 /// A Concise Module Identifier (CoMID) tag structure tagged with CBOR tag 506
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct ConciseMidTag<'a> {
     /// Optional language identifier for the tag content
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "0")]
     pub language: Option<Text<'a>>,
     /// Identity information for this tag
-    #[serde(rename = "1")]
     pub tag_identity: TagIdentityMap<'a>,
     /// List of entities associated with this tag
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "2")]
     pub entities: Option<Vec<ComidEntityMap<'a>>>,
     /// Optional references to other related tags
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "3")]
     pub linked_tags: Option<Vec<LinkedTagMap<'a>>>,
     /// Collection of triples describing the module
-    #[serde(rename = "4")]
     pub triples: TriplesMap<'a>,
     /// Optional extensible attributes
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "empty_map_as_none")]
-    #[serde(flatten)]
-    pub extension: Option<ExtensionMap<'a>>,
+    pub extensions: Option<ExtensionMap<'a>>,
 }
 
 impl<'a> ConciseMidTag<'a> {
@@ -339,6 +326,243 @@ impl<'a> ConciseMidTag<'a> {
             }
         }
         Ok(())
+    }
+}
+
+impl Serialize for ConciseMidTag<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            if let Some(language) = &self.language {
+                map.serialize_entry("language", language)?;
+            }
+
+            map.serialize_entry("tag-identity", &self.tag_identity)?;
+
+            if let Some(entities) = &self.entities {
+                map.serialize_entry("entities", entities)?;
+            }
+
+            if let Some(linked_tags) = &self.linked_tags {
+                map.serialize_entry("linked-tags", linked_tags)?;
+            }
+
+            map.serialize_entry("triples", &self.triples)?;
+        } else {
+            if let Some(language) = &self.language {
+                map.serialize_entry(&0, language)?;
+            }
+
+            map.serialize_entry(&1, &self.tag_identity)?;
+
+            if let Some(entities) = &self.entities {
+                map.serialize_entry(&2, entities)?;
+            }
+
+            if let Some(linked_tags) = &self.linked_tags {
+                map.serialize_entry(&3, linked_tags)?;
+            }
+
+            map.serialize_entry(&4, &self.triples)?;
+        }
+
+        if let Some(extensions) = &self.extensions {
+            extensions.serialize_map(&mut map, is_human_readable)?;
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ConciseMidTag<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct ConciseMidTagVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for ConciseMidTagVisitor<'a> {
+            type Value = ConciseMidTag<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing ConciseMidTag fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut builder = ConciseMidTagBuilder::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("language") => {
+                                builder = builder.language(map.next_value::<Text>()?);
+                            }
+                            Some("tag-identity") => {
+                                builder = builder.tag_identity(map.next_value::<TagIdentityMap>()?);
+                            }
+                            Some("entities") => {
+                                builder =
+                                    builder.entities(map.next_value::<Vec<ComidEntityMap>>()?);
+                            }
+                            Some("linked-tags") => {
+                                builder =
+                                    builder.linked_tags(map.next_value::<Vec<LinkedTagMap>>()?);
+                            }
+                            Some("triples") => {
+                                builder = builder.triples(map.next_value::<TriplesMap>()?);
+                            }
+                            Some(s) => {
+                                let ext_field: i128 = s.parse().map_err(|_| {
+                                    de::Error::unknown_field(
+                                        s,
+                                        &[
+                                            "langauge",
+                                            "tag-identity",
+                                            "entities",
+                                            "linked-tags",
+                                            "triples",
+                                            "any integer",
+                                        ],
+                                    )
+                                })?;
+                                builder = builder
+                                    .add_extension(ext_field, map.next_value::<ExtensionValue>()?);
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                builder = builder.language(map.next_value::<Text>()?);
+                            }
+                            Some(1) => {
+                                builder = builder.tag_identity(map.next_value::<TagIdentityMap>()?);
+                            }
+                            Some(2) => {
+                                builder =
+                                    builder.entities(map.next_value::<Vec<ComidEntityMap>>()?);
+                            }
+                            Some(3) => {
+                                builder =
+                                    builder.linked_tags(map.next_value::<Vec<LinkedTagMap>>()?);
+                            }
+                            Some(4) => {
+                                builder = builder.triples(map.next_value::<TriplesMap>()?);
+                            }
+                            Some(n) => {
+                                builder = builder
+                                    .add_extension(n.into(), map.next_value::<ExtensionValue>()?);
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                builder.build().map_err(de::Error::custom)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(ConciseMidTagVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ConciseMidTagBuilder<'a> {
+    /// Optional language identifier for the tag content
+    language: Option<Text<'a>>,
+    /// Identity information for this tag
+    tag_identity: Option<TagIdentityMap<'a>>,
+    /// List of entities associated with this tag
+    entities: Option<Vec<ComidEntityMap<'a>>>,
+    /// Optional references to other related tags
+    linked_tags: Option<Vec<LinkedTagMap<'a>>>,
+    /// Collection of triples describing the module
+    triples: Option<TriplesMap<'a>>,
+    /// Optional extensible attributes
+    extensions: Option<ExtensionMap<'a>>,
+}
+
+impl<'a> ConciseMidTagBuilder<'a> {
+    pub fn language(mut self, value: Text<'a>) -> Self {
+        self.language = Some(value);
+        self
+    }
+
+    pub fn tag_identity(mut self, value: TagIdentityMap<'a>) -> Self {
+        self.tag_identity = Some(value);
+        self
+    }
+
+    pub fn entities(mut self, value: Vec<ComidEntityMap<'a>>) -> Self {
+        self.entities = Some(value);
+        self
+    }
+
+    pub fn linked_tags(mut self, value: Vec<LinkedTagMap<'a>>) -> Self {
+        self.linked_tags = Some(value);
+        self
+    }
+
+    pub fn triples(mut self, value: TriplesMap<'a>) -> Self {
+        self.triples = Some(value);
+        self
+    }
+
+    pub fn extensions(mut self, value: ExtensionMap<'a>) -> Self {
+        self.extensions = Some(value);
+        self
+    }
+
+    pub fn add_extension(mut self, key: i128, value: ExtensionValue<'a>) -> Self {
+        if let Some(extensions) = &mut self.extensions {
+            extensions.insert(key.into(), value);
+        } else {
+            let mut extensions = ExtensionMap::default();
+            extensions.insert(key.into(), value);
+            self.extensions = Some(extensions)
+        }
+
+        self
+    }
+
+    pub fn build(self) -> Result<ConciseMidTag<'a>> {
+        if self.tag_identity.is_none() {
+            return Err(ComidError::UnsetMandatoryField(
+                "ConciseMidTag".to_string(),
+                "tag_identity".to_string(),
+            ))?;
+        }
+
+        if self.triples.is_none() {
+            return Err(ComidError::UnsetMandatoryField(
+                "ConciseMidTag".to_string(),
+                "triples".to_string(),
+            ))?;
+        }
+
+        Ok(ConciseMidTag {
+            language: self.language,
+            tag_identity: self.tag_identity.unwrap(),
+            entities: self.entities,
+            linked_tags: self.linked_tags,
+            triples: self.triples.unwrap(),
+            extensions: self.extensions,
+        })
     }
 }
 
@@ -2249,6 +2473,127 @@ mod tests {
         let actual_json = serde_json::to_string(&triples_map).unwrap();
 
         let expected_json = r#"{"reference-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]],"endorsed-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]],"identity-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"type":"bytes","value":"BAUG"}],{"mkey":"foo","authorized-by":[{"type":"bytes","value":"BAUG"}]}]],"attest-key-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"type":"bytes","value":"BAUG"}],{"mkey":"foo","authorized-by":[{"type":"bytes","value":"BAUG"}]}]],"dependency-triples":[[{"type":"oid","value":"1.2.3.4"},[{"instance":{"type":"bytes","value":"AQID"}}]]],"membership-triples":[[{"type":"oid","value":"1.2.3.4"},[{"instance":{"type":"bytes","value":"AQID"}}]]],"coswid-triples":[[{"instance":{"type":"bytes","value":"AQID"}},["bar"]]],"conditional-endorsement-series-triples":[[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]],[[[{"mval":{"svn":1}}],[{"mval":{"svn":1}}]]]]],"conditional-endorsement-triples":[[[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]],[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]]]],"1337":true}"#;
+
+        assert_eq!(actual_json, expected_json);
+    }
+
+    #[test]
+    fn test_concise_mid_tag_serde() {
+        let env = EnvironmentMapBuilder::default()
+            .instance(InstanceIdTypeChoice::Bytes(
+                [0x01, 0x02, 0x03].as_slice().into(),
+            ))
+            .build()
+            .unwrap();
+
+        let mvals = MeasurementValuesMapBuilder::default()
+            .svn(SvnTypeChoice::Svn(1.into()))
+            .build()
+            .unwrap();
+
+        let measurement_map = MeasurementMap {
+            mkey: None,
+            mval: mvals,
+            authorized_by: None,
+        };
+
+        let comid = ConciseMidTagBuilder::default()
+            .language("en-GB".into())
+            .tag_identity(TagIdentityMap {
+                tag_id: TagIdTypeChoice::Tstr("foo".into()),
+                tag_version: None,
+            })
+            .entities(vec![
+                ComidEntityMapBuilder::default()
+                    .entity_name("foo".into())
+                    .add_role(ComidRoleTypeChoice::Creator)
+                    .build()
+                    .unwrap()
+            ])
+            .linked_tags(vec![
+                LinkedTagMap{
+                    linked_tag_id: TagIdTypeChoice::Tstr("bar".into()),
+                    tag_rel: TagRelTypeChoice::Supplements,
+                }
+            ])
+            .triples(
+                TriplesMapBuilder::default()
+                    .endorsed_triples(vec![
+                    EndorsedTripleRecord{
+                        condition: env.clone(),
+                        endorsement: vec![measurement_map.clone()],
+                    }
+                ])
+                    .build()
+                    .unwrap(),
+            )
+            .add_extension(1337, ExtensionValue::Bool(false))
+            .build()
+            .unwrap();
+
+        let mut actual_cbor: Vec<u8> = vec![];
+        ciborium::into_writer(&comid, &mut actual_cbor).unwrap();
+
+        let expected_cbor: Vec<u8> = vec![
+            0xbf, // map(indef) [concise-mid-tag]
+              0x00, // key: 0 [language]
+              0x65, // value: tstr(5)
+                0x65, 0x6e, 0x2d, 0x47, 0x42, // "en-GB"
+              0x01, // key: 1 [tag-identity]
+              0xbf, // value: map(indef) [tag-identity-map]
+                0x00, // key: 0 [tag-id]
+                0x63, // value: tstr(3)
+                  0x66, 0x6f, 0x6f, // "foo"
+              0xff, // break
+              0x02, // key: 2 [entities]
+              0x81, // value: array(1)
+                0xbf, // [0]map(indef) [comid-entity-map]
+                  0x00, // key: 0 [entity-name]
+                  0x63, // value: tstr(3)
+                    0x66, 0x6f, 0x6f, // "foo"
+                  0x02, // key: 2 [role]
+                  0x81, // value: array(1)
+                    0x01, // [0]1 [creator]
+                0xff, // break
+              0x03, // key: 3 [linked-tags]
+              0x81, // value: array(0)
+                0xbf, // [0]map(indef) [linked-tag-map]
+                  0x00, // key: 0 [linked-tag-id]
+                  0x63, // value: tstr(3)
+                    0x62, 0x61, 0x72, // "bar"
+                  0x01, // key: 1 [tag-rel]
+                  0x00, // value: 0 [supplements]
+                0xff, // break
+              0x04, // key: 4 [triples]
+              0xbf, // value: map(indef) [triples-map]
+                0x01, //  key: 1 [endorsed-triples]
+                0x81, // value: array(1)
+                  0x82, // [0]array(2) [endorsed-triple-record]
+                    0xbf, // [0]map(indef) [environment-map]
+                      0x01, // key: 1 [instance]
+                      0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes[
+                        0x43, // bstr(3)
+                          0x01, 0x02, 0x03,
+                    0xff, // break
+                    0x81, // [1]array(1)
+                      0xbf, // [0]map(indef) [measurement-map]
+                        0x01, // key: 1 [mval]
+                        0xbf, // value: map(indef) [measurement-values-map]
+                          0x01, // key: 1 [svn]
+                          0x01, // value: 1
+                        0xff, // break
+                      0xff, // break
+              0xff, //break
+              0x19, 0x05, 0x39, // key: 1337 [extension(1337)]
+              0xf4, // value: false
+            0xff, // break
+        ];
+
+        assert_eq!(actual_cbor, expected_cbor);
+
+        let actual_json = serde_json::to_string(&comid).unwrap();
+
+        let expected_json = r#"{"language":"en-GB","tag-identity":{"tag-id":"foo"},"entities":[{"entity-name":"foo","role":["creator"]}],"linked-tags":[{"linked-tag-id":"bar","tag-rel":"supplements"}],"triples":{"endorsed-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]]},"1337":false}"#;
 
         assert_eq!(actual_json, expected_json);
     }
