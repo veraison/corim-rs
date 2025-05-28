@@ -52,7 +52,7 @@
 //!     coswid_triples: None,
 //!     conditional_endorsement_series_triples: None,
 //!     conditional_endorsement_triples: None,
-//!     extension: None,
+//!     extensions: None,
 //! };
 //!
 //! // Create the CoMID tag
@@ -91,7 +91,7 @@ use crate::{
     triples::{EnvironmentMap, MeasuredElementTypeChoice, MeasurementMap, MeasurementValuesMap},
     AttestKeyTripleRecord, ComidError, ConditionalEndorsementSeriesTripleRecord,
     ConditionalEndorsementTripleRecord, CoswidTripleRecord, DomainDependencyTripleRecord,
-    DomainMembershipTripleRecord, EndorsedTripleRecord, ExtensionMap, ExtensionValue,
+    DomainMembershipTripleRecord, Empty as _, EndorsedTripleRecord, ExtensionMap, ExtensionValue,
     IdentityTripleRecord, Integer, ReferenceTripleRecord, Result, Text, Tstr, Uint, Uri, UuidType,
 };
 use derive_more::{Constructor, From, TryFrom};
@@ -1117,60 +1117,271 @@ impl<'de> Deserialize<'de> for TagRelTypeChoice {
 /// Collection of different types of triples describing the module characteristics. It is
 /// **HIGHLY** recommended to use the TriplesMapBuilder, to ensure the CDDL enforcement of
 /// at least one field being present.
-#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct TriplesMap<'a> {
     /// Optional reference triples that link to external references
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "0")]
     pub reference_triples: Option<Vec<ReferenceTripleRecord<'a>>>,
 
     /// Optional endorsement triples that contain verification information
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "1")]
     pub endorsed_triples: Option<Vec<EndorsedTripleRecord<'a>>>,
 
     /// Optional identity triples that provide identity information
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "2")]
     pub identity_triples: Option<Vec<IdentityTripleRecord<'a>>>,
 
     /// Optional attestation key triples containing cryptographic keys
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "3")]
     pub attest_key_triples: Option<Vec<AttestKeyTripleRecord<'a>>>,
 
     /// Optional domain dependency triples describing relationships between domains
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "4")]
     pub dependency_triples: Option<Vec<DomainDependencyTripleRecord<'a>>>,
 
     /// Optional domain membership triples describing domain associations
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "5")]
     pub membership_triples: Option<Vec<DomainMembershipTripleRecord<'a>>>,
 
     /// Optional SWID triples containing software identification data
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "6")]
     pub coswid_triples: Option<Vec<CoswidTripleRecord<'a>>>,
 
     /// Optional conditional endorsement series triples for complex endorsement chains
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "8")]
     pub conditional_endorsement_series_triples:
         Option<Vec<ConditionalEndorsementSeriesTripleRecord<'a>>>,
 
     /// Optional conditional endorsement triples for conditional verification
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "10")]
     pub conditional_endorsement_triples: Option<Vec<ConditionalEndorsementTripleRecord<'a>>>,
 
     /// Optional extensible attributes for future expansion
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "empty_map_as_none")]
-    #[serde(flatten)]
-    pub extension: Option<ExtensionMap<'a>>,
+    pub extensions: Option<ExtensionMap<'a>>,
+}
+
+impl Serialize for TriplesMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            if let Some(reference_triples) = &self.reference_triples {
+                map.serialize_entry("reference-triples", reference_triples)?;
+            }
+            if let Some(endorsed_triples) = &self.endorsed_triples {
+                map.serialize_entry("endorsed-triples", endorsed_triples)?;
+            }
+            if let Some(identity_triples) = &self.identity_triples {
+                map.serialize_entry("identity-triples", identity_triples)?;
+            }
+            if let Some(attest_key_triples) = &self.attest_key_triples {
+                map.serialize_entry("attest-key-triples", attest_key_triples)?;
+            }
+            if let Some(dependency_triples) = &self.dependency_triples {
+                map.serialize_entry("dependency-triples", dependency_triples)?;
+            }
+            if let Some(membership_triples) = &self.membership_triples {
+                map.serialize_entry("membership-triples", membership_triples)?;
+            }
+            if let Some(coswid_triples) = &self.coswid_triples {
+                map.serialize_entry("coswid-triples", coswid_triples)?;
+            }
+            if let Some(conditional_endorsement_series_triples) =
+                &self.conditional_endorsement_series_triples
+            {
+                map.serialize_entry(
+                    "conditional-endorsement-series-triples",
+                    conditional_endorsement_series_triples,
+                )?;
+            }
+            if let Some(conditional_endorsement_triples) = &self.conditional_endorsement_triples {
+                map.serialize_entry(
+                    "conditional-endorsement-triples",
+                    conditional_endorsement_triples,
+                )?;
+            }
+        } else {
+            if let Some(reference_triples) = &self.reference_triples {
+                map.serialize_entry(&0, reference_triples)?;
+            }
+            if let Some(endorsed_triples) = &self.endorsed_triples {
+                map.serialize_entry(&1, endorsed_triples)?;
+            }
+            if let Some(identity_triples) = &self.identity_triples {
+                map.serialize_entry(&2, identity_triples)?;
+            }
+            if let Some(attest_key_triples) = &self.attest_key_triples {
+                map.serialize_entry(&3, attest_key_triples)?;
+            }
+            if let Some(dependency_triples) = &self.dependency_triples {
+                map.serialize_entry(&4, dependency_triples)?;
+            }
+            if let Some(membership_triples) = &self.membership_triples {
+                map.serialize_entry(&5, membership_triples)?;
+            }
+            if let Some(coswid_triples) = &self.coswid_triples {
+                map.serialize_entry(&6, coswid_triples)?;
+            }
+            if let Some(conditional_endorsement_series_triples) =
+                &self.conditional_endorsement_series_triples
+            {
+                map.serialize_entry(&8, conditional_endorsement_series_triples)?;
+            }
+            if let Some(conditional_endorsement_triples) = &self.conditional_endorsement_triples {
+                map.serialize_entry(&10, conditional_endorsement_triples)?;
+            }
+        }
+
+        if let Some(extensions) = &self.extensions {
+            extensions.serialize_map(&mut map, is_human_readable)?;
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for TriplesMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct TriplesMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for TriplesMapVisitor<'a> {
+            type Value = TriplesMap<'a>;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing TriplesMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut builder = TriplesMapBuilder::default();
+                let mut extensions = ExtensionMap::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("reference-triples") => {
+                                builder = builder.reference_triples(
+                                    map.next_value::<Vec<ReferenceTripleRecord>>()?,
+                                );
+                            }
+                            Some("endorsed-triples") => {
+                                builder = builder.endorsed_triples(
+                                    map.next_value::<Vec<EndorsedTripleRecord>>()?,
+                                );
+                            }
+                            Some("identity-triples") => {
+                                builder = builder.identity_triples(
+                                    map.next_value::<Vec<IdentityTripleRecord>>()?,
+                                );
+                            }
+                            Some("attest-key-triples") => {
+                                builder = builder.attest_key_triples(
+                                    map.next_value::<Vec<AttestKeyTripleRecord>>()?,
+                                );
+                            }
+                            Some("dependency-triples") => {
+                                builder = builder.dependency_triples(
+                                    map.next_value::<Vec<DomainDependencyTripleRecord>>()?,
+                                );
+                            }
+                            Some("membership-triples") => {
+                                builder = builder.membership_triples(
+                                    map.next_value::<Vec<DomainMembershipTripleRecord>>()?,
+                                );
+                            }
+                            Some("coswid-triples") => {
+                                builder = builder
+                                    .coswid_triples(map.next_value::<Vec<CoswidTripleRecord>>()?);
+                            }
+                            Some("conditional-endorsement-series-triples") => {
+                                builder = builder.conditional_endorsement_series_triples(
+                                    map.next_value::<Vec<ConditionalEndorsementSeriesTripleRecord>>()?,
+                                );
+                            }
+                            Some("conditional-endorsement-triples") => {
+                                builder = builder.conditional_endorsement_triples(
+                                    map.next_value::<Vec<ConditionalEndorsementTripleRecord>>()?,
+                                );
+                            }
+                            Some(name) => {
+                                extensions.insert(
+                                    name.parse::<Integer>().map_err(de::Error::custom)?,
+                                    map.next_value::<ExtensionValue>()?,
+                                );
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                builder = builder.reference_triples(
+                                    map.next_value::<Vec<ReferenceTripleRecord>>()?,
+                                );
+                            }
+                            Some(1) => {
+                                builder = builder.endorsed_triples(
+                                    map.next_value::<Vec<EndorsedTripleRecord>>()?,
+                                );
+                            }
+                            Some(2) => {
+                                builder = builder.identity_triples(
+                                    map.next_value::<Vec<IdentityTripleRecord>>()?,
+                                );
+                            }
+                            Some(3) => {
+                                builder = builder.attest_key_triples(
+                                    map.next_value::<Vec<AttestKeyTripleRecord>>()?,
+                                );
+                            }
+                            Some(4) => {
+                                builder = builder.dependency_triples(
+                                    map.next_value::<Vec<DomainDependencyTripleRecord>>()?,
+                                );
+                            }
+                            Some(5) => {
+                                builder = builder.membership_triples(
+                                    map.next_value::<Vec<DomainMembershipTripleRecord>>()?,
+                                );
+                            }
+                            Some(6) => {
+                                builder = builder
+                                    .coswid_triples(map.next_value::<Vec<CoswidTripleRecord>>()?);
+                            }
+                            Some(8) => {
+                                builder = builder.conditional_endorsement_series_triples(
+                                    map.next_value::<Vec<ConditionalEndorsementSeriesTripleRecord>>()?,
+                                );
+                            }
+                            Some(10) => {
+                                builder = builder.conditional_endorsement_triples(
+                                    map.next_value::<Vec<ConditionalEndorsementTripleRecord>>()?,
+                                );
+                            }
+                            Some(key) => {
+                                extensions.insert(key.into(), map.next_value()?);
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if !extensions.is_empty() {
+                    builder = builder.extensions(extensions);
+                }
+
+                builder.build().map_err(de::Error::custom)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(TriplesMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
 }
 
 #[derive(Default)]
@@ -1185,7 +1396,7 @@ pub struct TriplesMapBuilder<'a> {
     conditional_endorsement_series_triples:
         Option<Vec<ConditionalEndorsementSeriesTripleRecord<'a>>>,
     conditional_endorsement_triples: Option<Vec<ConditionalEndorsementTripleRecord<'a>>>,
-    extension: Option<ExtensionMap<'a>>,
+    extensions: Option<ExtensionMap<'a>>,
 }
 
 impl<'a> TriplesMapBuilder<'a> {
@@ -1380,8 +1591,8 @@ impl<'a> TriplesMapBuilder<'a> {
     /// # Returns
     ///
     /// Returns self for method chaining
-    pub fn extension(mut self, value: ExtensionMap<'a>) -> Self {
-        self.extension = Some(value);
+    pub fn extensions(mut self, value: ExtensionMap<'a>) -> Self {
+        self.extensions = Some(value);
         self
     }
 
@@ -1422,7 +1633,7 @@ impl<'a> TriplesMapBuilder<'a> {
             && self.coswid_triples.is_none()
             && self.conditional_endorsement_series_triples.is_none()
             && self.conditional_endorsement_triples.is_none()
-            && self.extension.is_none()
+            && self.extensions.is_none()
         {
             return Err(ComidError::EmptyTriplesMap)?;
         }
@@ -1437,7 +1648,7 @@ impl<'a> TriplesMapBuilder<'a> {
             coswid_triples: self.coswid_triples,
             conditional_endorsement_series_triples: self.conditional_endorsement_series_triples,
             conditional_endorsement_triples: self.conditional_endorsement_triples,
-            extension: self.extension,
+            extensions: self.extensions,
         })
     }
 }
@@ -1446,6 +1657,14 @@ impl<'a> TriplesMapBuilder<'a> {
 #[rustfmt::skip::macros(vec)]
 mod tests {
     use super::*;
+    use crate::{
+        triples::{
+            ConditionalSeriesRecord, DomainTypeChoice, MeasurementValuesMapBuilder,
+            StatefulEnvironmentRecord, SvnTypeChoice,
+        },
+        CryptoKeyTypeChoice, EnvironmentMapBuilder, InstanceIdTypeChoice, TextOrBytesSized,
+        TriplesRecordCondition,
+    };
 
     #[test]
     fn test_comid_role_serde() {
@@ -1733,5 +1952,304 @@ mod tests {
         let linked_tag_map_de: LinkedTagMap = serde_json::from_str(actual_json.as_str()).unwrap();
 
         assert_eq!(linked_tag_map_de, linked_tag_map);
+    }
+
+    #[test]
+    fn test_triples_map_serde() {
+        let env = EnvironmentMapBuilder::default()
+            .instance(InstanceIdTypeChoice::Bytes(
+                [0x01, 0x02, 0x03].as_slice().into(),
+            ))
+            .build()
+            .unwrap();
+
+        let mvals = MeasurementValuesMapBuilder::default()
+            .svn(SvnTypeChoice::Svn(1.into()))
+            .build()
+            .unwrap();
+
+        let measurement_map = MeasurementMap {
+            mkey: None,
+            mval: mvals,
+            authorized_by: None,
+        };
+
+        let crypto_key =
+            CryptoKeyTypeChoice::Bytes(TaggedBytes::from([0x04, 0x05, 0x06].as_slice()));
+
+        let mut extensions = ExtensionMap::default();
+        extensions.insert(1337.into(), ExtensionValue::Bool(true));
+
+        let triples_map = TriplesMapBuilder::default()
+            .reference_triples(vec![ReferenceTripleRecord{
+                ref_env: env.clone(),
+                ref_claims: vec![measurement_map.clone()],
+            }])
+            .endorsed_triples(vec![EndorsedTripleRecord{
+                condition: env.clone(),
+                endorsement: vec![measurement_map.clone()],
+            }])
+            .identity_triples(vec![IdentityTripleRecord{
+                environment: env.clone(),
+                key_list: vec![crypto_key.clone()],
+                conditions: Some(TriplesRecordCondition{
+                    mkey: Some(MeasuredElementTypeChoice::Tstr("foo".into())),
+                    authorized_by: Some(vec![crypto_key.clone()]),
+                })
+            }])
+            .attest_key_triples(vec![AttestKeyTripleRecord{
+                environment: env.clone(),
+                key_list: vec![crypto_key.clone()],
+                conditions: Some(TriplesRecordCondition{
+                    mkey: Some(MeasuredElementTypeChoice::Tstr("foo".into())),
+                    authorized_by: Some(vec![crypto_key.clone()]),
+                })
+            }])
+            .dependency_triples(vec![DomainDependencyTripleRecord{
+                domain_choice: DomainTypeChoice::Oid("1.2.3.4".try_into().unwrap()),
+                environment_map: vec![env.clone()],
+            }])
+            .membership_triples(vec![DomainMembershipTripleRecord{
+                domain_choice: DomainTypeChoice::Oid("1.2.3.4".try_into().unwrap()),
+                environment_map: vec![env.clone()],
+            }])
+            .coswid_triples(vec![CoswidTripleRecord{
+                environment_map: env.clone(),
+                coswid_tags: vec![TextOrBytesSized::Text("bar".into())],
+            }])
+            .conditional_endorsement_series_triples(vec![ConditionalEndorsementSeriesTripleRecord{
+                condition: StatefulEnvironmentRecord {
+                    environment: env.clone(),
+                    claims_list: vec![measurement_map.clone()],
+                },
+                series: vec![ConditionalSeriesRecord{
+                    selection: vec![measurement_map.clone()],
+                    addition: vec![measurement_map.clone()]
+                }],
+            }])
+            .conditional_endorsement_triples(vec![ConditionalEndorsementTripleRecord{
+                conditions: vec![StatefulEnvironmentRecord {
+                    environment: env.clone(),
+                    claims_list: vec![measurement_map.clone()],
+                }],
+                endorsements: vec![EndorsedTripleRecord{
+                    condition: env.clone(),
+                    endorsement: vec![measurement_map.clone()]
+                }],
+            }])
+            .extensions(extensions)
+            .build()
+            .unwrap();
+
+        let mut actual_cbor: Vec<u8> = vec![];
+        ciborium::into_writer(&triples_map, &mut actual_cbor).unwrap();
+
+        let expected_cbor: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0 [reference-triples]
+              0x81, // value: array(1)
+                0x82, // [0]array(2) [reference-triples-record]
+                  0xbf, // [0]map(indef) [ref-env]
+                    0x01, // key: 1 [instance]
+                    0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                      0x43, // bstr(3)
+                        0x01, 0x02, 0x03,
+                  0xff, // break
+                  0x81, // [1]array(1) [rev-claims]
+                    0xbf, // [0]map(indef) [measurement-values-map]
+                      0x01, // key: 1 [mval]
+                      0xbf, // value: map(indef)
+                        0x01, // key: 1 [svn]
+                        0x01, // value: 1
+                      0xff, // break
+                    0xff, // break
+              0x01, // key: 1 [endorsement-triples]
+              0x81, // value: array(1)
+                0x82, // [0]array(2)  [endorsed-triples-record]
+                  0xbf, // [0]map(indef) [condition]
+                    0x01, // key: 1 [instance]
+                    0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                      0x43, // bstr(3)
+                        0x01, 0x02, 0x03,
+                  0xff, // break
+                  0x81, // [1]array(1) [endorsement]
+                    0xbf, // [0]map(indef) [measurement-values-map]
+                      0x01, // key: 1 [mval]
+                      0xbf, // value: map(indef)
+                        0x01, // key: 1 [svn]
+                        0x01, // value: 1
+                      0xff, // break
+                    0xff, // break
+              0x02, // key: 2 [identity-triples]
+              0x81, // value: array(1)
+                0x83, // [0]array(3) [identity-triple-record]
+                  0xbf, // [0]map(indef) [environment]
+                    0x01, // key: 1 [instance]
+                    0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                      0x43, // bstr(3)
+                        0x01, 0x02, 0x03,
+                  0xff, // break
+                  0x81, // [1]array(1) [key_list]
+                    0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                      0x43, // bstr(3)
+                        0x04, 0x05, 0x06,
+                  0xbf, // [2]map(indef) [conditions]
+                    0x00, // key: 0 [mkey]
+                    0x63, // value: tstr(3)
+                      0x66, 0x6f, 0x6f, // "foo"
+                    0x01, // key: 1 [authorized-by]
+                    0x81, // value: array(1)
+                      0xd9, 0x02, 0x30, // [0]tag(560) [tagged-bytes]
+                        0x43, // bstr(3)
+                          0x04, 0x05, 0x06,
+                  0xff, // break
+              0x03, // key: 3 [attest-key-triples]
+              0x81, // value: array(1)
+                0x83, // [0]array(3) [attest-key-triple-record]
+                  0xbf, // [0]map(indef) [environment]
+                    0x01, // key: 1 [instance]
+                    0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                      0x43, // bstr(3)
+                        0x01, 0x02, 0x03,
+                  0xff, // break
+                  0x81, // [1]array(1) [key_list]
+                    0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                      0x43, // bstr(3)
+                        0x04, 0x05, 0x06,
+                  0xbf, // [2]map(indef) [conditions]
+                    0x00, // key: 0 [mkey]
+                    0x63, // value: tstr(3)
+                      0x66, 0x6f, 0x6f, // "foo"
+                    0x01, // key: 1 [authorized-by]
+                    0x81, // value: array(1)
+                      0xd9, 0x02, 0x30, // [0]tag(560) [tagged-bytes]
+                        0x43, // bstr(3)
+                          0x04, 0x05, 0x06,
+                  0xff, // break
+              0x04, // key: 4 [dependency-triples]
+              0x81, // value: array(1)
+                0x82, // [0]array(2) [domain-dependency-triple-record]
+                  0xd8, 0x6f, // [0]tag(111) [oid]
+                    0x43, // bstr(3)
+                      0x2a, 0x03, 0x04,
+                  0x81, // [1]array(1)
+                    0xbf, // [1]map(indef) [environment-map]
+                      0x01, // key: 1 [instance]
+                      0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                        0x43, // bstr(3)
+                          0x01, 0x02, 0x03,
+                    0xff, // break
+              0x05, // key: 5 [membership-triples]
+              0x81, // value: array(1)
+                0x82, // [0]array(2) [domain-membership-triple-record]
+                  0xd8, 0x6f, // [0]tag(111) [oid]
+                    0x43, // bstr(3)
+                      0x2a, 0x03, 0x04,
+                  0x81, // [1]array(1)
+                    0xbf, // [0]map(indef) [environment-map]
+                      0x01, // key: 1 [instance]
+                      0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                        0x43, // bstr(3)
+                          0x01, 0x02, 0x03,
+                    0xff, // break
+              0x06, // key: 6 [coswid-triples]
+              0x81, // value: array(1)
+                0x82, // [0]array(2) [coswid-triple-record]
+                  0xbf, // [0]map(indef) [environment-map]
+                    0x01, // key: 1 [instance]
+                    0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                      0x43, // bstr(3)
+                        0x01, 0x02, 0x03,
+                  0xff, // break
+                  0x81, // [1]array(1)
+                    0x63, // [0]tstr(3)
+                     0x62, 0x61, 0x72, // "bar"
+              0x08, // key: 8 [conditional-endorsement-series-triples]
+              0x81, // value: array(1)
+                0x82, // [0]array(2) [conditional-endorsement-series-triple-record]
+                  0x82,  // [0]array(2) [stateful-environment-record]
+                    0xbf, // [0]map(indef) [environment]
+                      0x01, // key: 1 [instance]
+                      0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                        0x43, // bstr(3)
+                          0x01, 0x02, 0x03,
+                    0xff, // break
+                    0x81, // [1]array(1) [claims_list]
+                      0xbf, // [0]map(indef) [measurement-map]
+                        0x01, // key: 1 [mval]
+                        0xbf, // value: map(indef) [measurement-values-map]
+                          0x01,  // key: 1 [svn]
+                          0x01,  // value: 1
+                        0xff, // break
+                      0xff, // break
+                  0x81, // [1]array(1) [series]
+                    0x82, // [0]array(2) [conditional-series-record]
+                      0x81, // [0]array(1) [selection]
+                        0xbf, // [0]map(indef) [measurement-map]
+                          0x01, // key: 1 [mval]
+                          0xbf, // value: map(indef) [measurement-values-map]
+                            0x01, // key: 1 [svn]
+                            0x01, // value: 1
+                          0xff, // break
+                        0xff, // break
+                      0x81, // [1]array(1) [addition]
+                        0xbf, // [0]map(indef) [measurement-map]
+                          0x01, // key: 1 [mval]
+                          0xbf, // value: map(indef) [measurement-values-map]
+                            0x01, // key: 1 [svn]
+                            0x01, // value: 1
+                          0xff, // break
+                       0xff, // break
+              0x0a, // key: 10 [conditional-endorsement-triples]
+              0x81, // value: array(1)
+                0x82, // [0]array(2) [conditional-endorsement-triple-record]
+                  0x81, // [0]array(1) [conditions]
+                    0x82, // [0]array(2) [stateful-environment-record]
+                      0xbf, // [0]map(indef) [environment]
+                        0x01, // key: 1 [instance]
+                        0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                          0x43, // bstr(3)
+                            0x01, 0x02, 0x03,
+                      0xff, // break
+                      0x81, // [1]array(1) [claims-list]
+                        0xbf, // [0]map(indef) [measurement-map]
+                          0x01, // key: 1 [mval]
+                          0xbf, // value: map(indef) [measurement-values-map]
+                            0x01, // key: 1 [svn]
+                            0x01, // value: 1
+                          0xff, // break
+                        0xff, // break
+                  0x81, // [1]array(1) [endorsements]
+                    0x82, // [0]array(2) [endorsed-triple-record]
+                      0xbf, // [0]map(indef) [condition]
+                        0x01, // key: 1 [instance]
+                        0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
+                          0x43, // bstr(3)
+                            0x01, 0x02, 0x03,
+                      0xff, // break
+                      0x81, // [1]array(1) [endorsement]
+                        0xbf, // [0]map(indef) [measurement-map]
+                          0x01, // key: 1 [mval]
+                          0xbf, // value: map(indef) [measurement-values-map]
+                            0x01, // key: 1 [svn]
+                            0x01, // value: 1
+                          0xff, // break
+                        0xff, // break
+              0x19, 0x05, 0x39, // key: 1337 [extension(1337)]
+              0xf5, // value: true
+            0xff, // break
+        ];
+
+        assert_eq!(actual_cbor, expected_cbor);
+
+        let triples_map_de: TriplesMap = ciborium::from_reader(actual_cbor.as_slice()).unwrap();
+
+        assert_eq!(triples_map_de, triples_map);
+
+        let actual_json = serde_json::to_string(&triples_map).unwrap();
+
+        let expected_json = r#"{"reference-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]],"endorsed-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]],"identity-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"type":"bytes","value":"BAUG"}],{"mkey":"foo","authorized-by":[{"type":"bytes","value":"BAUG"}]}]],"attest-key-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"type":"bytes","value":"BAUG"}],{"mkey":"foo","authorized-by":[{"type":"bytes","value":"BAUG"}]}]],"dependency-triples":[[{"type":"oid","value":"1.2.3.4"},[{"instance":{"type":"bytes","value":"AQID"}}]]],"membership-triples":[[{"type":"oid","value":"1.2.3.4"},[{"instance":{"type":"bytes","value":"AQID"}}]]],"coswid-triples":[[{"instance":{"type":"bytes","value":"AQID"}},["bar"]]],"conditional-endorsement-series-triples":[[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]],[[[{"mval":{"svn":1}}],[{"mval":{"svn":1}}]]]]],"conditional-endorsement-triples":[[[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]],[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]]]],"1337":true}"#;
+
+        assert_eq!(actual_json, expected_json);
     }
 }

@@ -843,7 +843,7 @@ mod tests {
                     0xff, // break
                 0xff, // break
               0xa0, // map(0) -- COSE unprotected header
-              0x58, 0xc1, // bstr(193) -- COSE payload
+              0x58, 0xc0, // bstr(192) -- COSE payload
                 0xd9, 0x01, 0xf5, // tag(501) -- CoRIM
                   0xbf, // map(indef)
                     0x61, // key: tstr(1)
@@ -910,8 +910,7 @@ mod tests {
                           0x61, // key: tstr(1)
                             0x34, // "4"
                           0xbf, // value: map(indef)
-                            0x61, // key: tstr(1)
-                              0x30, // "0"
+                            0x00, // key: 0
                             0x81, // value: array(1)
                               0x82, // array(2)
                                 0xbf, //  map(indef)
