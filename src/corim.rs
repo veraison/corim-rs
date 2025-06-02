@@ -75,7 +75,7 @@
 //! This implementation adheres to the CoRIM specification and supports all mandatory
 //! and optional fields defined in the standard.
 
-use std::{collections::BTreeMap, fmt};
+use std::{collections::BTreeMap, fmt, marker::PhantomData};
 
 use crate::{
     comid::ConciseMidTag,
@@ -84,8 +84,10 @@ use crate::{
     cotl::ConciseTlTag,
     empty_map_as_none,
     error::CorimError,
-    generate_tagged, Digest, ExtensionMap, ExtensionValue, Int, OidType, TaggedBytes,
-    TaggedConciseMidTag, TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
+    generate_tagged,
+    numbers::Integer,
+    Digest, ExtensionMap, ExtensionValue, Int, OidType, TaggedBytes, TaggedConciseMidTag,
+    TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
 };
 
 use derive_more::{Constructor, From, TryFrom};
@@ -579,25 +581,214 @@ pub struct ValidityMap {
 
 /// Information about an entity associated with the CoRIM
 #[repr(C)]
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct CorimEntityMap<'a> {
     /// Name of the entity
-    #[serde(rename = "0")]
     pub entity_name: Text<'a>,
     /// Optional registration identifier for the entity
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "1")]
     pub reg_id: Option<Uri<'a>>,
     /// Role of the entity in relation to the CoRIM
-    #[serde(rename = "2")]
     pub role: Vec<CorimRoleTypeChoice>,
     /// Optional extensible attributes
-    #[serde(flatten)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "empty_map_as_none")]
-    pub extension: Option<ExtensionMap<'a>>,
+    pub extensions: Option<ExtensionMap<'a>>,
+}
+
+impl Serialize for CorimEntityMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            map.serialize_entry("entity-name", &self.entity_name)?;
+
+            if let Some(reg_id) = &self.reg_id {
+                map.serialize_entry("reg-id", reg_id)?;
+            }
+
+            map.serialize_entry("role", &self.role)?;
+        } else {
+            map.serialize_entry(&0, &self.entity_name)?;
+
+            if let Some(reg_id) = &self.reg_id {
+                map.serialize_entry(&1, reg_id)?;
+            }
+
+            map.serialize_entry(&2, &self.role)?;
+        }
+
+        if let Some(extensions) = &self.extensions {
+            extensions.serialize_map(&mut map, is_human_readable)?;
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CorimEntityMap<'_> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct CorimEntityMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for CorimEntityMapVisitor<'a> {
+            type Value = CorimEntityMap<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map containing CorimEntityMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut builder = CorimEntityMapBuilder::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("entity-name") => {
+                                builder = builder.entity_name(map.next_value::<Text>()?);
+                            }
+                            Some("reg-id") => {
+                                builder = builder.reg_id(map.next_value::<Uri>()?);
+                            }
+                            Some("role") => {
+                                builder =
+                                    builder.role(map.next_value::<Vec<CorimRoleTypeChoice>>()?);
+                            }
+                            Some(s) => {
+                                let ext_field: i128 = s.parse().map_err(|_| {
+                                    de::Error::unknown_field(
+                                        s,
+                                        &["entity-name", "reg-id", "role", "any integer"],
+                                    )
+                                })?;
+                                builder = builder
+                                    .add_extension(ext_field, map.next_value::<ExtensionValue>()?);
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                builder = builder.entity_name(map.next_value::<Text>()?);
+                            }
+                            Some(1) => {
+                                builder = builder.reg_id(map.next_value::<Uri>()?);
+                            }
+                            Some(2) => {
+                                builder =
+                                    builder.role(map.next_value::<Vec<CorimRoleTypeChoice>>()?);
+                            }
+                            Some(n) => {
+                                builder = builder
+                                    .add_extension(n.into(), map.next_value::<ExtensionValue>()?);
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                builder.build().map_err(de::Error::custom)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(CorimEntityMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
+}
+
+pub struct CorimEntityMapBuilder<'a> {
+    entity_name: Option<Text<'a>>,
+    reg_id: Option<Uri<'a>>,
+    role: Option<Vec<CorimRoleTypeChoice>>,
+    extensions: Option<ExtensionMap<'a>>,
+}
+
+impl<'a> CorimEntityMapBuilder<'a> {
+    pub fn new() -> Self {
+        CorimEntityMapBuilder {
+            entity_name: None,
+            reg_id: None,
+            role: None,
+            extensions: None,
+        }
+    }
+
+    pub fn entity_name(mut self, name: Text<'a>) -> Self {
+        self.entity_name = Some(name);
+        self
+    }
+
+    pub fn reg_id(mut self, reg_id: Uri<'a>) -> Self {
+        self.reg_id = Some(reg_id);
+        self
+    }
+
+    pub fn role(mut self, roles: Vec<CorimRoleTypeChoice>) -> Self {
+        self.role = Some(roles);
+        self
+    }
+
+    pub fn add_role(mut self, role: CorimRoleTypeChoice) -> Self {
+        if let Some(ref mut roles) = self.role {
+            roles.push(role)
+        } else {
+            self.role = Some(vec![role])
+        }
+        self
+    }
+
+    pub fn extensions(mut self, extensions: ExtensionMap<'a>) -> Self {
+        self.extensions = Some(extensions);
+        self
+    }
+
+    pub fn add_extension(mut self, key: i128, value: ExtensionValue<'a>) -> Self {
+        if let Some(ref mut extensions) = self.extensions {
+            extensions.insert(Integer(key), value);
+        } else {
+            let mut extensions = ExtensionMap::default();
+            extensions.insert(Integer(key), value);
+            self.extensions = Some(extensions);
+        }
+        self
+    }
+
+    pub fn build(self) -> crate::Result<CorimEntityMap<'a>> {
+        if self.entity_name.is_none()
+            || self.role.is_none()
+            || self.role.as_ref().unwrap().is_empty()
+        {
+            return Err(CorimError::UnsetMandatoryField(
+                "CorimEntityMap".to_string(),
+                "entity_name and role".to_string(),
+            ))?;
+        }
+
+        Ok(CorimEntityMap {
+            entity_name: self.entity_name.unwrap(),
+            reg_id: self.reg_id,
+            role: self.role.unwrap(),
+            extensions: self.extensions,
+        })
+    }
+}
+
+impl Default for CorimEntityMapBuilder<'_> {
+    fn default() -> Self {
+        CorimEntityMapBuilder::new()
+    }
 }
 
 /// Roles that entities can have in relation to a CoRIM manifest
@@ -1324,5 +1515,56 @@ mod tests {
 
             assert_eq!(value_de, tc.value);
         }
+    }
+
+    #[test]
+    fn test_corim_entity_map_serde() {
+        let entity_map = CorimEntityMapBuilder::default()
+            .entity_name("foo".into())
+            .reg_id("https://example.com".into())
+            .add_role(CorimRoleTypeChoice::ManifestSigner)
+            .add_extension(-1, ExtensionValue::Text("test value".into()))
+            .build()
+            .unwrap();
+
+        let mut actual_cbor: Vec<u8> = vec![];
+        ciborium::into_writer(&entity_map, &mut actual_cbor).unwrap();
+
+        let expected_cbor: Vec<u8> = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0 [entity-name]
+              0x63, // value: tstr(3)
+                0x66, 0x6f, 0x6f, // "foo"
+              0x01, // key: 1 [reg-id]
+              0xd8, 0x20, // value: tag(32)
+                0x73, // tstr(19)
+                  0x68, 0x74, 0x74, 0x70, 0x73, 0x3a, 0x2f, 0x2f, // "https://"
+                  0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, // "example."
+                  0x63, 0x6f, 0x6d,                               // "com"
+              0x02, // key: 2 [role]
+              0x81, // value: array(1)
+                0x02, // 2 [manifest-signer]
+              0x20, // key: -1 [extension]
+              0x6a, // value: tstr(10)
+                0x74, 0x65, 0x73, 0x74, 0x20, 0x76, 0x61, 0x6c, // "test val"
+                0x75, 0x65,                                     // "ue"
+            0xff, // break
+        ];
+
+        assert_eq!(actual_cbor, expected_cbor);
+
+        let entity_map_de: CorimEntityMap = ciborium::from_reader(actual_cbor.as_slice()).unwrap();
+
+        assert_eq!(entity_map_de, entity_map);
+
+        let actual_json = serde_json::to_string(&entity_map).unwrap();
+
+        let expected_json = r#"{"entity-name":"foo","reg-id":{"type":"uri","value":"https://example.com"},"role":["manifest-signer"],"-1":"test value"}"#;
+
+        assert_eq!(actual_json, expected_json);
+
+        let entity_map_de: CorimEntityMap = serde_json::from_str(actual_json.as_str()).unwrap();
+
+        assert_eq!(entity_map_de, entity_map);
     }
 }
