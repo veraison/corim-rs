@@ -1035,8 +1035,8 @@ impl Default for ComidEntityMapBuilder<'_> {
 ///
 /// Each role type represents a specific responsibility that an entity
 /// may have in relation to a module or tag.
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
-#[repr(C)]
+#[derive(Debug, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[repr(i64)]
 pub enum ComidRoleTypeChoice {
     /// Entity that created the tag (value: 0)
     ///
@@ -1053,6 +1053,8 @@ pub enum ComidRoleTypeChoice {
     /// This role indicates the entity responsible for ongoing maintenance,
     /// updates, and support for the module described by the tag.
     Maintainer = 2,
+    /// Role values not defined by the spec.
+    Extension(i64),
 }
 
 impl From<&ComidRoleTypeChoice> for i64 {
@@ -1061,19 +1063,18 @@ impl From<&ComidRoleTypeChoice> for i64 {
             ComidRoleTypeChoice::TagCreator => 0,
             ComidRoleTypeChoice::Creator => 1,
             ComidRoleTypeChoice::Maintainer => 2,
+            ComidRoleTypeChoice::Extension(value) => *value,
         }
     }
 }
 
-impl TryFrom<i64> for ComidRoleTypeChoice {
-    type Error = ComidError;
-
-    fn try_from(value: i64) -> std::result::Result<Self, Self::Error> {
+impl From<i64> for ComidRoleTypeChoice {
+    fn from(value: i64) -> Self {
         match value {
-            0 => Ok(ComidRoleTypeChoice::TagCreator),
-            1 => Ok(ComidRoleTypeChoice::Creator),
-            2 => Ok(ComidRoleTypeChoice::Maintainer),
-            i => Err(ComidError::InvalidComidRole(i.into())),
+            0 => ComidRoleTypeChoice::TagCreator,
+            1 => ComidRoleTypeChoice::Creator,
+            2 => ComidRoleTypeChoice::Maintainer,
+            i => ComidRoleTypeChoice::Extension(i),
         }
     }
 }
@@ -1086,17 +1087,32 @@ impl TryFrom<&str> for ComidRoleTypeChoice {
             "tag-creator" => Ok(ComidRoleTypeChoice::TagCreator),
             "creator" => Ok(ComidRoleTypeChoice::Creator),
             "maintainer" => Ok(ComidRoleTypeChoice::Maintainer),
-            s => Err(ComidError::InvalidComidRole(s.to_string().into())),
+            value => {
+                if value.starts_with("Role(") && value.len() > 6 {
+                    match value[5..value.len() - 1].parse::<i64>() {
+                        Ok(i) => Ok(ComidRoleTypeChoice::Extension(i)),
+                        Err(_) => Err(ComidError::InvalidComidRole(value.to_string())),
+                    }
+                } else {
+                    Err(ComidError::InvalidComidRole(value.to_string()))
+                }
+            }
         }
     }
 }
 
 impl Display for ComidRoleTypeChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let role: String;
+
         f.write_str(match self {
             ComidRoleTypeChoice::TagCreator => "tag-creator",
             ComidRoleTypeChoice::Creator => "creator",
             ComidRoleTypeChoice::Maintainer => "maintainer",
+            ComidRoleTypeChoice::Extension(i) => {
+                role = format!("Role({i})");
+                role.as_str()
+            }
         })
     }
 }
@@ -1125,9 +1141,7 @@ impl<'de> Deserialize<'de> for ComidRoleTypeChoice {
                 .try_into()
                 .map_err(de::Error::custom)
         } else {
-            i64::deserialize(deserializer)?
-                .try_into()
-                .map_err(de::Error::custom)
+            Ok(i64::deserialize(deserializer)?.into())
         }
     }
 }
@@ -1914,6 +1928,16 @@ mod tests {
                 expected_json: "\"maintainer\"",
                 expected_cbor: vec![0x02],
             },
+            TestCase {
+                role: ComidRoleTypeChoice::Extension(-1),
+                expected_json: "\"Role(-1)\"",
+                expected_cbor: vec![0x20],
+            },
+            TestCase {
+                role: ComidRoleTypeChoice::Extension(1337),
+                expected_json: "\"Role(1337)\"",
+                expected_cbor: vec![0x19, 0x05, 0x39],
+            },
         ];
 
         for tc in test_cases.into_iter() {
@@ -1952,13 +1976,6 @@ mod tests {
             actual_err,
             "invalid type: integer `1`, expected a string at line 1 column 1"
         );
-
-        let actual_err = ciborium::from_reader::<ComidRoleTypeChoice, _>([0x03].as_slice())
-            .err()
-            .unwrap()
-            .to_string();
-
-        assert_eq!(actual_err, "Semantic(None, \"invalid CoMID role 3\")");
 
         let actual_err = ciborium::from_reader::<ComidRoleTypeChoice, _>([0xf4].as_slice())
             .err()
