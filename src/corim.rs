@@ -82,9 +82,10 @@ use crate::{
     core::{Bytes, Label, ObjectIdentifier, TaggedJsonValue},
     coswid::ConciseSwidTag,
     cotl::ConciseTlTag,
-    empty_map_as_none, generate_tagged, Digest, ExtensionMap, ExtensionValue, Int, OidType,
-    TaggedBytes, TaggedConciseMidTag, TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr,
-    Uri, UuidType,
+    empty_map_as_none,
+    error::CorimError,
+    generate_tagged, Digest, ExtensionMap, ExtensionValue, Int, OidType, TaggedBytes,
+    TaggedConciseMidTag, TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
 };
 
 use derive_more::{Constructor, From, TryFrom};
@@ -600,15 +601,102 @@ pub struct CorimEntityMap<'a> {
 }
 
 /// Roles that entities can have in relation to a CoRIM manifest
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
-#[repr(u8)]
-#[serde(untagged)]
+#[derive(Debug, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[repr(i64)]
 pub enum CorimRoleTypeChoice {
     /// Entity that created the manifest content
     ManifestCreator = 1,
 
     /// Entity that cryptographically signed the manifest
     ManifestSigner = 2,
+
+    /// Roles not difined by CoRIM specification
+    Extension(i64),
+}
+
+impl From<&CorimRoleTypeChoice> for i64 {
+    fn from(value: &CorimRoleTypeChoice) -> Self {
+        match value {
+            CorimRoleTypeChoice::ManifestCreator => 1,
+            CorimRoleTypeChoice::ManifestSigner => 2,
+            CorimRoleTypeChoice::Extension(value) => *value,
+        }
+    }
+}
+
+impl From<i64> for CorimRoleTypeChoice {
+    fn from(value: i64) -> Self {
+        match value {
+            1 => CorimRoleTypeChoice::ManifestCreator,
+            2 => CorimRoleTypeChoice::ManifestSigner,
+            value => CorimRoleTypeChoice::Extension(value),
+        }
+    }
+}
+
+impl TryFrom<&str> for CorimRoleTypeChoice {
+    type Error = CorimError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "manifest-creator" => Ok(CorimRoleTypeChoice::ManifestCreator),
+            "manifest-signer" => Ok(CorimRoleTypeChoice::ManifestSigner),
+            value => {
+                if value.starts_with("Role(") && value.len() > 6 {
+                    match value[5..value.len() - 1].parse::<i64>() {
+                        Ok(i) => Ok(CorimRoleTypeChoice::Extension(i)),
+                        Err(_) => Err(CorimError::InvalidCorimRole(value.to_string())),
+                    }
+                } else {
+                    Err(CorimError::InvalidCorimRole(value.to_string()))
+                }
+            }
+        }
+    }
+}
+
+impl fmt::Display for CorimRoleTypeChoice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let role: String;
+
+        f.write_str(match self {
+            CorimRoleTypeChoice::ManifestCreator => "manifest-creator",
+            CorimRoleTypeChoice::ManifestSigner => "manifest-signer",
+            CorimRoleTypeChoice::Extension(i) => {
+                role = format!("Role({i})");
+                role.as_str()
+            }
+        })
+    }
+}
+
+impl Serialize for CorimRoleTypeChoice {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            self.to_string().serialize(serializer)
+        } else {
+            i64::from(self).serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CorimRoleTypeChoice {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            String::deserialize(deserializer)?
+                .as_str()
+                .try_into()
+                .map_err(de::Error::custom)
+        } else {
+            Ok(i64::deserialize(deserializer)?.into())
+        }
+    }
 }
 
 /// Extension map for CoRIM-specific extensions
@@ -1181,6 +1269,58 @@ mod tests {
             assert_eq!(actual_json, tc.expected_json);
 
             let value_de: CorimIdTypeChoice = serde_json::from_str(actual_json.as_str()).unwrap();
+
+            assert_eq!(value_de, tc.value);
+        }
+    }
+
+    #[test]
+    fn test_corim_role_type_choice() {
+        struct TestCase {
+            value: CorimRoleTypeChoice,
+            expected_json: &'static str,
+            expected_cbor: Vec<u8>,
+        }
+
+        let test_cases = vec![
+            TestCase {
+                value: CorimRoleTypeChoice::ManifestCreator,
+                expected_json: "\"manifest-creator\"",
+                expected_cbor: vec![ 0x01 ],
+            },
+            TestCase {
+                value: CorimRoleTypeChoice::ManifestSigner,
+                expected_json: "\"manifest-signer\"",
+                expected_cbor: vec![ 0x02 ],
+            },
+            TestCase {
+                value: CorimRoleTypeChoice::Extension(-1),
+                expected_json: "\"Role(-1)\"",
+                expected_cbor: vec![ 0x20 ],
+            },
+            TestCase {
+                value: CorimRoleTypeChoice::Extension(1337),
+                expected_json: "\"Role(1337)\"",
+                expected_cbor: vec![ 0x19, 0x05, 0x39 ],
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            let mut actual_cbor: Vec<u8> = vec![];
+            ciborium::into_writer(&tc.value, &mut actual_cbor).unwrap();
+
+            assert_eq!(actual_cbor, tc.expected_cbor);
+
+            let value_de: CorimRoleTypeChoice =
+                ciborium::from_reader(actual_cbor.as_slice()).unwrap();
+
+            assert_eq!(value_de, tc.value);
+
+            let actual_json = serde_json::to_string(&tc.value).unwrap();
+
+            assert_eq!(actual_json, tc.expected_json);
+
+            let value_de: CorimRoleTypeChoice = serde_json::from_str(actual_json.as_str()).unwrap();
 
             assert_eq!(value_de, tc.value);
         }
