@@ -5,7 +5,7 @@ use crate::Label;
 #[derive(Debug)]
 pub enum ComidError {
     EmptyTriplesMap,
-    InvalidComidRole(Label<'static>),
+    InvalidComidRole(String),
     InvalidTagRelationship(Label<'static>),
     UnsetMandatoryField(String, String),
     Unknown,
