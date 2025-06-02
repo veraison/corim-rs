@@ -82,8 +82,9 @@ use crate::{
     core::{Bytes, Label, ObjectIdentifier, TaggedJsonValue},
     coswid::ConciseSwidTag,
     cotl::ConciseTlTag,
-    empty_map_as_none, generate_tagged, Digest, ExtensionMap, Int, OidType, TaggedBytes,
-    TaggedConciseMidTag, TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
+    empty_map_as_none, generate_tagged, Digest, ExtensionMap, ExtensionValue, Int, OidType,
+    TaggedBytes, TaggedConciseMidTag, TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr,
+    Uri, UuidType,
 };
 
 use derive_more::{Constructor, From, TryFrom};
@@ -238,13 +239,15 @@ pub struct CorimMap<'a> {
 
 /// Represents either a string or UUID identifier for a CoRIM
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(untagged)]
 pub enum CorimIdTypeChoice<'a> {
     /// Text string identifier
     Tstr(Tstr<'a>),
     /// UUID identifier
     Uuid(UuidType),
+    /// Type extension
+    Extension(ExtensionValue<'a>),
 }
 
 impl CorimIdTypeChoice<'_> {
@@ -266,6 +269,37 @@ impl CorimIdTypeChoice<'_> {
 impl<'a> From<&'a str> for CorimIdTypeChoice<'a> {
     fn from(s: &'a str) -> Self {
         CorimIdTypeChoice::Tstr(s.into())
+    }
+}
+
+impl<'de> Deserialize<'de> for CorimIdTypeChoice<'_> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let is_human_readable = deserializer.is_human_readable();
+
+        if is_human_readable {
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::String(s) => match UuidType::try_from(s.as_str()) {
+                    Ok(uuid) => Ok(CorimIdTypeChoice::Uuid(uuid)),
+                    Err(_) => Ok(CorimIdTypeChoice::Tstr(s.into())),
+                },
+                value => Ok(CorimIdTypeChoice::Extension(
+                    ExtensionValue::try_from(value).map_err(de::Error::custom)?,
+                )),
+            }
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Text(s) => Ok(CorimIdTypeChoice::Tstr(s.into())),
+                ciborium::Value::Bytes(b) => Ok(CorimIdTypeChoice::Uuid(
+                    UuidType::try_from(b.as_slice()).map_err(de::Error::custom)?,
+                )),
+                value => Ok(CorimIdTypeChoice::Extension(
+                    ExtensionValue::try_from(value).map_err(de::Error::custom)?,
+                )),
+            }
+        }
     }
 }
 
@@ -1090,5 +1124,65 @@ mod tests {
         let profile_de: ProfileTypeChoice = serde_json::from_str(expected).unwrap();
 
         assert_eq!(profile_de, profile);
+    }
+
+    #[test]
+    fn test_corim_id_type_choice_serde() {
+        struct TestCase<'a> {
+            value: CorimIdTypeChoice<'a>,
+            expected_cbor: Vec<u8>,
+            expected_json: &'static str,
+        }
+
+        let test_cases = vec![
+            TestCase {
+                value: CorimIdTypeChoice::Tstr("foo".into()),
+                expected_cbor: vec![
+                    0x63, // tstr(3)
+                      0x66, 0x6f, 0x6f, // "foo"
+                ],
+                expected_json: "\"foo\"",
+            },
+            TestCase {
+                value: CorimIdTypeChoice::Uuid(
+                   UuidType::try_from("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+                ),
+                expected_cbor: vec![
+                    0x50, // bstr(16)
+                      0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4,
+                      0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00,
+                ],
+                expected_json: "\"550e8400-e29b-41d4-a716-446655440000\"",
+            },
+            TestCase {
+                value: CorimIdTypeChoice::Extension(
+                   ExtensionValue::Bool(true)
+                ),
+                expected_cbor: vec![
+                    0xf5, // true
+                ],
+                expected_json: "true",
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            let mut actual_cbor: Vec<u8> = vec![];
+            ciborium::into_writer(&tc.value, &mut actual_cbor).unwrap();
+
+            assert_eq!(actual_cbor, tc.expected_cbor);
+
+            let value_de: CorimIdTypeChoice =
+                ciborium::from_reader(actual_cbor.as_slice()).unwrap();
+
+            assert_eq!(value_de, tc.value);
+
+            let actual_json = serde_json::to_string(&tc.value).unwrap();
+
+            assert_eq!(actual_json, tc.expected_json);
+
+            let value_de: CorimIdTypeChoice = serde_json::from_str(actual_json.as_str()).unwrap();
+
+            assert_eq!(value_de, tc.value);
+        }
     }
 }
