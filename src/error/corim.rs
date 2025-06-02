@@ -3,6 +3,7 @@
 #[derive(Debug)]
 pub enum CorimError {
     InvalidConciseTagTypeChoice,
+    InvalidCorimRole(String),
     Unknown,
 }
 
@@ -13,6 +14,9 @@ impl std::fmt::Display for CorimError {
         match self {
             Self::InvalidConciseTagTypeChoice => {
                 write!(f, "Invalid ConciseTagTypeChoice encountered")
+            }
+            Self::InvalidCorimRole(role) => {
+                write!(f, "Invalid CoRIM role \"{role}\"")
             }
             Self::Unknown => write!(f, "unknown CorimError encountered"),
         }
