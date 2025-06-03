@@ -567,16 +567,115 @@ impl<'de> Deserialize<'de> for ProfileTypeChoice<'_> {
 
 /// Defines the validity period for a CoRIM or signature
 #[repr(C)]
-#[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ValidityMap {
     /// Optional start time of the validity period
-    #[serde(rename = "0")]
     pub not_before: Option<Time>,
     /// Required end time of the validity period
-    #[serde(rename = "1")]
     pub not_after: Time,
+}
+
+impl Serialize for ValidityMap {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            if let Some(not_before) = &self.not_before {
+                map.serialize_entry("not-before", not_before)?;
+            }
+
+            map.serialize_entry("not-after", &self.not_after)?;
+        } else {
+            if let Some(not_before) = &self.not_before {
+                map.serialize_entry(&0, not_before)?;
+            }
+
+            map.serialize_entry(&1, &self.not_after)?;
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ValidityMap {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ValidityMapVisitor {
+            is_human_readable: bool,
+        }
+
+        impl<'de> Visitor<'de> for ValidityMapVisitor {
+            type Value = ValidityMap;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a map containing Validity map fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut not_before: Option<Time> = None;
+                let mut not_after: Option<Time> = None;
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("not-before") => {
+                                not_before = Some(map.next_value()?);
+                            }
+                            Some("not-after") => {
+                                not_after = Some(map.next_value()?);
+                            }
+                            Some(s) => {
+                                return Err(de::Error::unknown_field(
+                                    s,
+                                    &["not-before", "not-after"],
+                                ))
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                not_before = Some(map.next_value()?);
+                            }
+                            Some(1) => {
+                                not_after = Some(map.next_value()?);
+                            }
+                            Some(n) => {
+                                return Err(de::Error::unknown_field(
+                                    n.to_string().as_str(),
+                                    &["0-1"],
+                                ))
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if not_after.is_none() {
+                    return Err(de::Error::missing_field("not-after"));
+                }
+
+                Ok(ValidityMap {
+                    not_before,
+                    not_after: not_after.unwrap(),
+                })
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(ValidityMapVisitor {
+            is_human_readable: is_hr,
+        })
+    }
 }
 
 /// Information about an entity associated with the CoRIM
@@ -1566,5 +1665,41 @@ mod tests {
         let entity_map_de: CorimEntityMap = serde_json::from_str(actual_json.as_str()).unwrap();
 
         assert_eq!(entity_map_de, entity_map);
+    }
+
+    #[test]
+    fn test_validity_map_serde() {
+        let validity_map = ValidityMap {
+            not_before: Some(1.into()),
+            not_after: 2.into(),
+        };
+
+        let mut actual_cbor: Vec<u8> = vec![];
+        ciborium::into_writer(&validity_map, &mut actual_cbor).unwrap();
+
+        let expected_cbor = vec![
+            0xbf, // map(indef)
+              0x00, // key: 0 [not-before]
+              0x01, // value: 1
+              0x01, // key: 1 [not-after]
+              0x02,// value: 2
+            0xff, // break
+        ];
+
+        assert_eq!(actual_cbor, expected_cbor);
+
+        let validity_map_de: ValidityMap = ciborium::from_reader(actual_cbor.as_slice()).unwrap();
+
+        assert_eq!(validity_map_de, validity_map);
+
+        let actual_json = serde_json::to_string(&validity_map).unwrap();
+
+        let expected_json = r#"{"not-before":1,"not-after":2}"#;
+
+        assert_eq!(actual_json, expected_json);
+
+        let validity_map_de: ValidityMap = serde_json::from_str(actual_json.as_str()).unwrap();
+
+        assert_eq!(validity_map_de, validity_map);
     }
 }
