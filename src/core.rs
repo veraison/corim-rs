@@ -4416,6 +4416,8 @@ where
 #[rustfmt::skip::macros(vec)]
 mod tests {
     use super::*;
+    use crate::test::SerdeTestCase;
+
     mod hash_entry {
         use super::{CoseAlgorithm, HashEntry};
         #[test]
@@ -5450,43 +5452,37 @@ mod tests {
 
     #[test]
     fn test_extension_value_serde() {
-        struct TestCase<'a> {
-            extension: ExtensionValue<'a>,
-            expected_json: &'a str,
-            expected_cbor: Vec<u8>,
-        }
-
-        let test_cases: Vec<TestCase> = vec![
-            TestCase {
-                extension: ExtensionValue::Null,
+        let test_cases = vec![
+            SerdeTestCase {
+                value: ExtensionValue::Null,
                 expected_json: "null",
                 expected_cbor: vec![ 0xf6 ],
             },
-            TestCase {
-                extension: ExtensionValue::Uint(Integer(1)),
+            SerdeTestCase {
+                value: ExtensionValue::Uint(Integer(1)),
                 expected_json: "1",
                 expected_cbor: vec![ 0x01 ],
             },
-            TestCase {
-                extension: ExtensionValue::Int(Integer(-1)),
+            SerdeTestCase {
+                value: ExtensionValue::Int(Integer(-1)),
                 expected_json: "-1",
                 expected_cbor: vec![ 0x20 ],
             },
-            TestCase {
-                extension: ExtensionValue::Bool(true),
+            SerdeTestCase {
+                value: ExtensionValue::Bool(true),
                 expected_json: "true",
                 expected_cbor: vec![ 0xf5 ],
             },
-            TestCase {
-                extension: ExtensionValue::Bytes(vec![0x1, 0x02, 0x03].into()),
+            SerdeTestCase {
+                value: ExtensionValue::Bytes(vec![0x1, 0x02, 0x03].into()),
                 expected_json: "\"AQID\"",
                 expected_cbor: vec![
                     0x43, // bstr(3)
                       0x01, 0x02, 0x03,
                 ],
             },
-            TestCase {
-                extension: ExtensionValue::Text("test value".into()),
+            SerdeTestCase {
+                value: ExtensionValue::Text("test value".into()),
                 expected_json: "\"test value\"",
                 expected_cbor: vec![
                     0x6a, // tstr(10)
@@ -5494,8 +5490,8 @@ mod tests {
                     0x75, 0x65,                                     // "ue"
                 ],
             },
-            TestCase {
-                extension: ExtensionValue::Array(vec![
+            SerdeTestCase {
+                value: ExtensionValue::Array(vec![
                     ExtensionValue::Uint(1.into()),
                     ExtensionValue::Uint(2.into()),
                     ExtensionValue::Uint(3.into()),
@@ -5508,8 +5504,8 @@ mod tests {
                       0x03,
                 ],
             },
-            TestCase {
-                extension: ExtensionValue::Map(BTreeMap::from([
+            SerdeTestCase {
+                value: ExtensionValue::Map(BTreeMap::from([
                    (Label::Text("foo".into()), ExtensionValue::Uint(1.into())),
                    (Label::Int(1.into()), ExtensionValue::Uint(2.into())),
                 ])),
@@ -5523,8 +5519,8 @@ mod tests {
                       0x02, // value: 2
                 ],
             },
-            TestCase {
-                extension: ExtensionValue::Tag(1337, Box::new(ExtensionValue::Uint(1.into()))),
+            SerdeTestCase {
+                value: ExtensionValue::Tag(1337, Box::new(ExtensionValue::Uint(1.into()))),
                 expected_json: r#"{"tag":1337,"value":1}"#,
                 expected_cbor: vec![
                     0xd9, 0x05, 0x39, // tag(1337)
@@ -5534,23 +5530,14 @@ mod tests {
         ];
 
         for tc in test_cases.into_iter() {
-            let mut actual_cbor: Vec<u8> = vec![];
-            ciborium::into_writer(&tc.extension, &mut actual_cbor).unwrap();
-
-            assert_eq!(actual_cbor, tc.expected_cbor);
-
-            let extension_de: ExtensionValue =
-                ciborium::from_reader(actual_cbor.as_slice()).unwrap();
-
-            assert_eq!(extension_de, tc.extension);
-
-            let actual_json = serde_json::to_string(&tc.extension).unwrap();
-
-            assert_eq!(actual_json, tc.expected_json);
+            tc.run();
+        }
+    }
 
             let extension_de: ExtensionValue = serde_json::from_str(actual_json.as_str()).unwrap();
 
-            assert_eq!(extension_de, tc.extension);
+        for tc in test_cases.into_iter() {
+            tc.run();
         }
     }
 }

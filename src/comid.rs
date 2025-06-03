@@ -1896,6 +1896,7 @@ impl<'a> TriplesMapBuilder<'a> {
 mod tests {
     use super::*;
     use crate::{
+        test::SerdeTestCase,
         triples::{
             ConditionalSeriesRecord, DomainTypeChoice, MeasurementValuesMapBuilder,
             StatefulEnvironmentRecord, SvnTypeChoice,
@@ -1906,58 +1907,36 @@ mod tests {
 
     #[test]
     fn test_comid_role_serde() {
-        struct TestCase {
-            role: ComidRoleTypeChoice,
-            expected_json: &'static str,
-            expected_cbor: Vec<u8>,
-        }
-
-        let test_cases: Vec<TestCase> = vec![
-            TestCase {
-                role: ComidRoleTypeChoice::TagCreator,
+        let test_cases = vec![
+            SerdeTestCase {
+                value: ComidRoleTypeChoice::TagCreator,
                 expected_json: "\"tag-creator\"",
                 expected_cbor: vec![0x00],
             },
-            TestCase {
-                role: ComidRoleTypeChoice::Creator,
+            SerdeTestCase {
+                value: ComidRoleTypeChoice::Creator,
                 expected_json: "\"creator\"",
                 expected_cbor: vec![0x01],
             },
-            TestCase {
-                role: ComidRoleTypeChoice::Maintainer,
+            SerdeTestCase {
+                value: ComidRoleTypeChoice::Maintainer,
                 expected_json: "\"maintainer\"",
                 expected_cbor: vec![0x02],
             },
-            TestCase {
-                role: ComidRoleTypeChoice::Extension(-1),
+            SerdeTestCase {
+                value: ComidRoleTypeChoice::Extension(-1),
                 expected_json: "\"Role(-1)\"",
                 expected_cbor: vec![0x20],
             },
-            TestCase {
-                role: ComidRoleTypeChoice::Extension(1337),
+            SerdeTestCase {
+                value: ComidRoleTypeChoice::Extension(1337),
                 expected_json: "\"Role(1337)\"",
                 expected_cbor: vec![0x19, 0x05, 0x39],
             },
         ];
 
         for tc in test_cases.into_iter() {
-            let actual_json = serde_json::to_string(&tc.role).unwrap();
-
-            assert_eq!(actual_json, tc.expected_json);
-
-            let role_de: ComidRoleTypeChoice = serde_json::from_str(actual_json.as_str()).unwrap();
-
-            assert_eq!(role_de, tc.role);
-
-            let mut actual_cbor: Vec<u8> = vec![];
-            ciborium::into_writer(&tc.role, &mut actual_cbor).unwrap();
-
-            assert_eq!(actual_cbor, tc.expected_cbor);
-
-            let role_de: ComidRoleTypeChoice =
-                ciborium::from_reader(actual_cbor.as_slice()).unwrap();
-
-            assert_eq!(role_de, tc.role);
+            tc.run();
         }
 
         let actual_err = serde_json::from_str::<ComidRoleTypeChoice>("\"foo\"")
@@ -2079,43 +2058,21 @@ mod tests {
 
     #[test]
     fn test_tag_rel_type_choice_serde() {
-        struct TestCase {
-            tag_rel: TagRelTypeChoice,
-            expected_json: &'static str,
-            expected_cbor: Vec<u8>,
-        }
-
-        let test_cases: Vec<TestCase> = vec![
-            TestCase {
-                tag_rel: TagRelTypeChoice::Supplements,
+        let test_cases = vec![
+            SerdeTestCase {
+                value: TagRelTypeChoice::Supplements,
                 expected_json: "\"supplements\"",
                 expected_cbor: vec![0x00],
             },
-            TestCase {
-                tag_rel: TagRelTypeChoice::Replaces,
+            SerdeTestCase {
+                value: TagRelTypeChoice::Replaces,
                 expected_json: "\"replaces\"",
                 expected_cbor: vec![0x01],
             },
         ];
 
         for tc in test_cases.into_iter() {
-            let actual_json = serde_json::to_string(&tc.tag_rel).unwrap();
-
-            assert_eq!(actual_json, tc.expected_json);
-
-            let tag_rel_de: TagRelTypeChoice = serde_json::from_str(actual_json.as_str()).unwrap();
-
-            assert_eq!(tag_rel_de, tc.tag_rel);
-
-            let mut actual_cbor: Vec<u8> = vec![];
-            ciborium::into_writer(&tc.tag_rel, &mut actual_cbor).unwrap();
-
-            assert_eq!(actual_cbor, tc.expected_cbor);
-
-            let tag_rel_de: TagRelTypeChoice =
-                ciborium::from_reader(actual_cbor.as_slice()).unwrap();
-
-            assert_eq!(tag_rel_de, tc.tag_rel);
+            tc.run()
         }
 
         let actual_err = serde_json::from_str::<TagRelTypeChoice>("\"foo\"")
