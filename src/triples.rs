@@ -4251,7 +4251,10 @@ impl<'de, 'a> Deserialize<'de> for ConditionalEndorsementTripleRecord<'a> {
 #[rustfmt::skip::macros(vec)]
 mod test {
     use super::*;
-    use crate::core::{ExtensionValue, HashAlgorithm};
+    use crate::{
+        core::{ExtensionValue, HashAlgorithm},
+        test::SerdeTestCase,
+    };
 
     #[test]
     fn test_class_id_json_serde() {
@@ -5444,19 +5447,13 @@ mod test {
 
     #[test]
     fn test_domain_type_choice_serde() {
-        struct TestCase<'a> {
-            value: DomainTypeChoice<'a>,
-            expected_cbor: Vec<u8>,
-            expected_json: &'static str,
-        }
-
-        let test_cases: Vec<TestCase> = vec! [
-            TestCase{
+        let test_cases = vec! [
+            SerdeTestCase{
                 value: DomainTypeChoice::Uint(1.into()),
                 expected_cbor: vec![0x01],
                 expected_json: "1",
             },
-            TestCase{
+            SerdeTestCase{
                 value: DomainTypeChoice::Text("foo".into()),
                 expected_cbor: vec![
                     0x63, // tstr(3)
@@ -5464,7 +5461,7 @@ mod test {
                 ],
                 expected_json: "\"foo\"",
             },
-            TestCase{
+            SerdeTestCase{
                 value: DomainTypeChoice::Oid("1.2.3.4".try_into().unwrap()),
                 expected_cbor: vec![
                     0xd8, 0x6f, // tag(111) [oid]
@@ -5473,7 +5470,7 @@ mod test {
                 ],
                 expected_json: r#"{"type":"oid","value":"1.2.3.4"}"#,
             },
-            TestCase{
+            SerdeTestCase{
                 value: DomainTypeChoice::Uuid("550e8400-e29b-41d4-a716-446655440000".try_into().unwrap()),
                 expected_cbor: vec![
                     0xd8, 0x25, // tag(37) [uuid]
@@ -5483,7 +5480,7 @@ mod test {
                 ],
                 expected_json: r#"{"type":"uuid","value":"550e8400-e29b-41d4-a716-446655440000"}"#,
             },
-            TestCase{
+            SerdeTestCase{
                 value: DomainTypeChoice::Extension(
                     ExtensionValue::Tag(1337, Box::new(ExtensionValue::Bool(true))),
                 ),
@@ -5496,14 +5493,7 @@ mod test {
         ];
 
         for tc in test_cases.into_iter() {
-            let mut actual_cbor: Vec<u8> = vec![];
-            ciborium::into_writer(&tc.value, &mut actual_cbor).unwrap();
-
-            assert_eq!(actual_cbor, tc.expected_cbor);
-
-            let actual_json = serde_json::to_string(&tc.value).unwrap();
-
-            assert_eq!(actual_json, tc.expected_json);
+            tc.run();
         }
     }
 }

@@ -1203,6 +1203,7 @@ mod tests {
     use crate::corim::{COSESign1Corim, CorimMetaMap, CorimSignerMap, ProtectedCorimHeaderMap};
     use crate::coswid::{ConciseSwidTag, EntityEntry};
     use crate::numbers::Integer;
+    use crate::test::SerdeTestCase;
     use crate::triples::{
         ClassMap, EnvironmentMap, MeasurementMap, MeasurementValuesMap, ReferenceTripleRecord,
     };
@@ -1506,14 +1507,8 @@ mod tests {
 
     #[test]
     fn test_corim_id_type_choice_serde() {
-        struct TestCase<'a> {
-            value: CorimIdTypeChoice<'a>,
-            expected_cbor: Vec<u8>,
-            expected_json: &'static str,
-        }
-
         let test_cases = vec![
-            TestCase {
+            SerdeTestCase {
                 value: CorimIdTypeChoice::Tstr("foo".into()),
                 expected_cbor: vec![
                     0x63, // tstr(3)
@@ -1521,7 +1516,7 @@ mod tests {
                 ],
                 expected_json: "\"foo\"",
             },
-            TestCase {
+            SerdeTestCase {
                 value: CorimIdTypeChoice::Uuid(
                    UuidType::try_from("550e8400-e29b-41d4-a716-446655440000").unwrap(),
                 ),
@@ -1532,7 +1527,7 @@ mod tests {
                 ],
                 expected_json: "\"550e8400-e29b-41d4-a716-446655440000\"",
             },
-            TestCase {
+            SerdeTestCase {
                 value: CorimIdTypeChoice::Extension(
                    ExtensionValue::Bool(true)
                 ),
@@ -1544,51 +1539,29 @@ mod tests {
         ];
 
         for tc in test_cases.into_iter() {
-            let mut actual_cbor: Vec<u8> = vec![];
-            ciborium::into_writer(&tc.value, &mut actual_cbor).unwrap();
-
-            assert_eq!(actual_cbor, tc.expected_cbor);
-
-            let value_de: CorimIdTypeChoice =
-                ciborium::from_reader(actual_cbor.as_slice()).unwrap();
-
-            assert_eq!(value_de, tc.value);
-
-            let actual_json = serde_json::to_string(&tc.value).unwrap();
-
-            assert_eq!(actual_json, tc.expected_json);
-
-            let value_de: CorimIdTypeChoice = serde_json::from_str(actual_json.as_str()).unwrap();
-
-            assert_eq!(value_de, tc.value);
+            tc.run();
         }
     }
 
     #[test]
     fn test_corim_role_type_choice() {
-        struct TestCase {
-            value: CorimRoleTypeChoice,
-            expected_json: &'static str,
-            expected_cbor: Vec<u8>,
-        }
-
         let test_cases = vec![
-            TestCase {
+            SerdeTestCase {
                 value: CorimRoleTypeChoice::ManifestCreator,
                 expected_json: "\"manifest-creator\"",
                 expected_cbor: vec![ 0x01 ],
             },
-            TestCase {
+            SerdeTestCase {
                 value: CorimRoleTypeChoice::ManifestSigner,
                 expected_json: "\"manifest-signer\"",
                 expected_cbor: vec![ 0x02 ],
             },
-            TestCase {
+            SerdeTestCase {
                 value: CorimRoleTypeChoice::Extension(-1),
                 expected_json: "\"Role(-1)\"",
                 expected_cbor: vec![ 0x20 ],
             },
-            TestCase {
+            SerdeTestCase {
                 value: CorimRoleTypeChoice::Extension(1337),
                 expected_json: "\"Role(1337)\"",
                 expected_cbor: vec![ 0x19, 0x05, 0x39 ],
@@ -1596,23 +1569,7 @@ mod tests {
         ];
 
         for tc in test_cases.into_iter() {
-            let mut actual_cbor: Vec<u8> = vec![];
-            ciborium::into_writer(&tc.value, &mut actual_cbor).unwrap();
-
-            assert_eq!(actual_cbor, tc.expected_cbor);
-
-            let value_de: CorimRoleTypeChoice =
-                ciborium::from_reader(actual_cbor.as_slice()).unwrap();
-
-            assert_eq!(value_de, tc.value);
-
-            let actual_json = serde_json::to_string(&tc.value).unwrap();
-
-            assert_eq!(actual_json, tc.expected_json);
-
-            let value_de: CorimRoleTypeChoice = serde_json::from_str(actual_json.as_str()).unwrap();
-
-            assert_eq!(value_de, tc.value);
+            tc.run();
         }
     }
 

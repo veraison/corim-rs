@@ -50,6 +50,10 @@ pub mod empty;
 /// Provides the Number Traits.
 pub mod numbers;
 
+/// Test utilities
+#[cfg(test)]
+pub(crate) mod test;
+
 // Use all public items from each module
 use comid::*;
 use core::*;
