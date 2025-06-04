@@ -79,7 +79,7 @@ use std::{collections::BTreeMap, fmt, marker::PhantomData};
 
 use crate::{
     comid::ConciseMidTag,
-    core::{Bytes, Label, ObjectIdentifier, TaggedJsonValue},
+    core::{Bytes, Label, ObjectIdentifier, OneOrMore, TaggedJsonValue},
     coswid::ConciseSwidTag,
     cotl::ConciseTlTag,
     empty_map_as_none,
@@ -453,17 +453,114 @@ impl<'a> From<ConciseTlTag<'a>> for ConciseTagTypeChoice<'a> {
 
 /// Location and optional thumbprint of a dependent CoRIM
 #[repr(C)]
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct CorimLocatorMap<'a> {
     /// URI(s) where the dependent CoRIM can be found
-    #[serde(rename = "0")]
-    pub href: Vec<Uri<'a>>,
+    pub href: OneOrMore<Uri<'a>>,
     /// Optional cryptographic thumbprint for verification
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "1")]
     pub thumbprint: Option<Digest>,
+}
+
+impl Serialize for CorimLocatorMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None).unwrap();
+
+        if is_human_readable {
+            map.serialize_entry("href", &self.href)?;
+
+            if let Some(thumbprint) = &self.thumbprint {
+                map.serialize_entry("thumbprint", thumbprint)?;
+            }
+        } else {
+            map.serialize_entry(&0, &self.href)?;
+
+            if let Some(thumbprint) = &self.thumbprint {
+                map.serialize_entry(&1, thumbprint)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CorimLocatorMap<'_> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CorimLocatorMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for CorimLocatorMapVisitor<'a> {
+            type Value = CorimLocatorMap<'a>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a map containing CorimLocatorMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut href: Option<OneOrMore<Uri<'a>>> = None;
+                let mut thumbprint: Option<Digest> = None;
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("href") => {
+                                href = map.next_value()?;
+                            }
+                            Some("thumbprint") => {
+                                thumbprint = map.next_value()?;
+                            }
+                            Some(s) => {
+                                return Err(de::Error::unknown_field(s, &["href", "thumbprint"]))
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                href = map.next_value()?;
+                            }
+                            Some(1) => {
+                                thumbprint = map.next_value()?;
+                            }
+                            Some(n) => {
+                                return Err(de::Error::unknown_field(
+                                    n.to_string().as_str(),
+                                    &["0-1"],
+                                ))
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if href.is_none() {
+                    return Err(de::Error::missing_field("href"));
+                }
+
+                Ok(CorimLocatorMap {
+                    href: href.unwrap(),
+                    thumbprint,
+                })
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(CorimLocatorMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Profile identifier that can be either a URI or OID
@@ -1199,7 +1296,7 @@ mod tests {
     use crate::comid::{
         ComidEntityMap, ComidRoleTypeChoice, ConciseMidTag, TagIdentityMap, TriplesMapBuilder,
     };
-    use crate::core::Bytes;
+    use crate::core::{Bytes, HashAlgorithm};
     use crate::corim::{COSESign1Corim, CorimMetaMap, CorimSignerMap, ProtectedCorimHeaderMap};
     use crate::coswid::{ConciseSwidTag, EntityEntry};
     use crate::numbers::Integer;
@@ -1658,5 +1755,38 @@ mod tests {
         let validity_map_de: ValidityMap = serde_json::from_str(actual_json.as_str()).unwrap();
 
         assert_eq!(validity_map_de, validity_map);
+    }
+
+    #[test]
+    fn test_corim_locator_map_serde() {
+        let test_cases = vec![
+            SerdeTestCase {
+                value: CorimLocatorMap {
+                    href: OneOrMore::One("foo".into()),
+                    thumbprint: Some(Digest{
+                        alg: HashAlgorithm::Sha256,
+                        val: vec![0x01, 0x02, 0x03].into(),
+                    }),
+                },
+                expected_cbor: vec![
+                    0xbf, // map(indef)
+                      0x00, // key: 0 [href]
+                      0xd8, 0x20, // value: tag(32) [uri]
+                        0x63, // tstr(3)
+                          0x66, 0x6f, 0x6f, // "foo"
+                      0x01, // key: 1 [thumbprint]
+                      0x82, // value: array(2) [digest]
+                        0x01, // [0: alg]1 [sha256]
+                        0x43,//  [1: val] bstr(3)
+                          0x01, 0x02, 0x03,
+                    0xff, // break
+                ],
+                expected_json: r#"{"href":{"type":"uri","value":"foo"},"thumbprint":"sha-256;AQID"}"#,
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            tc.run();
+        }
     }
 }
