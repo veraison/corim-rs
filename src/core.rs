@@ -48,7 +48,7 @@ use std::{
 use base64::{self, engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use derive_more::{AsMut, AsRef, Constructor, Deref, DerefMut, From, TryFrom};
 use serde::{
-    de::{self, SeqAccess, Unexpected, Visitor},
+    de::{self, DeserializeOwned, SeqAccess, Unexpected, Visitor},
     ser::{self, Error as _, SerializeMap, SerializeSeq},
     Deserialize, Deserializer, Serialize, Serializer,
 };
@@ -1614,7 +1614,7 @@ impl<'de> Deserialize<'de> for Ulabel<'_> {
 }
 
 /// Represents one or more values that can be either text or integers
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, PartialOrd, Ord, From, TryFrom)]
+#[derive(Debug, Clone, PartialEq, Serialize, Eq, PartialOrd, Ord, From, TryFrom)]
 #[serde(untagged)]
 #[repr(C)]
 pub enum OneOrMore<T> {
@@ -1673,6 +1673,63 @@ impl<T> OneOrMore<T> {
                 }
             }
             OneOrMore::More(items) => items.get(index),
+        }
+    }
+}
+
+// note(setrofim): we cannot rely on the derived implementation as it cannot handle CBOR tags
+// inside enum variants. Since we cannot rely on EnumAccess, I cannot think of a better way of
+// handling this other than deserializing as Value, checking if it is a sequence (and therfore the
+// More variant), re-serializing, and then deserializing as an appropriate type.
+impl<'de, T: Clone + DeserializeOwned> Deserialize<'de> for OneOrMore<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let is_human_readable = deserializer.is_human_readable();
+
+        if is_human_readable {
+            let (reserialized, is_seq) = match serde_json::Value::deserialize(deserializer)? {
+                value @ serde_json::Value::Array(_) => {
+                    (serde_json::to_string(&value).unwrap(), true)
+                }
+                value => (serde_json::to_string(&value).unwrap(), false),
+            };
+
+            if is_seq {
+                Ok(OneOrMore::More(
+                    serde_json::from_str::<Vec<T>>(&reserialized).map_err(de::Error::custom)?,
+                ))
+            } else {
+                Ok(OneOrMore::One(
+                    serde_json::from_str::<T>(&reserialized).map_err(de::Error::custom)?,
+                ))
+            }
+        } else {
+            let mut reserialized: Vec<u8> = vec![];
+
+            let is_seq = match ciborium::Value::deserialize(deserializer)? {
+                value @ ciborium::Value::Array(_) => {
+                    ciborium::into_writer(&value, &mut reserialized).unwrap();
+                    true
+                }
+                value => {
+                    ciborium::into_writer(&value, &mut reserialized).unwrap();
+                    false
+                }
+            };
+
+            if is_seq {
+                Ok(OneOrMore::More(
+                    ciborium::from_reader::<Vec<T>, _>(reserialized.as_slice())
+                        .map_err(de::Error::custom)?,
+                ))
+            } else {
+                Ok(OneOrMore::One(
+                    ciborium::from_reader::<T, _>(reserialized.as_slice())
+                        .map_err(de::Error::custom)?,
+                ))
+            }
         }
     }
 }
@@ -5534,9 +5591,55 @@ mod tests {
         }
     }
 
-            let extension_de: ExtensionValue = serde_json::from_str(actual_json.as_str()).unwrap();
+    #[test]
+    fn test_one_or_more_serde() {
+        let uri_test_cases: Vec<SerdeTestCase<OneOrMore<Uri>>> = vec![
+            SerdeTestCase {
+                value: OneOrMore::One("foo".into()),
+                expected_json: r#"{"type":"uri","value":"foo"}"#,
+                expected_cbor: vec![
+                    0xd8, 0x20, // tag(32) [uri]
+                      0x63, // tstr(3)
+                        0x66, 0x6f, 0x6f, // "foo"
+                ],
+            },
+            SerdeTestCase {
+                value: OneOrMore::More(vec!["foo".into(), "bar".into()]),
+                expected_json: r#"[{"type":"uri","value":"foo"},{"type":"uri","value":"bar"}]"#,
+                expected_cbor: vec![
+                    0x82,
+                      0xd8, 0x20, // tag(32) [uri]
+                        0x63, // tstr(3)
+                          0x66, 0x6f, 0x6f, // "foo"
+                      0xd8, 0x20, // tag(32) [uri]
+                        0x63, // tstr(3)
+                          0x62, 0x61, 0x72, // "bar"
+                ],
+            },
+        ];
 
-        for tc in test_cases.into_iter() {
+        let int_test_cases: Vec<SerdeTestCase<OneOrMore<Int>>> = vec![
+            SerdeTestCase {
+                value: OneOrMore::One(1.into()),
+                expected_json: "1",
+                expected_cbor: vec![0x01],
+            },
+            SerdeTestCase {
+                value: OneOrMore::More(vec![1.into(), 2.into()]),
+                expected_json: "[1,2]",
+                expected_cbor: vec![
+                    0x82, // array(2)
+                      0x01, // [0]1
+                      0x02, // [1]2
+                ],
+            },
+        ];
+
+        for tc in uri_test_cases.into_iter() {
+            tc.run();
+        }
+
+        for tc in int_test_cases.into_iter() {
             tc.run();
         }
     }
