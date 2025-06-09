@@ -646,7 +646,7 @@ impl<'de> Deserialize<'de> for ProfileTypeChoice<'_> {
                                 ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
                             Ok(ProfileTypeChoice::OidType(oid.into()))
                         }
-                        37 => {
+                        32 => {
                             let uri: Text =
                                 ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
                             Ok(ProfileTypeChoice::Uri(uri.into()))
