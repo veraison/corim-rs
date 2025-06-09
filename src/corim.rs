@@ -58,7 +58,7 @@
 //!             profile: None,
 //!             rim_validity: None,
 //!             entities: None,
-//!             extension: None
+//!             extensions: None
 //!         }
 //!     )
 //! );
@@ -207,37 +207,325 @@ generate_tagged!(
 
 /// The main CoRIM manifest structure containing all reference integrity data
 /// and associated metadata. Tagged with CBOR tag 501.#[repr(C)]
-#[derive(
-    Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct CorimMap<'a> {
     /// Unique identifier for the CoRIM
-    #[serde(rename = "0")]
     pub id: CorimIdTypeChoice<'a>,
     /// Collection of tags contained in this CoRIM
-    #[serde(rename = "1")]
     pub tags: Vec<ConciseTagTypeChoice<'a>>,
     /// Optional references to other CoRIMs this one depends on
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "2")]
     pub dependent_rims: Option<Vec<CorimLocatorMap<'a>>>,
     /// Optional profile information
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "3")]
     pub profile: Option<ProfileTypeChoice<'a>>,
     /// Optional validity period for the CoRIM
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "4")]
     pub rim_validity: Option<ValidityMap>,
     /// Optional list of entities associated with this CoRIM
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "5")]
     pub entities: Option<Vec<CorimEntityMap<'a>>>,
     /// Optional extensible attributes
-    #[serde(flatten)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extension: Option<CorimMapExtension>,
+    pub extensions: Option<ExtensionMap<'a>>,
+}
+
+impl Serialize for CorimMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            map.serialize_entry("id", &self.id)?;
+            map.serialize_entry("tags", &self.tags)?;
+
+            if let Some(dependent_rims) = &self.dependent_rims {
+                map.serialize_entry("dependent-rims", dependent_rims)?;
+            }
+
+            if let Some(profile) = &self.profile {
+                map.serialize_entry("profile", profile)?;
+            }
+
+            if let Some(rim_validity) = &self.rim_validity {
+                map.serialize_entry("rim-validity", rim_validity)?;
+            }
+
+            if let Some(entities) = &self.entities {
+                map.serialize_entry("entities", entities)?;
+            }
+        } else {
+            map.serialize_entry(&0, &self.id)?;
+            map.serialize_entry(&1, &self.tags)?;
+
+            if let Some(dependent_rims) = &self.dependent_rims {
+                map.serialize_entry(&2, dependent_rims)?;
+            }
+
+            if let Some(profile) = &self.profile {
+                map.serialize_entry(&3, profile)?;
+            }
+
+            if let Some(rim_validity) = &self.rim_validity {
+                map.serialize_entry(&4, rim_validity)?;
+            }
+
+            if let Some(entities) = &self.entities {
+                map.serialize_entry(&5, entities)?;
+            }
+        }
+
+        if let Some(extensions) = &self.extensions {
+            extensions.serialize_map(&mut map, is_human_readable)?;
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CorimMap<'_> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CorimMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for CorimMapVisitor<'a> {
+            type Value = CorimMap<'a>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a map containing CorimMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut builder = CorimMapBuilder::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("id") => {
+                                builder = builder.id(map.next_value::<CorimIdTypeChoice>()?);
+                            }
+                            Some("tags") => {
+                                builder =
+                                    builder.tags(map.next_value::<Vec<ConciseTagTypeChoice>>()?);
+                            }
+                            Some("dependent-rims") => {
+                                builder = builder
+                                    .dependent_rims(map.next_value::<Vec<CorimLocatorMap>>()?);
+                            }
+                            Some("profile") => {
+                                builder = builder.profile(map.next_value::<ProfileTypeChoice>()?);
+                            }
+                            Some("rim-validity") => {
+                                builder = builder.rim_validity(map.next_value::<ValidityMap>()?);
+                            }
+                            Some("entities") => {
+                                builder =
+                                    builder.entities(map.next_value::<Vec<CorimEntityMap>>()?);
+                            }
+                            Some(s) => {
+                                let ext_field: i128 = s.parse().map_err(|_| {
+                                    de::Error::unknown_field(
+                                        s,
+                                        &[
+                                            "id",
+                                            "tags",
+                                            "dependent-rims",
+                                            "profile",
+                                            "rim-validity",
+                                            "entities",
+                                            "any integer",
+                                        ],
+                                    )
+                                })?;
+                                builder = builder
+                                    .add_extension(ext_field, map.next_value::<ExtensionValue>()?);
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                builder = builder.id(map.next_value::<CorimIdTypeChoice>()?);
+                            }
+                            Some(1) => {
+                                builder =
+                                    builder.tags(map.next_value::<Vec<ConciseTagTypeChoice>>()?);
+                            }
+                            Some(2) => {
+                                builder = builder
+                                    .dependent_rims(map.next_value::<Vec<CorimLocatorMap>>()?);
+                            }
+                            Some(3) => {
+                                builder = builder.profile(map.next_value::<ProfileTypeChoice>()?);
+                            }
+                            Some(4) => {
+                                builder = builder.rim_validity(map.next_value::<ValidityMap>()?);
+                            }
+                            Some(5) => {
+                                builder =
+                                    builder.entities(map.next_value::<Vec<CorimEntityMap>>()?);
+                            }
+                            Some(n) => {
+                                builder = builder
+                                    .add_extension(n.into(), map.next_value::<ExtensionValue>()?);
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                builder.build().map_err(de::Error::custom)
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(CorimMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
+}
+
+#[derive(Debug, Constructor, Default)]
+#[repr(C)]
+pub struct CorimMapBuilder<'a> {
+    id: Option<CorimIdTypeChoice<'a>>,
+    tags: Option<Vec<ConciseTagTypeChoice<'a>>>,
+    dependent_rims: Option<Vec<CorimLocatorMap<'a>>>,
+    profile: Option<ProfileTypeChoice<'a>>,
+    rim_validity: Option<ValidityMap>,
+    entities: Option<Vec<CorimEntityMap<'a>>>,
+    extensions: Option<ExtensionMap<'a>>,
+}
+
+impl<'a> CorimMapBuilder<'a> {
+    pub fn id(mut self, value: CorimIdTypeChoice<'a>) -> Self {
+        self.id = Some(value);
+        self
+    }
+
+    pub fn tags(mut self, value: Vec<ConciseTagTypeChoice<'a>>) -> Self {
+        self.tags = Some(value);
+        self
+    }
+
+    pub fn add_tag(mut self, value: ConciseTagTypeChoice<'a>) -> Self {
+        if let Some(ref mut tags) = self.tags {
+            tags.push(value);
+        } else {
+            self.tags = Some(vec![value]);
+        }
+        self
+    }
+
+    pub fn dependent_rims(mut self, value: Vec<CorimLocatorMap<'a>>) -> Self {
+        self.dependent_rims = Some(value);
+        self
+    }
+
+    pub fn add_dependent_rim(mut self, value: CorimLocatorMap<'a>) -> Self {
+        if let Some(ref mut dependent_rims) = self.dependent_rims {
+            dependent_rims.push(value);
+        } else {
+            self.dependent_rims = Some(vec![value]);
+        }
+        self
+    }
+
+    pub fn profile(mut self, value: ProfileTypeChoice<'a>) -> Self {
+        self.profile = Some(value);
+        self
+    }
+
+    pub fn rim_validity(mut self, value: ValidityMap) -> Self {
+        self.rim_validity = Some(value);
+        self
+    }
+
+    pub fn entities(mut self, value: Vec<CorimEntityMap<'a>>) -> Self {
+        self.entities = Some(value);
+        self
+    }
+
+    pub fn add_entity(mut self, value: CorimEntityMap<'a>) -> Self {
+        if let Some(ref mut entities) = self.entities {
+            entities.push(value);
+        } else {
+            self.entities = Some(vec![value]);
+        }
+        self
+    }
+
+    pub fn extensions(mut self, value: ExtensionMap<'a>) -> Self {
+        self.extensions = Some(value);
+        self
+    }
+
+    pub fn add_extension(mut self, key: i128, value: ExtensionValue<'a>) -> Self {
+        if let Some(ref mut extensions) = self.extensions {
+            extensions.insert(key.into(), value);
+        } else {
+            let mut extensions = ExtensionMap::default();
+            extensions.insert(key.into(), value);
+            self.extensions = Some(extensions);
+        }
+        self
+    }
+
+    pub fn build(self) -> crate::Result<CorimMap<'a>> {
+        if self.id.is_none() {
+            return Err(CorimError::UnsetMandatoryField(
+                "CorimMap".to_string(),
+                "id".to_string(),
+            ))?;
+        }
+
+        if self.tags.is_none() {
+            return Err(CorimError::UnsetMandatoryField(
+                "CorimMap".to_string(),
+                "tags".to_string(),
+            ))?;
+        } else if self.tags.as_ref().unwrap().is_empty() {
+            return Err(CorimError::InvalidFieldValue(
+                "CorimMap".to_string(),
+                "tags".to_string(),
+                "must not be empty".to_string(),
+            ))?;
+        }
+
+        if self.dependent_rims.is_some() && self.dependent_rims.as_ref().unwrap().is_empty() {
+            return Err(CorimError::InvalidFieldValue(
+                "CorimMap".to_string(),
+                "dependent_rims".to_string(),
+                "must not be empty".to_string(),
+            ))?;
+        }
+
+        if self.entities.is_some() && self.entities.as_ref().unwrap().is_empty() {
+            return Err(CorimError::InvalidFieldValue(
+                "CorimMap".to_string(),
+                "entities".to_string(),
+                "must not be empty".to_string(),
+            ))?;
+        }
+
+        Ok(CorimMap {
+            id: self.id.unwrap(),
+            tags: self.tags.unwrap(),
+            dependent_rims: self.dependent_rims,
+            profile: self.profile,
+            rim_validity: self.rim_validity,
+            entities: self.entities,
+            extensions: self.extensions,
+        })
+    }
 }
 
 /// Represents either a string or UUID identifier for a CoRIM
@@ -317,6 +605,8 @@ pub enum ConciseTagTypeChoice<'a> {
     Mid(TaggedConciseMidTag<'a>),
     /// A Concise Trust List (CoTL) tag
     Tl(TaggedConciseTlTag<'a>),
+    /// Extension value for tags not defined by the spec
+    Extension(ExtensionValue<'a>),
 }
 
 impl<'de> Deserialize<'de> for ConciseTagTypeChoice<'_> {
@@ -334,48 +624,120 @@ impl<'de> Deserialize<'de> for ConciseTagTypeChoice<'_> {
             where
                 D: Deserializer<'de>,
             {
-                let tagged_value = ciborium::value::Value::deserialize(deserializer)?;
-                match tagged_value {
-                    ciborium::value::Value::Tag(tag, inner) => match tag {
-                        505 => {
+                if deserializer.is_human_readable() {
+                    match serde_json::Value::deserialize(deserializer)? {
+                        serde_json::Value::Object(map) => {
+                            if map.contains_key("type")
+                                && map.contains_key("value")
+                                && map.len() == 2
+                            {
+                                let value = serde_json::to_string(&map["value"]).unwrap();
+
+                                match &map["type"] {
+                                    serde_json::Value::String(typ) => match typ.as_str() {
+                                        "coswid" => {
+                                            let swid: ConciseSwidTag<'a> =
+                                                serde_json::from_str(value.as_str())
+                                                    .map_err(de::Error::custom)?;
+                                            Ok(ConciseTagTypeChoice::Swid(
+                                                TaggedConciseSwidTag::new(swid),
+                                            ))
+                                        }
+                                        "comid" => {
+                                            let mid: ConciseMidTag<'a> =
+                                                serde_json::from_str(value.as_str())
+                                                    .map_err(de::Error::custom)?;
+                                            Ok(ConciseTagTypeChoice::Mid(TaggedConciseMidTag::new(
+                                                mid,
+                                            )))
+                                        }
+                                        "cotl" => {
+                                            let tl: ConciseTlTag<'a> =
+                                                serde_json::from_str(value.as_str())
+                                                    .map_err(de::Error::custom)?;
+                                            Ok(ConciseTagTypeChoice::Tl(TaggedConciseTlTag::new(
+                                                tl,
+                                            )))
+                                        }
+                                        s => Err(de::Error::custom(format!(
+                                            "unexpected type {s} for ClassIdTypeChoice"
+                                        ))),
+                                    },
+                                    v => Err(de::Error::custom(format!(
+                                        "type must be as string, got {v:?}"
+                                    ))),
+                                }
+                            } else if map.contains_key("tag")
+                                && map.contains_key("value")
+                                && map.len() == 2
+                            {
+                                match &map["tag"] {
+                                    serde_json::Value::Number(n) => match n.as_u64() {
+                                        Some(u) => Ok(ConciseTagTypeChoice::Extension(
+                                            ExtensionValue::Tag(
+                                                u,
+                                                Box::new(
+                                                    ExtensionValue::try_from(map["value"].clone())
+                                                        .map_err(de::Error::custom)?,
+                                                ),
+                                            ),
+                                        )),
+                                        None => Err(de::Error::custom(format!(
+                                            "a number must be an unsinged integer, got {n:?}"
+                                        ))),
+                                    },
+                                    v => Err(de::Error::custom(format!("invalid tag {v:?}"))),
+                                }
+                            } else {
+                                Ok(ConciseTagTypeChoice::Extension(
+                                    ExtensionValue::try_from(serde_json::Value::Object(map))
+                                        .map_err(de::Error::custom)?,
+                                ))
+                            }
+                        }
+                        value => Ok(ConciseTagTypeChoice::Extension(
+                            ExtensionValue::try_from(value).map_err(de::Error::custom)?,
+                        )),
+                    }
+                } else {
+                    let tagged_value = ciborium::value::Value::deserialize(deserializer)?;
+                    match tagged_value {
+                        ciborium::Value::Tag(tag, inner) => {
                             let mut bytes: Vec<u8> = Vec::new();
-                            ciborium::ser::into_writer(&inner, &mut bytes).map_err(|_| {
-                                serde::de::Error::custom("Failed to serialize the map")
-                            })?;
-                            let swid: ConciseSwidTag<'a> = ciborium::from_reader(&bytes[..])
-                                .map_err(|_| {
-                                    serde::de::Error::custom("Failed to deserialize bytes")
-                                })?;
-                            Ok(ConciseTagTypeChoice::Swid(TaggedConciseSwidTag::new(swid)))
+                            ciborium::into_writer(&inner, &mut bytes).unwrap();
+
+                            match tag {
+                                505 => {
+                                    let swid: ConciseSwidTag<'a> =
+                                        ciborium::from_reader(&bytes[..]).map_err(|_| {
+                                            serde::de::Error::custom("Failed to deserialize bytes")
+                                        })?;
+                                    Ok(ConciseTagTypeChoice::Swid(TaggedConciseSwidTag::new(swid)))
+                                }
+                                506 => {
+                                    let mid: ConciseMidTag<'a> = ciborium::from_reader(&bytes[..])
+                                        .map_err(|_| {
+                                            serde::de::Error::custom("Failed to deserialize bytes")
+                                        })?;
+                                    Ok(ConciseTagTypeChoice::Mid(TaggedConciseMidTag::new(mid)))
+                                }
+                                508 => {
+                                    let tl: ConciseTlTag<'a> = ciborium::from_reader(&bytes[..])
+                                        .map_err(|_| {
+                                            serde::de::Error::custom("Failed to deserialize bytes")
+                                        })?;
+                                    Ok(ConciseTagTypeChoice::Tl(TaggedConciseTlTag::new(tl)))
+                                }
+                                other => Ok(ConciseTagTypeChoice::Extension(
+                                    ExtensionValue::try_from(ciborium::Value::Tag(other, inner))
+                                        .map_err(de::Error::custom)?,
+                                )),
+                            }
                         }
-                        506 => {
-                            let mut bytes = Vec::new();
-                            ciborium::ser::into_writer(&inner, &mut bytes).map_err(|_| {
-                                serde::de::Error::custom("Failure to serialize the map")
-                            })?;
-                            let mid: ConciseMidTag<'a> = ciborium::from_reader(&bytes[..])
-                                .map_err(|_| {
-                                    serde::de::Error::custom("Failed to deserialize bytes")
-                                })?;
-                            Ok(ConciseTagTypeChoice::Mid(TaggedConciseMidTag::new(mid)))
-                        }
-                        508 => {
-                            let mut bytes = Vec::new();
-                            ciborium::ser::into_writer(&inner, &mut bytes).map_err(|_| {
-                                serde::de::Error::custom("Failure to serialize the map")
-                            })?;
-                            let tl: ConciseTlTag<'a> =
-                                ciborium::from_reader(&bytes[..]).map_err(|_| {
-                                    serde::de::Error::custom("Failed to deserialize bytes")
-                                })?;
-                            Ok(ConciseTagTypeChoice::Tl(TaggedConciseTlTag::new(tl)))
-                        }
-                        other => Err(serde::de::Error::custom(format!(
-                            "Unsupported tag: {}, expected 505, 506, or 508",
-                            other
-                        ))),
-                    },
-                    _ => Err(serde::de::Error::custom("Expected a tagged CBOR value")),
+                        value => Ok(ConciseTagTypeChoice::Extension(
+                            ExtensionValue::try_from(value).map_err(de::Error::custom)?,
+                        )),
+                    }
                 }
             }
         }
@@ -1294,7 +1656,8 @@ pub type CoseMap<'a> = ExtensionMap<'a>;
 mod tests {
 
     use crate::comid::{
-        ComidEntityMap, ComidRoleTypeChoice, ConciseMidTag, TagIdentityMap, TriplesMapBuilder,
+        ComidEntityMap, ComidRoleTypeChoice, ConciseMidTag, ConciseMidTagBuilder, TagIdTypeChoice,
+        TagIdentityMap, TriplesMapBuilder,
     };
     use crate::core::{Bytes, HashAlgorithm};
     use crate::corim::{COSESign1Corim, CorimMetaMap, CorimSignerMap, ProtectedCorimHeaderMap};
@@ -1302,7 +1665,9 @@ mod tests {
     use crate::numbers::Integer;
     use crate::test::SerdeTestCase;
     use crate::triples::{
-        ClassMap, EnvironmentMap, MeasurementMap, MeasurementValuesMap, ReferenceTripleRecord,
+        ClassMap, EndorsedTripleRecord, EnvironmentMap, EnvironmentMapBuilder,
+        InstanceIdTypeChoice, MeasurementMap, MeasurementValuesMap, MeasurementValuesMapBuilder,
+        ReferenceTripleRecord, SvnTypeChoice,
     };
     use std::collections::BTreeMap;
 
@@ -1353,16 +1718,14 @@ mod tests {
                     0xff, // break
                 0xff, // break
               0xa0, // map(0) -- COSE unprotected header
-              0x58, 0xbc, // bstr(188) -- COSE payload
+              0x58, 0xba, // bstr(186) -- COSE payload
                 0xd9, 0x01, 0xf5, // tag(501) -- CoRIM
                   0xbf, // map(indef)
-                    0x61, // key: tstr(1)
-                      0x30, // "0"
+                    0x00, // key: 0 [id]
                     0x69, // value: tstr(9)
                       0x63, 0x6f, 0x72, 0x69, 0x6d, 0x2d, 0x30, 0x30, // "corim-00"
                       0x31,                                           // "1"
-                    0x61, // key: tstr(1)
-                      0x31, // "1"
+                    0x01, // key: 1 [tags]
                     0x82, // value: array(2)
                       0xd9, 0x01, 0xf9, // tag(505) -- CoSWID
                         0xbf, // map(indef)
@@ -1550,7 +1913,7 @@ mod tests {
                 profile: None,
                 rim_validity: None,
                 entities: None,
-                extension: None,
+                extensions: None,
             }
             .into(),
             signature: Bytes::from(vec![0]).into(),
@@ -1782,6 +2145,144 @@ mod tests {
                     0xff, // break
                 ],
                 expected_json: r#"{"href":{"type":"uri","value":"foo"},"thumbprint":"sha-256;AQID"}"#,
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            tc.run();
+        }
+    }
+
+    #[test]
+    fn test_corim_map_serde() {
+        let env = EnvironmentMapBuilder::default()
+            .instance(InstanceIdTypeChoice::Bytes(
+                [0x01, 0x02, 0x03].as_slice().into(),
+            ))
+            .build()
+            .unwrap();
+
+        let mvals = MeasurementValuesMapBuilder::default()
+            .svn(SvnTypeChoice::Svn(1.into()))
+            .build()
+            .unwrap();
+
+        let measurement_map = MeasurementMap {
+            mkey: None,
+            mval: mvals,
+            authorized_by: None,
+        };
+
+        let test_cases = vec![
+            SerdeTestCase {
+                value: CorimMapBuilder::default()
+                    .id(CorimIdTypeChoice::Tstr("foo".into()))
+                    .add_tag(ConciseTagTypeChoice::Mid(
+                        ConciseMidTagBuilder::default()
+                            .tag_identity(TagIdentityMap{
+                                tag_id: TagIdTypeChoice::Tstr("bar".into()),
+                                tag_version: None,
+                            })
+                            .triples(TriplesMapBuilder::default()
+                                .endorsed_triples(vec![
+                                    EndorsedTripleRecord{
+                                        condition: env.clone(),
+                                        endorsement: vec![measurement_map.clone()],
+                                    }
+                                ])
+                                .build()
+                                .unwrap()
+                            )
+                            .build()
+                            .unwrap()
+                            .into()
+                    ))
+                    .add_dependent_rim(CorimLocatorMap{
+                        href: OneOrMore::One("buzz".into()),
+                        thumbprint: None,
+                    })
+                    .profile(ProfileTypeChoice::Uri("qux".into()))
+                    .rim_validity(ValidityMap {
+                        not_before: None,
+                        not_after: 1.into(),
+                    })
+                    .add_entity(CorimEntityMapBuilder::default()
+                        .entity_name("zot".into())
+                        .add_role(CorimRoleTypeChoice::ManifestCreator)
+                        .build()
+                        .unwrap()
+                    )
+                    .add_extension(-1, ExtensionValue::Bool(false))
+                    .build()
+                    .unwrap(),
+                expected_cbor: vec![
+                    0xbf, // map(indef) [corim-map]
+                      0x00, // key: 0 [id]
+                      0x63, // value: tstr(3)
+                        0x66, 0x6f, 0x6f, // "foo"
+                      0x01, // key: 1 [tags]
+                        0x81, // value: array(1)
+                          0xd9, 0x01, 0xfa, // [0]tag(506) [tagged-concise-mid-tag]
+                            0xbf, // map(indef) [concise-mid-tag]
+                              0x01, // key: 1 [tag-identity]
+                              0xbf, // map(indef) [tag-identity-map]
+                                0x00, // key: 0 [tag-id]
+                                0x63, // value: tstr(3)
+                                  0x62, 0x61, 0x72, // "bar"
+                              0xff, // break
+                              0x04, // key: 4 [triples]
+                              0xbf, // value: map(indef) [triples-map]
+                                0x01, // key: 1 [endorsed-triples]
+                                0x81, // value: array(1)
+                                  0x82, // [0]value: array(2) [endorsed-triple-record]
+                                    0xbf, // [0]value: map(indef) [condition: environment-map]
+                                      0x01, // key: 1 [instance]
+                                      0xd9, 0x02, 0x30,  // value: tag(560) [tagged-bytes]
+                                        0x43, // bstr(3)
+                                          0x01, 0x02, 0x03,
+                                    0xff, // break
+                                    0x81, // [1]array(1) [endorsement]
+                                      0xbf, // [0]map(indef) [measurement-map]
+                                        0x01, // key: 1 [mval]
+                                        0xbf, // value: map(indef) [measurement-values-map]
+                                          0x01, // key: 1 [svn]
+                                          0x01, // value: 1
+                                        0xff, // break
+                                      0xff, // break
+                            0xff, // break
+                          0xff, // break
+                      0x02, // key: 2 [dependent-rims]
+                        0x81,// value: array(1)
+                          0xbf, // [0]map(indef) [corim-locator-map]
+                            0x00, // key: 0 [href]
+                            0xd8, 0x20, // value: tag(32) [uri]
+                              0x64, // tstr(4)
+                                0x62, 0x75, 0x7a, 0x7a, // "buzz"
+                          0xff, // break
+                      0x03, // key: 3 [profile]
+                      0xd8, 0x20, // value: tag(32) [uri]
+                        0x63, // tstr(3)
+                          0x71, 0x75, 0x78, // "qux"
+                      0x04, // key: 4 [rim-validity]
+                      0xbf, // value: map(indef) [validity-map]
+                        0x01, // key: 1 [not-after]
+                        0x01, // value: 1
+                      0xff, // break
+                      0x05, // key: 5 [entities]
+                      0x81, // value: array(1)
+                        0xbf, // [0]map(indef) [corim-entity-map]
+                          0x00, // key: 0 [entity-name]
+                          0x63, // value: tstr(3)
+                            0x7a, 0x6f, 0x74, // "zot"
+                          0x02, // key: 2 [role]
+                          0x81, // value: array(1)
+                            0x01, // [0]1 [manifest-creator]
+                        0xff, // break
+                      0x20, // key: -1 [extension(-1)]
+                      0xf4, //  value: false
+                    0xff, //break
+                ],
+                expected_json: r#"{"id":"foo","tags":[{"type":"comid","value":{"tag-identity":{"tag-id":"bar"},"triples":{"endorsed-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]]}}}],"dependent-rims":[{"href":{"type":"uri","value":"buzz"}}],"profile":{"type":"uri","value":"qux"},"rim-validity":{"not-after":1},"entities":[{"entity-name":"zot","role":["manifest-creator"]}],"-1":false}"#,
             },
         ];
 

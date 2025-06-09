@@ -4,6 +4,7 @@
 pub enum CorimError {
     InvalidConciseTagTypeChoice,
     InvalidCorimRole(String),
+    InvalidFieldValue(String, String, String),
     UnsetMandatoryField(String, String),
     Unknown,
 }
@@ -18,6 +19,9 @@ impl std::fmt::Display for CorimError {
             }
             Self::InvalidCorimRole(role) => {
                 write!(f, "Invalid CoRIM role \"{role}\"")
+            }
+            Self::InvalidFieldValue(object, field, message) => {
+                write!(f, " invalid {object}.{field} value: {message}")
             }
             Self::UnsetMandatoryField(object, field) => {
                 write!(f, "{object} field(s) {field} must be set")
