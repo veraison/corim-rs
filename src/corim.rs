@@ -1689,28 +1689,102 @@ pub struct CorimMetaMap<'a> {
 
 /// Information about the entity that signed the CoRIM
 #[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
+    Default, Debug, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
 )]
 #[repr(C)]
 pub struct CorimSignerMap<'a> {
     /// Name of the signing entity
-    #[serde(rename = "0")]
     pub signer_name: EntityNameTypeChoice<'a>,
     /// Optional URI identifying the signer
-    #[serde(rename = "1")]
     pub signer_uri: Option<Uri<'a>>,
-    /// Optional COSE-specific extensions
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "empty_map_as_none")]
-    #[serde(flatten)]
-    pub extension: Option<CoseMap<'a>>,
+    /// Signer extensions
+    pub extensions: Option<ExtensionMap<'a>>,
+}
+
+impl Serialize for CorimSignerMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            map.serialize_entry("signer-name", &self.signer_name)?;
+
+            if let Some(signer_uri) = &self.signer_uri {
+                map.serialize_entry("signer-uri", signer_uri)?;
+            }
+        } else {
+            map.serialize_entry(&0, &self.signer_name)?;
+
+            if let Some(signer_uri) = &self.signer_uri {
+                map.serialize_entry(&1, signer_uri)?;
+            }
+        }
+
+        if let Some(extensions) = &self.extensions {
+            extensions.serialize_map(&mut map, is_human_readable)?;
+        }
+
+        map.end()
+    }
 }
 
 /// Type alias for entity names using text strings
-pub type EntityNameTypeChoice<'a> = Text<'a>;
+#[repr(C)]
+#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(untagged)]
+pub enum EntityNameTypeChoice<'a> {
+    Text(Text<'a>),
+    Extension(ExtensionValue<'a>),
+}
 
-/// Type alias for COSE map extensions
-pub type CoseMap<'a> = ExtensionMap<'a>;
+impl EntityNameTypeChoice<'_> {
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Extension(ext) => ext.as_str(),
+        }
+    }
+}
+
+impl Default for EntityNameTypeChoice<'_> {
+    fn default() -> Self {
+        Self::Text("".into())
+    }
+}
+
+impl<'a> From<&'a str> for EntityNameTypeChoice<'a> {
+    fn from(value: &'a str) -> Self {
+        EntityNameTypeChoice::Text(value.into())
+    }
+}
+
+impl<'de> Deserialize<'de> for EntityNameTypeChoice<'_> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let is_human_readable = deserializer.is_human_readable();
+
+        if is_human_readable {
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::String(s) => Ok(EntityNameTypeChoice::Text(s.into())),
+                value => Ok(EntityNameTypeChoice::Extension(
+                        ExtensionValue::try_from(value).map_err(de::Error::custom)?,
+                )),
+            }
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Text(s) => Ok(EntityNameTypeChoice::Text(s.into())),
+                value => Ok(EntityNameTypeChoice::Extension(
+                        ExtensionValue::try_from(value).map_err(de::Error::custom)?,
+                )),
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 #[rustfmt::skip::macros(vec)]
@@ -2347,6 +2421,32 @@ mod tests {
                     0xff, //break
                 ],
                 expected_json: r#"{"id":"foo","tags":[{"type":"comid","value":{"tag-identity":{"tag-id":"bar"},"triples":{"endorsed-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]]}}}],"dependent-rims":[{"href":{"type":"uri","value":"buzz"}}],"profile":{"type":"uri","value":"qux"},"rim-validity":{"not-after":1},"entities":[{"entity-name":"zot","role":["manifest-creator"]}],"-1":false}"#,
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            tc.run();
+        }
+    }
+
+    #[test]
+    fn test_entity_name_type_choice_serde() {
+        let test_cases = vec![
+            SerdeTestCase {
+                value: EntityNameTypeChoice::Text("foo".into()),
+                expected_json: "\"foo\"",
+                expected_cbor: vec![
+                    0x63, // tstr(3)
+                      0x66, 0x6f, 0x6f, // "foo"
+                ],
+            },
+
+            SerdeTestCase {
+                value: EntityNameTypeChoice::Extension(ExtensionValue::Bool(true)),
+                expected_json: "true",
+                expected_cbor: vec![
+                    0xf5, // true
+                ],
             },
         ];
 
