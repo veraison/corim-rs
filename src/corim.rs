@@ -86,7 +86,7 @@ use crate::{
     error::CorimError,
     generate_tagged,
     numbers::Integer,
-    Digest, ExtensionMap, ExtensionValue, Int, OidType, TaggedBytes, TaggedConciseMidTag,
+    Digest, Empty, ExtensionMap, ExtensionValue, Int, OidType, TaggedBytes, TaggedConciseMidTag,
     TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
 };
 
@@ -1669,7 +1669,7 @@ pub struct ProtectedCorimHeaderMap<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "empty_map_as_none")]
     #[serde(flatten)]
-    pub cose_map: Option<CoseMap<'a>>,
+    pub cose_map: Option<ExtensionMap<'a>>,
 }
 
 /// Metadata about the CoRIM signing operation
@@ -1688,9 +1688,7 @@ pub struct CorimMetaMap<'a> {
 }
 
 /// Information about the entity that signed the CoRIM
-#[derive(
-    Default, Debug, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct CorimSignerMap<'a> {
     /// Name of the signing entity
@@ -1728,6 +1726,92 @@ impl Serialize for CorimSignerMap<'_> {
         }
 
         map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CorimSignerMap<'_> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CorimSignerMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for CorimSignerMapVisitor<'a> {
+            type Value = CorimSignerMap<'a>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a map containing CorimSignerMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut signer_name: Option<EntityNameTypeChoice> = None;
+                let mut signer_uri: Option<Uri> = None;
+                let mut extensions = ExtensionMap::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("signer-name") => {
+                                signer_name = Some(map.next_value::<EntityNameTypeChoice>()?);
+                            }
+                            Some("signer-uri") => {
+                                signer_uri = Some(map.next_value::<Uri>()?);
+                            }
+                            Some(s) => {
+                                let ext_field: i128 = s.parse().map_err(|_| {
+                                    de::Error::unknown_field(
+                                        s,
+                                        &["entity-name", "reg-id", "role", "any integer"],
+                                    )
+                                })?;
+                                extensions
+                                    .insert(ext_field.into(), map.next_value::<ExtensionValue>()?);
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                signer_name = Some(map.next_value::<EntityNameTypeChoice>()?);
+                            }
+                            Some(1) => {
+                                signer_uri = Some(map.next_value::<Uri>()?);
+                            }
+                            Some(n) => {
+                                extensions.insert(n.into(), map.next_value::<ExtensionValue>()?);
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if signer_name.is_none() {
+                    return Err(de::Error::missing_field("signer-name"));
+                }
+
+                Ok(CorimSignerMap {
+                    signer_name: signer_name.unwrap(),
+                    signer_uri,
+                    extensions: if extensions.is_empty() {
+                        None
+                    } else {
+                        Some(extensions)
+                    },
+                })
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(CorimSignerMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
     }
 }
 
@@ -1772,14 +1856,14 @@ impl<'de> Deserialize<'de> for EntityNameTypeChoice<'_> {
             match serde_json::Value::deserialize(deserializer)? {
                 serde_json::Value::String(s) => Ok(EntityNameTypeChoice::Text(s.into())),
                 value => Ok(EntityNameTypeChoice::Extension(
-                        ExtensionValue::try_from(value).map_err(de::Error::custom)?,
+                    ExtensionValue::try_from(value).map_err(de::Error::custom)?,
                 )),
             }
         } else {
             match ciborium::Value::deserialize(deserializer)? {
                 ciborium::Value::Text(s) => Ok(EntityNameTypeChoice::Text(s.into())),
                 value => Ok(EntityNameTypeChoice::Extension(
-                        ExtensionValue::try_from(value).map_err(de::Error::custom)?,
+                    ExtensionValue::try_from(value).map_err(de::Error::custom)?,
                 )),
             }
         }
@@ -1821,7 +1905,7 @@ mod tests {
     fn test_cose_sign1_corim_serialize_deserialize() {
         let expected = vec![
             0x84, // array(4)
-              0x58, 0x41, // bstr(65) -- COSE protected header
+              0x58, 0x3d, // bstr(61) -- COSE protected header
                 0xbf, // map(indef)
                   0x61, // key: tstr(1)
                     0x31, // "1"
@@ -1842,14 +1926,10 @@ mod tests {
                     0x61, // key: tstr(1)
                       0x30, // "0"
                     0xbf, // value: map(indef)
-                      0x61, // key: tstr(1)
-                        0x30, // "1"
+                     0x00, // key: 0 [signer-name]
                       0x6e, // value: tstr(14)
                         0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, // "Example "
                         0x53, 0x69, 0x67, 0x6e, 0x65, 0x72,             // "Signer"
-                      0x61, // key: tstr(1)
-                        0x31, // "1"
-                      0xf6, // value: null
                     0xff, // break
                 0xff, // break
               0xa0, // map(0) -- COSE unprotected header
