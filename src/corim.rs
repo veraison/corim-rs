@@ -1673,18 +1673,131 @@ pub struct ProtectedCorimHeaderMap<'a> {
 }
 
 /// Metadata about the CoRIM signing operation
-#[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct CorimMetaMap<'a> {
     /// Information about the signer
-    #[serde(rename = "0")]
     pub signer: CorimSignerMap<'a>,
     /// Optional validity period for the signature
-    #[serde(rename = "1")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub signature_validity: Option<ValidityMap>,
+    /// Signer map extensions
+    pub extensions: Option<ExtensionMap<'a>>,
+}
+
+impl Serialize for CorimMetaMap<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+        let mut map = serializer.serialize_map(None)?;
+
+        if is_human_readable {
+            map.serialize_entry("signer", &self.signer)?;
+
+            if let Some(signature_validity) = &self.signature_validity {
+                map.serialize_entry("signature-validity", signature_validity)?;
+            }
+        } else {
+            map.serialize_entry(&0, &self.signer)?;
+
+            if let Some(signature_validity) = &self.signature_validity {
+                map.serialize_entry(&1, signature_validity)?;
+            }
+        }
+
+        if let Some(extensions) = &self.extensions {
+            extensions.serialize_map(&mut map, is_human_readable)?;
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CorimMetaMap<'_> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CorimMetaMapVisitor<'a> {
+            is_human_readable: bool,
+            marker: PhantomData<&'a str>,
+        }
+
+        impl<'de, 'a> Visitor<'de> for CorimMetaMapVisitor<'a> {
+            type Value = CorimMetaMap<'a>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a map containing CorimMetaMap fields")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut signer: Option<CorimSignerMap> = None;
+                let mut signature_validity: Option<ValidityMap> = None;
+                let mut extensions = ExtensionMap::default();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("signer") => {
+                                signer = Some(map.next_value::<CorimSignerMap>()?);
+                            }
+                            Some("signature-validity") => {
+                                signature_validity = Some(map.next_value::<ValidityMap>()?);
+                            }
+                            Some(s) => {
+                                let ext_field: i128 = s.parse().map_err(|_| {
+                                    de::Error::unknown_field(
+                                        s,
+                                        &["signer", "signature-validity", "any integer"],
+                                    )
+                                })?;
+                                extensions
+                                    .insert(ext_field.into(), map.next_value::<ExtensionValue>()?);
+                            }
+                            None => break,
+                        }
+                    } else {
+                        match map.next_key::<i64>()? {
+                            Some(0) => {
+                                signer = Some(map.next_value::<CorimSignerMap>()?);
+                            }
+                            Some(1) => {
+                                signature_validity = Some(map.next_value::<ValidityMap>()?);
+                            }
+                            Some(n) => {
+                                extensions.insert(n.into(), map.next_value::<ExtensionValue>()?);
+                            }
+                            None => break,
+                        }
+                    }
+                }
+
+                if signer.is_none() {
+                    return Err(de::Error::missing_field("signer"));
+                }
+
+                Ok(CorimMetaMap {
+                    signer: signer.unwrap(),
+                    signature_validity,
+                    extensions: if extensions.is_empty() {
+                        None
+                    } else {
+                        Some(extensions)
+                    },
+                })
+            }
+        }
+
+        let is_hr = deserializer.is_human_readable();
+        deserializer.deserialize_map(CorimMetaMapVisitor {
+            is_human_readable: is_hr,
+            marker: PhantomData,
+        })
+    }
 }
 
 /// Information about the entity that signed the CoRIM
@@ -1922,15 +2035,15 @@ mod tests {
                     0x6b, 0x65, 0x79, 0x2d, 0x30, 0x30, 0x31,
                   0x61, // key: tstr(1)
                     0x38, // "8"
-                  0xa1, // value: map(1)
-                    0x61, // key: tstr(1)
-                      0x30, // "0"
-                    0xbf, // value: map(indef)
+                  0xbf, // value: map(indef) [corim-meta-map]
+                    0x00, // key: 0 [signer]
+                    0xbf, // value: map(indef) [corim-signer-map]
                      0x00, // key: 0 [signer-name]
                       0x6e, // value: tstr(14)
                         0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, // "Example "
                         0x53, 0x69, 0x67, 0x6e, 0x65, 0x72,             // "Signer"
                     0xff, // break
+                  0xff, // break
                 0xff, // break
               0xa0, // map(0) -- COSE unprotected header
               0x58, 0xbe, // bstr(190) -- COSE payload
@@ -2075,6 +2188,7 @@ mod tests {
                         ..Default::default()
                     },
                     signature_validity: None,
+                    extensions: None,
                 },
                 cose_map: None,
             },
@@ -2526,6 +2640,57 @@ mod tests {
                 expected_json: "true",
                 expected_cbor: vec![
                     0xf5, // true
+                ],
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            tc.run();
+        }
+    }
+
+    #[test]
+    fn test_corim_meta_map_serde() {
+        let mut extensions = ExtensionMap::default();
+        extensions.insert(Integer(-1), ExtensionValue::Bool(true));
+
+        let test_cases = vec![
+            SerdeTestCase {
+                value: CorimMetaMap {
+                    signer: CorimSignerMap {
+                        signer_name: "foo".into(),
+                        signer_uri: Some("bar".into()),
+                        extensions: Some(extensions.clone()),
+                    },
+                    signature_validity: Some(ValidityMap {
+                        not_before: None,
+                        not_after: 1.into(),
+                    }),
+                    extensions: Some(extensions),
+                },
+                expected_json: r#"{"signer":{"signer-name":"foo","signer-uri":{"type":"uri","value":"bar"},"-1":true},"signature-validity":{"not-after":1},"-1":true}"#,
+                expected_cbor: vec![
+                    0xbf, // map(indef) [corim-meta-map]
+                      0x00, // key: 0 [signer]
+                      0xbf, // value: map(indef) [corim-signer-map]
+                        0x00, // key: 0 [signer-name]
+                        0x63, // value: tstr(3)
+                          0x66, 0x6f, 0x6f, // "foo"
+                        0x01, // key: 1 [signer-uri]
+                        0xd8, 0x20, // value: tag(32)
+                          0x63, // tstr(3)
+                            0x62, 0x61, 0x72, // "bar"
+                        0x20, // key: -1 [extension(-1)]
+                        0xf5, // value: true
+                      0xff, // break
+                      0x01, // key: 1 [signature-validity]
+                      0xbf, // value: map(indef) [validity-map]
+                        0x01, // key: 1 [not-after]
+                        0x01, // value: 1
+                      0xff, // break
+                      0x20, // key: -1 [extension(-1)]
+                      0xf5, // value: bool
+                    0xff, // break
                 ],
             },
         ];
