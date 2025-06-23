@@ -93,7 +93,7 @@ use crate::{
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
     de::{self, Visitor},
-    ser::SerializeMap,
+    ser::{self, SerializeMap},
     Deserialize, Deserializer, Serialize, Serializer,
 };
 /// Represents a Concise Reference Integrity Manifest (CoRIM)
@@ -596,8 +596,7 @@ impl<'de> Deserialize<'de> for CorimIdTypeChoice<'_> {
 
 /// Types of tags that can be included in a CoRIM
 #[repr(C)]
-#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
-#[serde(untagged)]
+#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ConciseTagTypeChoice<'a> {
     /// A Concise Software Identity (CoSWID) tag
     Swid(TaggedConciseSwidTag<'a>),
@@ -607,6 +606,51 @@ pub enum ConciseTagTypeChoice<'a> {
     Tl(TaggedConciseTlTag<'a>),
     /// Extension value for tags not defined by the spec
     Extension(ExtensionValue<'a>),
+}
+
+impl Serialize for ConciseTagTypeChoice<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let is_human_readable = serializer.is_human_readable();
+
+        if is_human_readable {
+            match self {
+                Self::Swid(tagged_coswid) => tagged_coswid.serialize(serializer),
+                Self::Mid(tagged_comid) => tagged_comid.serialize(serializer),
+                Self::Tl(tagged_cotl) => tagged_cotl.serialize(serializer),
+                Self::Extension(ext) => ext.serialize(serializer),
+            }
+        } else {
+            let mut bytes: Vec<u8> = vec![];
+            let tag_number: u64;
+
+            match self {
+                Self::Swid(tagged_coswid) => {
+                    tag_number = 505;
+                    ciborium::into_writer(&tagged_coswid.0 .0, &mut bytes)
+                        .map_err(ser::Error::custom)?;
+                }
+                Self::Mid(tagged_comid) => {
+                    tag_number = 506;
+                    ciborium::into_writer(&tagged_comid.0 .0, &mut bytes)
+                        .map_err(ser::Error::custom)?;
+                }
+                Self::Tl(tagged_cotl) => {
+                    tag_number = 508;
+                    ciborium::into_writer(&tagged_cotl.0 .0, &mut bytes)
+                        .map_err(ser::Error::custom)?;
+                }
+                Self::Extension(ext) => {
+                    return ext.serialize(serializer);
+                }
+            }
+
+            ciborium::value::Value::Tag(tag_number, Box::new(ciborium::value::Value::Bytes(bytes)))
+                .serialize(serializer)
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for ConciseTagTypeChoice<'_> {
@@ -702,38 +746,55 @@ impl<'de> Deserialize<'de> for ConciseTagTypeChoice<'_> {
                 } else {
                     let tagged_value = ciborium::value::Value::deserialize(deserializer)?;
                     match tagged_value {
-                        ciborium::Value::Tag(tag, inner) => {
-                            let mut bytes: Vec<u8> = Vec::new();
-                            ciborium::into_writer(&inner, &mut bytes).unwrap();
+                        ciborium::Value::Tag(tag, inner) => match tag {
+                            known_tag @ (505 | 506 | 508) => {
+                                let bytes: Vec<u8> = match *inner {
+                                    ciborium::Value::Bytes(b) => b,
+                                    _ => {
+                                        return Err(de::Error::custom(
+                                            "CoRIM tag must be a byte string",
+                                        ))
+                                    }
+                                };
 
-                            match tag {
-                                505 => {
-                                    let swid: ConciseSwidTag<'a> =
-                                        ciborium::from_reader(&bytes[..]).map_err(|_| {
-                                            serde::de::Error::custom("Failed to deserialize bytes")
-                                        })?;
-                                    Ok(ConciseTagTypeChoice::Swid(TaggedConciseSwidTag::new(swid)))
+                                match known_tag {
+                                    505 => {
+                                        let swid: ConciseSwidTag<'a> =
+                                            ciborium::from_reader(&bytes[..]).map_err(|_| {
+                                                serde::de::Error::custom(
+                                                    "Failed to deserialize bytes",
+                                                )
+                                            })?;
+                                        Ok(ConciseTagTypeChoice::Swid(TaggedConciseSwidTag::new(
+                                            swid,
+                                        )))
+                                    }
+                                    506 => {
+                                        let mid: ConciseMidTag<'a> =
+                                            ciborium::from_reader(&bytes[..]).map_err(|_| {
+                                                serde::de::Error::custom(
+                                                    "Failed to deserialize bytes",
+                                                )
+                                            })?;
+                                        Ok(ConciseTagTypeChoice::Mid(TaggedConciseMidTag::new(mid)))
+                                    }
+                                    508 => {
+                                        let tl: ConciseTlTag<'a> =
+                                            ciborium::from_reader(&bytes[..]).map_err(|_| {
+                                                serde::de::Error::custom(
+                                                    "Failed to deserialize bytes",
+                                                )
+                                            })?;
+                                        Ok(ConciseTagTypeChoice::Tl(TaggedConciseTlTag::new(tl)))
+                                    }
+                                    _ => panic!("should never get here"),
                                 }
-                                506 => {
-                                    let mid: ConciseMidTag<'a> = ciborium::from_reader(&bytes[..])
-                                        .map_err(|_| {
-                                            serde::de::Error::custom("Failed to deserialize bytes")
-                                        })?;
-                                    Ok(ConciseTagTypeChoice::Mid(TaggedConciseMidTag::new(mid)))
-                                }
-                                508 => {
-                                    let tl: ConciseTlTag<'a> = ciborium::from_reader(&bytes[..])
-                                        .map_err(|_| {
-                                            serde::de::Error::custom("Failed to deserialize bytes")
-                                        })?;
-                                    Ok(ConciseTagTypeChoice::Tl(TaggedConciseTlTag::new(tl)))
-                                }
-                                other => Ok(ConciseTagTypeChoice::Extension(
-                                    ExtensionValue::try_from(ciborium::Value::Tag(other, inner))
-                                        .map_err(de::Error::custom)?,
-                                )),
                             }
-                        }
+                            other_tag => Ok(ConciseTagTypeChoice::Extension(
+                                ExtensionValue::try_from(ciborium::Value::Tag(other_tag, inner))
+                                    .map_err(de::Error::custom)?,
+                            )),
+                        },
                         value => Ok(ConciseTagTypeChoice::Extension(
                             ExtensionValue::try_from(value).map_err(de::Error::custom)?,
                         )),
@@ -1718,7 +1779,7 @@ mod tests {
                     0xff, // break
                 0xff, // break
               0xa0, // map(0) -- COSE unprotected header
-              0x58, 0xba, // bstr(186) -- COSE payload
+              0x58, 0xbe, // bstr(190) -- COSE payload
                 0xd9, 0x01, 0xf5, // tag(501) -- CoRIM
                   0xbf, // map(indef)
                     0x00, // key: 0 [id]
@@ -1728,84 +1789,86 @@ mod tests {
                     0x01, // key: 1 [tags]
                     0x82, // value: array(2)
                       0xd9, 0x01, 0xf9, // tag(505) -- CoSWID
-                        0xbf, // map(indef)
-                          0x61, // key: tstr(1)
-                            0x30, // "0"
-                          0x68, // value: tstr(8)
-                            0x73, 0x77, 0x69, 0x64, 0x2d, 0x31, 0x32, 0x33,  // "swid-123"
-                          0x62,  // key: tstr(2)
-                            0x31, 0x32, // "12"
-                          0x00, // value: 0
-                          0x61, // key: tstr(1)
-                            0x31, // "1"
-                          0x70, // value: tstr(16)
-                            0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, // "Example "
-                            0x53, 0x6f, 0x66, 0x74, 0x77, 0x61, 0x72, 0x65, // "Software"
-                          0x61, // key: tstr(1)
-                            0x32, // "2"
-                          0xbf, // value: map(indef)
-                            0x62, // key: tstr(2)
-                              0x33, 0x31, // "31"
-                            0x6e, // value: tstr(14)
+                        0x58, 0x3e, // bstr(62)
+                          0xbf, // map(indef)
+                            0x61, // key: tstr(1)
+                              0x30, // "0"
+                            0x68, // value: tstr(8)
+                              0x73, 0x77, 0x69, 0x64, 0x2d, 0x31, 0x32, 0x33,  // "swid-123"
+                            0x62,  // key: tstr(2)
+                              0x31, 0x32, // "12"
+                            0x00, // value: 0
+                            0x61, // key: tstr(1)
+                              0x31, // "1"
+                            0x70, // value: tstr(16)
                               0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, // "Example "
-                              0x45, 0x6e, 0x74, 0x69, 0x74, 0x79,             // "Entity"
-                            0x62, // key: tstr(2)
-                              0x33, 0x33, // "33"
-                            0x01, // value: 1
+                              0x53, 0x6f, 0x66, 0x74, 0x77, 0x61, 0x72, 0x65, // "Software"
+                            0x61, // key: tstr(1)
+                              0x32, // "2"
+                            0xbf, // value: map(indef)
+                              0x62, // key: tstr(2)
+                                0x33, 0x31, // "31"
+                              0x6e, // value: tstr(14)
+                                0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, // "Example "
+                                0x45, 0x6e, 0x74, 0x69, 0x74, 0x79,             // "Entity"
+                              0x62, // key: tstr(2)
+                                0x33, 0x33, // "33"
+                              0x01, // value: 1
+                            0xff,  // break(map)
                           0xff,  // break(map)
-                        0xff,  // break(map)
                       0xd9, 0x01, 0xfa, // tag (506) -- CoMID
-                        0xbf, // map(indef)
-                          0x00, // key: 0
-                          0x65, // value: tstr(5)
-                            0x65, 0x6e, 0x5f, 0x55, 0x53, // "en_US"
-                          0x01, // key: 1
-                          0xbf, // value: map(1)
-                            0x00, // key: 0 [tag-id]
-                            0x6b, // value: tstr(11)
-                              0x53, 0x6f, 0x6d, 0x65, 0x20, 0x54, 0x61, 0x67, // "Some Tag"
-                              0x20, 0x49, 0x44,                               // " ID"
-                          0xff, // break
-                          0x02, // key: 2
-                          0x81, // value: array(1)
-                            0xbf, // map(indef)
-                              0x00, // key: 0
-                              0x6f, // value: tstr(15)
-                                0x53, 0x6f, 0x6d, 0x65, 0x20, 0x43, 0x6f, 0x4d,
-                                0x49, 0x44, 0x20, 0x4e, 0x61, 0x6d, 0x65,
-                              0x02, // key: 2
-                              0x81, // value: array(1)
-                                0x00, // 0 [tag-creator]
-                            0xff, // break(map)
-                          0x04, // key: 4
-                          0xbf, // value: map(indef)
+                        0x58, 0x64, // bstr(100)
+                          0xbf, // map(indef)
                             0x00, // key: 0
+                            0x65, // value: tstr(5)
+                              0x65, 0x6e, 0x5f, 0x55, 0x53, // "en_US"
+                            0x01, // key: 1
+                            0xbf, // value: map(1)
+                              0x00, // key: 0 [tag-id]
+                              0x6b, // value: tstr(11)
+                                0x53, 0x6f, 0x6d, 0x65, 0x20, 0x54, 0x61, 0x67, // "Some Tag"
+                                0x20, 0x49, 0x44,                               // " ID"
+                            0xff, // break
+                            0x02, // key: 2
                             0x81, // value: array(1)
-                              0x82, // array(2)
-                                0xbf, //  map(indef)
-                                  0x00, // 0
-                                  0xbf, // value: map(indef)
-                                    0x01, // key: 1
-                                    0x6b, // value: tstr(11)
-                                      0x53, 0x6f, 0x6d, 0x65, 0x20, 0x56, 0x65, 0x6e, // "Some Ven"
-                                      0x64, 0x6f, 0x72,                               // "dor"
-                                  0xff,
-                                0xff,
-                                0x81, // array(1)
-                                  0xbf, // map(indef)
-                                    0x00, // key: 0
-                                    0x68, // value: str(8)
-                                      0x53, 0x6f, 0x6d, 0x65, 0x20, 0x4b, 0x65, 0x79, // "Some Key"
-                                    0x01, // key: 1
+                              0xbf, // map(indef)
+                                0x00, // key: 0
+                                0x6f, // value: tstr(15)
+                                  0x53, 0x6f, 0x6d, 0x65, 0x20, 0x43, 0x6f, 0x4d,
+                                  0x49, 0x44, 0x20, 0x4e, 0x61, 0x6d, 0x65,
+                                0x02, // key: 2
+                                0x81, // value: array(1)
+                                  0x00, // 0 [tag-creator]
+                              0xff, // break(map)
+                            0x04, // key: 4
+                            0xbf, // value: map(indef)
+                              0x00, // key: 0
+                              0x81, // value: array(1)
+                                0x82, // array(2)
+                                  0xbf, //  map(indef)
+                                    0x00, // 0
                                     0xbf, // value: map(indef)
-                                      0x0b, // key: 11
-                                      0x69, // value: tstr(9)
-                                        0x53, 0x6f, 0x6d, 0x65, 0x20, 0x4e, 0x61, 0x6d, // "Some Nam"
-                                        0x65,                                           // "e"
+                                      0x01, // key: 1
+                                      0x6b, // value: tstr(11)
+                                        0x53, 0x6f, 0x6d, 0x65, 0x20, 0x56, 0x65, 0x6e, // "Some Ven"
+                                        0x64, 0x6f, 0x72,                               // "dor"
+                                    0xff,
+                                  0xff,
+                                  0x81, // array(1)
+                                    0xbf, // map(indef)
+                                      0x00, // key: 0
+                                      0x68, // value: str(8)
+                                        0x53, 0x6f, 0x6d, 0x65, 0x20, 0x4b, 0x65, 0x79, // "Some Key"
+                                      0x01, // key: 1
+                                      0xbf, // value: map(indef)
+                                        0x0b, // key: 11
+                                        0x69, // value: tstr(9)
+                                          0x53, 0x6f, 0x6d, 0x65, 0x20, 0x4e, 0x61, 0x6d, // "Some Nam"
+                                          0x65,                                           // "e"
+                                      0xff, // break
                                     0xff, // break
-                                  0xff, // break
+                            0xff, // break
                           0xff, // break
-                        0xff, // break
                   0xff, // break
               0xd9, 0x02, 0x30, // tag(560) -- COSE signature
                 0x41, // bstr(1)
@@ -2223,34 +2286,35 @@ mod tests {
                       0x01, // key: 1 [tags]
                         0x81, // value: array(1)
                           0xd9, 0x01, 0xfa, // [0]tag(506) [tagged-concise-mid-tag]
-                            0xbf, // map(indef) [concise-mid-tag]
-                              0x01, // key: 1 [tag-identity]
-                              0xbf, // map(indef) [tag-identity-map]
-                                0x00, // key: 0 [tag-id]
-                                0x63, // value: tstr(3)
-                                  0x62, 0x61, 0x72, // "bar"
-                              0xff, // break
-                              0x04, // key: 4 [triples]
-                              0xbf, // value: map(indef) [triples-map]
-                                0x01, // key: 1 [endorsed-triples]
-                                0x81, // value: array(1)
-                                  0x82, // [0]value: array(2) [endorsed-triple-record]
-                                    0xbf, // [0]value: map(indef) [condition: environment-map]
-                                      0x01, // key: 1 [instance]
-                                      0xd9, 0x02, 0x30,  // value: tag(560) [tagged-bytes]
-                                        0x43, // bstr(3)
-                                          0x01, 0x02, 0x03,
-                                    0xff, // break
-                                    0x81, // [1]array(1) [endorsement]
-                                      0xbf, // [0]map(indef) [measurement-map]
-                                        0x01, // key: 1 [mval]
-                                        0xbf, // value: map(indef) [measurement-values-map]
-                                          0x01, // key: 1 [svn]
-                                          0x01, // value: 1
-                                        0xff, // break
+                            0x58, 0x22, // bstr(34)
+                              0xbf, // map(indef) [concise-mid-tag]
+                                0x01, // key: 1 [tag-identity]
+                                0xbf, // map(indef) [tag-identity-map]
+                                  0x00, // key: 0 [tag-id]
+                                  0x63, // value: tstr(3)
+                                    0x62, 0x61, 0x72, // "bar"
+                                0xff, // break
+                                0x04, // key: 4 [triples]
+                                0xbf, // value: map(indef) [triples-map]
+                                  0x01, // key: 1 [endorsed-triples]
+                                  0x81, // value: array(1)
+                                    0x82, // [0]value: array(2) [endorsed-triple-record]
+                                      0xbf, // [0]value: map(indef) [condition: environment-map]
+                                        0x01, // key: 1 [instance]
+                                        0xd9, 0x02, 0x30,  // value: tag(560) [tagged-bytes]
+                                          0x43, // bstr(3)
+                                            0x01, 0x02, 0x03,
                                       0xff, // break
-                            0xff, // break
-                          0xff, // break
+                                      0x81, // [1]array(1) [endorsement]
+                                        0xbf, // [0]map(indef) [measurement-map]
+                                          0x01, // key: 1 [mval]
+                                          0xbf, // value: map(indef) [measurement-values-map]
+                                            0x01, // key: 1 [svn]
+                                            0x01, // value: 1
+                                          0xff, // break
+                                        0xff, // break
+                                0xff, // break
+                              0xff, // break
                       0x02, // key: 2 [dependent-rims]
                         0x81,// value: array(1)
                           0xbf, // [0]map(indef) [corim-locator-map]
