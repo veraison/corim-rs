@@ -90,6 +90,12 @@ macro_rules! generate_tagged {
                 pub const fn new(value: $type) -> Self {
                     Self (::ciborium::tag::Accepted(value))
                 }
+
+                /// Unwrap the tag, returing the inner value
+                #[inline]
+                pub fn unwrap(self) -> $type {
+                    self.0.0
+                }
             }
 
             impl $(< $($lt),* >)? std::convert::AsRef<$type> for $title $(< $($lt),* >)? {
