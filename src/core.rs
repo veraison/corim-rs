@@ -996,6 +996,18 @@ generate_tagged!(
     (563, TaggedMaskedRawValue, MaskedRawValue, "masked-raw-value", "Represents a masked raw value with its mask"),
 );
 
+impl IntegerTime {
+    pub fn as_i128(&self) -> i128 {
+        self.0 .0 .0
+    }
+}
+
+impl Default for IntegerTime {
+    fn default() -> Self {
+        0.into()
+    }
+}
+
 impl From<i64> for IntegerTime {
     fn from(value: i64) -> Self {
         Int::from(value).into()
