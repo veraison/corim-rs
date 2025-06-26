@@ -10,7 +10,7 @@
 //!
 //! - [`Corim`] - The top-level type representing either a signed or unsigned manifest
 //! - [`CorimMap`] - The main manifest structure containing tags and metadata (CBOR tag 501)
-//! - [`COSESign1Corim`] - A signed manifest wrapper using COSE_Sign1 (CBOR tag 18)
+//! - [`SignedCorim`] - A signed manifest wrapper using COSE_Sign1 (CBOR tag 18)
 //!
 //! ## Key Features
 //!
@@ -36,21 +36,21 @@
 //! │   ├── entities
 //! │   └── extension
 //! │
-//! └── COSESign1Corim (signed)
-//!     ├── protected
-//!     ├── unprotected
-//!     ├── payload
-//!     └── signature
+//! └── SignedCorim (signed)
+//!     ├── alg
+//!     ├── kid
+//!     ├── corim_meta
+//!     └── corim_map (CorimMap, as above)
 //! ```
 //!
 //! ## Example Usage
 //!
 //! ```rust
-//! use corim_rs::corim::{Corim, CorimMap, CorimIdTypeChoice, TaggedUnsignedCorimMap};
+//! use corim_rs::corim::{Corim, CorimMap, CorimIdTypeChoice, TaggedUnsignedCorim};
 //!
 //! // Create an unsigned CoRIM
-//! let rim = Corim::TaggedUnsignedCorimMap(
-//!     TaggedUnsignedCorimMap::new(
+//! let rim = Corim::UnsignedCorim(
+//!     TaggedUnsignedCorim::new(
 //!         CorimMap {
 //!             id: "Corim-Unique-Identifier-01".into(),
 //!             tags: vec![].into(),
@@ -75,21 +75,28 @@
 //! This implementation adheres to the CoRIM specification and supports all mandatory
 //! and optional fields defined in the standard.
 
-use std::{collections::BTreeMap, fmt, marker::PhantomData};
+use std::{
+    fmt,
+    marker::PhantomData,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::{
     comid::ConciseMidTag,
-    core::{Bytes, Label, ObjectIdentifier, OneOrMore, TaggedJsonValue},
+    core::{
+        CoseAlgorithm, CoseKey, CoseKeyOperation, IntegerTime, ObjectIdentifier, OneOrMore,
+        TaggedJsonValue,
+    },
     coswid::ConciseSwidTag,
     cotl::ConciseTlTag,
-    empty_map_as_none,
     error::CorimError,
     generate_tagged,
     numbers::Integer,
-    Digest, Empty, ExtensionMap, ExtensionValue, Int, OidType, TaggedBytes, TaggedConciseMidTag,
-    TaggedConciseSwidTag, TaggedConciseTlTag, Text, Time, Tstr, Uri, UuidType,
+    Digest, Empty, ExtensionMap, ExtensionValue, OidType, TaggedBytes, TaggedConciseMidTag,
+    TaggedConciseSwidTag, TaggedConciseTlTag, Text, Tstr, Uri, UuidType,
 };
 
+use coset::{iana::EnumI64 as _, AsCborValue as _, CoseSign1};
 use derive_more::{Constructor, From, TryFrom};
 use serde::{
     de::{self, Visitor},
@@ -99,8 +106,6 @@ use serde::{
 /// Represents a Concise Reference Integrity Manifest (CoRIM)
 pub type Corim<'a> = ConciseRimTypeChoice<'a>;
 
-pub type SignedCorim<'a> = TaggedCOSESign1Corim<'a>;
-
 pub type UnsignedCorimMap<'a> = CorimMap<'a>;
 
 /// A type choice representing either a signed or unsigned CoRIM manifest
@@ -109,24 +114,73 @@ pub type UnsignedCorimMap<'a> = CorimMap<'a>;
 #[allow(clippy::large_enum_variant)]
 pub enum ConciseRimTypeChoice<'a> {
     /// An unprotected CoRIM with CBOR tag 501
-    TaggedUnsignedCorimMap(TaggedUnsignedCorimMap<'a>),
-    /// A COSE Sign1 protected CoRIM
-    SignedCorim(SignedCorim<'a>),
+    Unsigned(TaggedUnsignedCorim<'a>),
+    /// A COSE Sign1 protected CoRIM with CBOR tag 18
+    Signed(TaggedSignedCorim<'a>),
 }
 
-impl ConciseRimTypeChoice<'_> {
-    pub fn as_unsigned_corim_map(&self) -> Option<CorimMap> {
+impl<'a> ConciseRimTypeChoice<'a> {
+    pub fn is_signed(self) -> bool {
         match self {
-            Self::TaggedUnsignedCorimMap(val) => Some(val.as_ref().clone()),
-            _ => None,
+            ConciseRimTypeChoice::Signed(_) => true,
+            ConciseRimTypeChoice::Unsigned(_) => false,
         }
     }
 
-    pub fn as_signed_corim(&self) -> Option<COSESign1Corim> {
+    pub fn as_signed(self) -> Option<TaggedSignedCorim<'a>> {
         match self {
-            Self::SignedCorim(val) => Some(val.as_ref().clone()),
-            _ => None,
+            ConciseRimTypeChoice::Signed(signed) => Some(signed),
+            ConciseRimTypeChoice::Unsigned(_) => None,
         }
+    }
+
+    pub fn as_unsigned(self) -> Option<TaggedUnsignedCorim<'a>> {
+        match self {
+            ConciseRimTypeChoice::Signed(_) => None,
+            ConciseRimTypeChoice::Unsigned(unsigned) => Some(unsigned),
+        }
+    }
+
+    pub fn from_json<R: std::io::Read>(src: R) -> Result<Self, CorimError> {
+        Ok(TaggedUnsignedCorim::from_json(src)?.into())
+    }
+
+    pub fn from_cbor<R: std::io::Read>(src: R) -> Result<Self, CorimError> {
+        ciborium::from_reader(src).map_err(CorimError::custom)
+    }
+
+    pub fn to_json(&self) -> Result<String, CorimError> {
+        match self {
+            Self::Signed(_) => Err(CorimError::custom("cannot encode SignedCorim to JSON")),
+            Self::Unsigned(val) => val.to_json(),
+        }
+    }
+
+    pub fn to_cbor(&self) -> Result<Vec<u8>, CorimError> {
+        let mut buf: Vec<u8> = vec![];
+        ciborium::into_writer(&self, &mut buf).map_err(CorimError::custom)?;
+        Ok(buf)
+    }
+}
+
+impl<'a> From<ConciseRimTypeChoice<'a>> for CorimMap<'a> {
+    fn from(value: ConciseRimTypeChoice<'a>) -> Self {
+        match value {
+            ConciseRimTypeChoice::Signed(val) => val.unwrap().corim_map,
+            ConciseRimTypeChoice::Unsigned(val) => val.unwrap(),
+        }
+    }
+}
+
+impl<'a> From<CorimMap<'a>> for ConciseRimTypeChoice<'a> {
+    fn from(value: CorimMap<'a>) -> Self {
+        Self::Unsigned(value.into())
+    }
+}
+
+impl<'a> From<SignedCorim<'a>> for ConciseRimTypeChoice<'a> {
+    fn from(value: SignedCorim<'a>) -> Self {
+        Self::Signed(value.into())
     }
 }
 
@@ -136,8 +190,8 @@ impl Serialize for ConciseRimTypeChoice<'_> {
         S: Serializer,
     {
         match self {
-            Self::TaggedUnsignedCorimMap(tagged) => tagged.serialize(serializer),
-            Self::SignedCorim(tagged) => tagged.serialize(serializer),
+            Self::Unsigned(tagged) => tagged.serialize(serializer),
+            Self::Signed(tagged) => tagged.serialize(serializer),
         }
     }
 }
@@ -147,49 +201,41 @@ impl<'de> Deserialize<'de> for ConciseRimTypeChoice<'_> {
     where
         D: Deserializer<'de>,
     {
-        struct TagVisitor<'a>(std::marker::PhantomData<&'a ()>);
+        match ciborium::Value::deserialize(deserializer)? {
+            ciborium::Value::Tag(tag, inner) => {
+                // Re-serializing the inner Value so that we can deserialize it
+                // into an appropriate type, once we figure out what that is
+                // based on the tag.
+                let mut buf: Vec<u8> = Vec::new();
+                ciborium::into_writer(&inner, &mut buf).unwrap();
 
-        impl<'de, 'a> Visitor<'de> for TagVisitor<'a> {
-            type Value = ConciseRimTypeChoice<'a>;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter
-                    .write_str("a ConciseRimTypeChoice variant distinguished by CBOR tag (501, 18)")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: de::SeqAccess<'de>,
-            {
-                let tag: u16 = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::custom("missing tag"))?;
                 match tag {
-                    501 => {
-                        let value: TaggedUnsignedCorimMap<'a> = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::custom("missing tagged value"))?;
-                        Ok(ConciseRimTypeChoice::TaggedUnsignedCorimMap(value))
-                    }
                     18 => {
-                        let value: SignedCorim<'a> = seq
-                            .next_element()?
-                            .ok_or_else(|| de::Error::custom("missing tagged value"))?;
-                        Ok(ConciseRimTypeChoice::SignedCorim(value))
+                        let signed: SignedCorim =
+                            ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                        Ok(Self::Signed(signed.into()))
                     }
-                    _ => Err(de::Error::custom(format!("unsupported CBOR tag: {}", tag))),
+                    501 => {
+                        let corim_map: CorimMap =
+                            ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
+                        Ok(Self::Unsigned(corim_map.into()))
+                    }
+                    n => Err(de::Error::custom(format!(
+                        "unexpected ConciseRimTypeChoice tag {n}"
+                    ))),
                 }
             }
+            _ => Err(de::Error::custom(
+                "did not see a tag for ConciseRimTypeChoice",
+            )),
         }
-
-        deserializer.deserialize_any(TagVisitor(std::marker::PhantomData))
     }
 }
 
 generate_tagged!(
     (
         501,
-        TaggedUnsignedCorimMap,
+        TaggedUnsignedCorim,
         CorimMap<'a>,
         'a,
         "unsigned-corim",
@@ -197,13 +243,45 @@ generate_tagged!(
     ),
     (
         18,
-        TaggedCOSESign1Corim,
-        COSESign1Corim<'a>,
+        TaggedSignedCorim,
+        SignedCorim<'a>,
         'a,
         "signed-corim",
         "A CBOR tagged, signed CoRIM."
     )
 );
+
+impl TaggedSignedCorim<'_> {
+    pub fn from_cbor<R: std::io::Read>(src: R) -> Result<Self, CorimError> {
+        ciborium::from_reader(src).map_err(CorimError::custom)
+    }
+
+    pub fn to_cbor(&self) -> Result<Vec<u8>, CorimError> {
+        let mut buf: Vec<u8> = vec![];
+        ciborium::into_writer(&self, &mut buf).map_err(CorimError::custom)?;
+        Ok(buf)
+    }
+}
+
+impl TaggedUnsignedCorim<'_> {
+    pub fn from_json<R: std::io::Read>(src: R) -> Result<Self, CorimError> {
+        serde_json::from_reader(src).map_err(CorimError::custom)
+    }
+
+    pub fn from_cbor<R: std::io::Read>(src: R) -> Result<Self, CorimError> {
+        ciborium::from_reader(src).map_err(CorimError::custom)
+    }
+
+    pub fn to_json(&self) -> Result<String, CorimError> {
+        serde_json::to_string(&self).map_err(CorimError::custom)
+    }
+
+    pub fn to_cbor(&self) -> Result<Vec<u8>, CorimError> {
+        let mut buf: Vec<u8> = vec![];
+        ciborium::into_writer(&self, &mut buf).map_err(CorimError::custom)?;
+        Ok(buf)
+    }
+}
 
 /// The main CoRIM manifest structure containing all reference integrity data
 /// and associated metadata. Tagged with CBOR tag 501.#[repr(C)]
@@ -1090,9 +1168,9 @@ impl<'de> Deserialize<'de> for ProfileTypeChoice<'_> {
 #[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ValidityMap {
     /// Optional start time of the validity period
-    pub not_before: Option<Time>,
+    pub not_before: Option<IntegerTime>,
     /// Required end time of the validity period
-    pub not_after: Time,
+    pub not_after: IntegerTime,
 }
 
 impl Serialize for ValidityMap {
@@ -1141,8 +1219,8 @@ impl<'de> Deserialize<'de> for ValidityMap {
             where
                 A: de::MapAccess<'de>,
             {
-                let mut not_before: Option<Time> = None;
-                let mut not_after: Option<Time> = None;
+                let mut not_before: Option<IntegerTime> = None;
+                let mut not_after: Option<IntegerTime> = None;
 
                 loop {
                     if self.is_human_readable {
@@ -1509,6 +1587,79 @@ impl<'de> Deserialize<'de> for CorimRoleTypeChoice {
     }
 }
 
+///  Trait implemented by entities that own key material that may be used to sign and/or verify
+///  signatures of [SignedCorim]s.
+pub trait CoseKeyOwner {
+    /// Convert owned key material into a [CoseKey].
+    fn to_cose_key(&self) -> CoseKey;
+}
+
+pub trait CoseSigner: CoseKeyOwner {
+    // Sign provided data returning a buffer containing the signature.
+    fn sign(&self, alg: CoseAlgorithm, data: &[u8]) -> Result<Vec<u8>, CorimError>;
+}
+
+pub trait CoseVerifier: CoseKeyOwner {
+    /// Verify porivided signature against provided data using owned key material.
+    fn verify_signature(
+        &self,
+        alg: CoseAlgorithm,
+        sig: &[u8],
+        data: &[u8],
+    ) -> Result<(), CorimError>;
+
+    /// Verify that the values in the signed CoRIM's COSE header are valid and compatible with the
+    /// key owned by this verifier, and that the key iself is suitable for
+    fn verify_header_and_key(&self, signed: &SignedCorim) -> Result<(), CorimError> {
+        if let Some(validity) = &signed.meta.signature_validity {
+            let current_ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+
+            let not_after = validity.not_after.as_i128();
+            if not_after < 0 {
+                return Err(CorimError::custom("nagative validity period bound"));
+            }
+
+            if current_ts > not_after as u64 {
+                return Err(CorimError::OutsideValidityPeriod);
+            }
+
+            if let Some(not_before) = &validity.not_before {
+                let not_before = not_before.as_i128();
+                if not_before < 0 {
+                    return Err(CorimError::custom("nagative validity period bound"));
+                }
+
+                if current_ts < not_before as u64 {
+                    return Err(CorimError::OutsideValidityPeriod);
+                }
+            }
+        }
+
+        let cose_key = self.to_cose_key();
+
+        if let Some(key_ops) = &cose_key.key_ops {
+            if !key_ops.contains(&CoseKeyOperation::Verify) {
+                return Err(CorimError::InvalidCoseKey(
+                    "key ops do not contain verify".to_string(),
+                ));
+            }
+        }
+
+        if let Some(key_alg) = &cose_key.alg {
+            if key_alg != &signed.alg {
+                return Err(CorimError::InvalidCoseKey(
+                    "key algorithm does not match CoRIM header".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Extension map for CoRIM-specific extensions
 #[repr(C)]
 #[derive(
@@ -1516,160 +1667,284 @@ impl<'de> Deserialize<'de> for CorimRoleTypeChoice {
 )]
 pub struct CorimMapExtension(pub TaggedBytes);
 
-/*
-COSE-Sign1-corim = [
-  protected: bstr .cbor protected-corim-header-map
-  unprotected: unprotected-corim-header-map
-  payload: bstr .cbor tagged-unsigned-corim-map
-  signature: bstr
-]
-*/
-/// COSE_Sign1 structure for a signed CoRIM with CBOR tag 18
-#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
-#[repr(C)]
-pub struct COSESign1Corim<'a> {
-    /// Protected header containing signing metadata (must be integrity protected)
-    pub protected: ProtectedCorimHeaderMap<'a>,
-    /// Unprotected header attributes (not integrity protected)
-    pub unprotected: UnprotectedCorimHeaderMap<'a>,
-    /// The actual CoRIM payload being signed
-    pub payload: TaggedUnsignedCorimMap<'a>,
-    /// Cryptographic signature over the protected header and payload
-    pub signature: TaggedBytes,
+/// [SignedCorim] wraps a tagged [CorimMap] in an COSE_Sign1 message with appropriate header
+/// values.
+#[derive(Clone, Debug)]
+pub struct SignedCorim<'a> {
+    pub alg: CoseAlgorithm,
+    pub kid: Vec<u8>,
+    pub meta: CorimMetaMap<'a>,
+    pub corim_map: CorimMap<'a>,
+
+    sign1: CoseSign1,
 }
 
-/// Unprotected header for a signed CoRIM
-pub type UnprotectedCorimHeaderMap<'a> = BTreeMap<Label<'a>, ExtensionMap<'a>>;
+impl SignedCorim<'_> {
+    pub fn verify_signature<V: CoseVerifier>(&self, verifier: V) -> Result<(), CorimError> {
+        verifier.verify_header_and_key(self)?;
 
-impl Serialize for COSESign1Corim<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::Error;
-        use serde::ser::SerializeSeq;
-
-        // COSE_Sign1 is a 4-element array, all elements must be present
-        let mut seq = serializer.serialize_seq(Some(4))?;
-
-        // 1. Convert protected header to CBOR bytes
-        let mut protected_cbor = vec![];
-        ciborium::ser::into_writer(&self.protected, &mut protected_cbor).map_err(|e| {
-            S::Error::custom(format!("Failed to serialize protected header: {}", e))
-        })?;
-        seq.serialize_element(&Bytes::from(protected_cbor))?;
-
-        // 2. Unprotected header - must be present (empty map if None)
-        // Per RFC 8152, this must be present even if empty
-        // let mut unprotected_cbor = Vec::new();
-        // ciborium::ser::into_writer(&self.unprotected, &mut unprotected_cbor).map_err(|e| {
-        //     S::Error::custom(format!("Failed to serialize unprotected header: {}", e))
-        // })?;
-
-        // seq.serialize_element(&Bytes::from(unprotected_cbor))?;
-        seq.serialize_element(&self.unprotected)?;
-
-        // 3. Payload as CBOR bytes
-        let mut payload_cbor = Vec::new();
-        ciborium::ser::into_writer(&self.payload, &mut payload_cbor)
-            .map_err(|e| S::Error::custom(format!("Failed to serialize payload: {}", e)))?;
-        seq.serialize_element(&Bytes::from(payload_cbor))?;
-
-        // 4. Signature as bytes
-        seq.serialize_element(&self.signature)?;
-
-        seq.end()
+        let aad: Vec<u8> = vec![];
+        self.sign1.verify_signature(aad.as_slice(), |sig, data| {
+            verifier.verify_signature(self.alg, sig, data)
+        })
     }
 }
-impl<'de> Deserialize<'de> for COSESign1Corim<'_> {
+
+impl From<SignedCorim<'_>> for CoseSign1 {
+    fn from(value: SignedCorim<'_>) -> Self {
+        value.sign1
+    }
+}
+
+impl TryFrom<CoseSign1> for SignedCorim<'_> {
+    type Error = CorimError;
+
+    fn try_from(value: CoseSign1) -> Result<Self, Self::Error> {
+        if value.payload.is_none() {
+            return Err(CorimError::custom("CoseSign1 does not contain a payload"));
+        }
+
+        sign1_check_content_type(&value).map_err(CorimError::custom)?;
+
+        let alg = sign1_extract_alg(&value).map_err(CorimError::custom)?;
+
+        let kid = value.protected.header.key_id.clone();
+
+        let meta = sign1_extract_meta(&value).map_err(CorimError::custom)?;
+
+        let unsigned: TaggedUnsignedCorim =
+            ciborium::from_reader(value.payload.as_ref().unwrap().as_slice())
+                .map_err(CorimError::custom)?;
+
+        Ok(SignedCorim {
+            alg,
+            kid,
+            meta,
+            corim_map: unsigned.unwrap(),
+            sign1: value,
+        })
+    }
+}
+
+impl PartialEq for SignedCorim<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.corim_map.eq(&other.corim_map)
+    }
+}
+
+impl Eq for SignedCorim<'_> {}
+
+impl PartialOrd for SignedCorim<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SignedCorim<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.corim_map.cmp(&other.corim_map)
+    }
+}
+
+impl Serialize for SignedCorim<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.sign1
+            .clone()
+            .to_cbor_value()
+            .map_err(ser::Error::custom)?
+            .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SignedCorim<'_> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
-        use serde::de::{Error, SeqAccess, Visitor};
-        use std::fmt;
-        use std::marker::PhantomData;
+        let val = ciborium::value::Value::deserialize(deserializer)?;
+        let sign1 = CoseSign1::from_cbor_value(val).map_err(de::Error::custom)?;
+        sign1.try_into().map_err(de::Error::custom)
+    }
+}
 
-        struct COSESign1Visitor<'a>(PhantomData<&'a ()>);
+fn sign1_extract_alg(sign1: &CoseSign1) -> Result<CoseAlgorithm, CorimError> {
+    if let Some(header) = &sign1.protected.header.alg {
+        let value = match header {
+            coset::RegisteredLabelWithPrivate::PrivateUse(i) => Ok(*i),
+            coset::RegisteredLabelWithPrivate::Assigned(i) => Ok(i.to_i64()),
+            coset::RegisteredLabelWithPrivate::Text(s) => Err(CorimError::InvalidCoseHeader(
+                1,
+                "alg".to_string(),
+                format!("invalid algorithm value \"{s}\" (must be an int)"),
+            )),
+        }?;
 
-        impl<'de, 'a> Visitor<'de> for COSESign1Visitor<'a> {
-            type Value = COSESign1Corim<'a>;
+        CoseAlgorithm::try_from(value)
+            .map_err(|e| CorimError::InvalidCoseHeader(1, "alg".to_string(), e.to_string()))
+    } else {
+        Err(CorimError::CoseHeaderNotSet(1, "alg".to_string()))
+    }
+}
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a COSE_Sign1 structure as a 4-element array")
+fn sign1_check_content_type(sign1: &CoseSign1) -> Result<(), CorimError> {
+    if let Some(header) = &sign1.protected.header.content_type {
+        match header {
+            coset::RegisteredLabel::Assigned(v) => Err(CorimError::InvalidCoseHeader(
+                3,
+                "content-type".to_string(),
+                v.to_i64().to_string(),
+            )),
+            coset::RegisteredLabel::Text(s) => {
+                if s.as_str() == "application/rim+cbor" {
+                    Ok(())
+                } else {
+                    Err(CorimError::InvalidCoseHeader(
+                        3,
+                        "content-type".to_string(),
+                        format!("\"{}\"", s),
+                    ))
+                }
             }
+        }
+    } else {
+        Err(CorimError::CoseHeaderNotSet(3, "content-type".to_string()))
+    }
+}
 
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                // 1. Protected header as CBOR bytes
-                let protected_bytes: Bytes = seq
-                    .next_element()?
-                    .ok_or_else(|| A::Error::custom("missing protected header"))?;
+fn sign1_extract_meta<'a>(sign1: &CoseSign1) -> Result<CorimMetaMap<'a>, CorimError> {
+    for (label, value) in sign1.protected.header.rest.iter() {
+        match label {
+            coset::Label::Int(8) => match value {
+                ciborium::Value::Bytes(bytes) => {
+                    return ciborium::from_reader::<CorimMetaMap, _>(bytes.as_slice()).map_err(
+                        |e| {
+                            CorimError::InvalidCoseHeader(
+                                8,
+                                "corim-meta".to_string(),
+                                format!("{:?}", e.to_string()),
+                            )
+                        },
+                    )
+                }
+                value => {
+                    return Err(CorimError::InvalidCoseHeader(
+                        8,
+                        "corim-meta".to_string(),
+                        format!("{:?}", value),
+                    ))
+                }
+            },
+            coset::Label::Int(_) => (),
+            coset::Label::Text(_) => (),
+        }
+    }
 
-                // 2. Unprotected header
-                let unprotected: UnprotectedCorimHeaderMap<'a> = seq
-                    .next_element()?
-                    .ok_or_else(|| A::Error::custom("missing unprotected header"))?;
+    Err(CorimError::CoseHeaderNotSet(8, "corim-meta".to_string()))
+}
 
-                // 3. Payload as CBOR bytes
-                let payload_bytes: Bytes = seq
-                    .next_element()?
-                    .ok_or_else(|| A::Error::custom("missing payload"))?;
+#[derive(Debug, Default)]
+pub struct SignedCorimBuilder<'a> {
+    alg: Option<CoseAlgorithm>,
+    kid: Option<Vec<u8>>,
+    meta: Option<CorimMetaMap<'a>>,
+    corim_map: Option<CorimMap<'a>>,
+}
 
-                // 4. Signature as bytes
-                let signature: TaggedBytes = seq
-                    .next_element()?
-                    .ok_or_else(|| A::Error::custom("missing signature"))?;
+impl<'a> SignedCorimBuilder<'a> {
+    pub fn alg(mut self, alg: CoseAlgorithm) -> Self {
+        self.alg = Some(alg);
+        self
+    }
 
-                // Deserialize protected header from bytes
-                let protected: ProtectedCorimHeaderMap<'a> =
-                    ciborium::de::from_reader(protected_bytes.as_ref()).map_err(|e| {
-                        A::Error::custom(format!("Failed to deserialize protected header: {}", e))
-                    })?;
+    pub fn kid(mut self, kid: Vec<u8>) -> Self {
+        self.kid = Some(kid);
+        self
+    }
 
-                // Deserialize payload directly into TaggedUnsignedCorimMap
-                let payload: TaggedUnsignedCorimMap<'a> =
-                    ciborium::de::from_reader(payload_bytes.as_ref()).map_err(|e| {
-                        A::Error::custom(format!("Failed to deserialize payload: {}", e))
-                    })?;
+    pub fn meta(mut self, meta: CorimMetaMap<'a>) -> Self {
+        self.meta = Some(meta);
+        self
+    }
 
-                Ok(COSESign1Corim {
-                    protected,
-                    unprotected,
-                    payload,
-                    signature,
-                })
+    pub fn corim_map(mut self, corim_map: CorimMap<'a>) -> Self {
+        self.corim_map = Some(corim_map);
+        self
+    }
+
+    pub fn build_and_sign<S: CoseSigner>(self, signer: S) -> Result<SignedCorim<'a>, CorimError> {
+        if self.alg.is_none() {
+            return Err(CorimError::unset_mandatory_field("SignedCorim", "alg"));
+        }
+
+        let coset_alg = coset::iana::Algorithm::from_i64(i64::from(self.alg.unwrap()));
+        if coset_alg.is_none() {
+            return Err(CorimError::custom("unsupported algorithm"));
+        }
+
+        if self.kid.is_none() {
+            return Err(CorimError::unset_mandatory_field("SignedCorim", "kid"));
+        }
+
+        if self.meta.is_none() {
+            return Err(CorimError::unset_mandatory_field("SignedCorim", "meta"));
+        }
+
+        let mut encoded_meta: Vec<u8> = vec![];
+        ciborium::into_writer(&self.meta.as_ref().unwrap(), &mut encoded_meta)
+            .map_err(CorimError::custom)?;
+
+        if self.corim_map.is_none() {
+            return Err(CorimError::unset_mandatory_field(
+                "SignedCorim",
+                "corim_map",
+            ));
+        }
+
+        let tagged_unsigned = TaggedUnsignedCorim::from(self.corim_map.clone().unwrap());
+        let mut payload: Vec<u8> = vec![];
+        ciborium::into_writer(&tagged_unsigned, &mut payload).map_err(CorimError::custom)?;
+
+        let key = signer.to_cose_key();
+
+        if let Some(key_alg) = key.alg {
+            if key_alg != self.alg.unwrap() {
+                return Err(CorimError::custom(
+                    "key algorithm doen't match CoRIM header",
+                ));
             }
         }
 
-        deserializer.deserialize_seq(COSESign1Visitor(PhantomData))
+        if let Some(key_ops) = &key.key_ops {
+            if !key_ops.contains(&CoseKeyOperation::Sign) {
+                return Err(CorimError::custom("key ops do not contain sign"));
+            }
+        }
+
+        let header = coset::HeaderBuilder::new()
+            .algorithm(coset_alg.unwrap())
+            .content_type("application/rim+cbor".to_string())
+            .key_id(self.kid.clone().unwrap())
+            .value(8, ciborium::Value::Bytes(encoded_meta))
+            .build();
+
+        let aad: Vec<u8> = vec![];
+        let sign1 = coset::CoseSign1Builder::new()
+            .protected(header)
+            .payload(payload)
+            .try_create_signature(aad.as_slice(), |pt| signer.sign(self.alg.unwrap(), pt))?
+            .build();
+
+        Ok(SignedCorim {
+            alg: self.alg.unwrap(),
+            kid: self.kid.unwrap(),
+            meta: self.meta.unwrap(),
+            corim_map: self.corim_map.unwrap(),
+            sign1,
+        })
     }
-}
-/// Protected header for a signed CoRIM
-#[derive(
-    Default, Debug, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
-#[repr(C)]
-pub struct ProtectedCorimHeaderMap<'a> {
-    /// Algorithm identifier for the signature
-    #[serde(rename = "1")]
-    pub alg: Int,
-    /// Content type indicator (should be "application/rim+cbor")
-    #[serde(rename = "3")]
-    pub content_type: Text<'a>,
-    /// Key identifier for the signing key
-    #[serde(rename = "4")]
-    pub kid: Bytes,
-    /// CoRIM-specific metadata
-    #[serde(rename = "8")]
-    pub corim_meta: CorimMetaMap<'a>,
-    /// Optional COSE header parameters
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "empty_map_as_none")]
-    #[serde(flatten)]
-    pub cose_map: Option<ExtensionMap<'a>>,
 }
 
 /// Metadata about the CoRIM signing operation
@@ -1987,282 +2262,17 @@ impl<'de> Deserialize<'de> for EntityNameTypeChoice<'_> {
 #[rustfmt::skip::macros(vec)]
 mod tests {
 
-    use crate::comid::{
-        ComidEntityMap, ComidRoleTypeChoice, ConciseMidTag, ConciseMidTagBuilder, TagIdTypeChoice,
-        TagIdentityMap, TriplesMapBuilder,
-    };
-    use crate::core::{Bytes, HashAlgorithm};
-    use crate::corim::{COSESign1Corim, CorimMetaMap, CorimSignerMap, ProtectedCorimHeaderMap};
-    use crate::coswid::{ConciseSwidTag, EntityEntry};
+    use crate::comid::{ConciseMidTagBuilder, TagIdTypeChoice, TagIdentityMap, TriplesMapBuilder};
+    use crate::core::HashAlgorithm;
+    use crate::corim::{CorimMetaMap, CorimSignerMap};
     use crate::numbers::Integer;
     use crate::test::SerdeTestCase;
     use crate::triples::{
-        ClassMap, EndorsedTripleRecord, EnvironmentMap, EnvironmentMapBuilder,
-        InstanceIdTypeChoice, MeasurementMap, MeasurementValuesMap, MeasurementValuesMapBuilder,
-        ReferenceTripleRecord, SvnTypeChoice,
+        EndorsedTripleRecord, EnvironmentMapBuilder, InstanceIdTypeChoice, MeasurementMap,
+        MeasurementValuesMapBuilder, SvnTypeChoice,
     };
-    use std::collections::BTreeMap;
 
     use super::*;
-
-    #[test]
-    /// ```text
-    /// COSE-Sign1-corim = [
-    ///     protected: bstr .cbor protected-corim-header-map
-    ///     unprotected: unprotected-corim-header-map
-    ///     payload: bstr .cbor tagged-unsigned-corim-map
-    ///     signature: bstr
-    /// ]
-    /// ```
-    ///
-    fn test_cose_sign1_corim_serialize_deserialize() {
-        let expected = vec![
-            0x84, // array(4)
-              0x58, 0x3d, // bstr(61) -- COSE protected header
-                0xbf, // map(indef)
-                  0x61, // key: tstr(1)
-                    0x31, // "1"
-                  0x26, // value: -7
-                  0x61, // key: tstr(1)
-                    0x33, // "3"
-                  0x74, // value: tstr(20)
-                    0x61, 0x70, 0x70, 0x6c, 0x69, 0x63, 0x61, 0x74, // "applicat"
-                    0x69, 0x6f, 0x6e, 0x2f, 0x72, 0x69, 0x6d, 0x2b, // "ion/rim+"
-                    0x63, 0x62, 0x6f, 0x72,                         // "cbor"
-                  0x61, // key: tstr(1)
-                    0x34, // "4"
-                  0x47, // value: bstr(7)
-                    0x6b, 0x65, 0x79, 0x2d, 0x30, 0x30, 0x31,
-                  0x61, // key: tstr(1)
-                    0x38, // "8"
-                  0xbf, // value: map(indef) [corim-meta-map]
-                    0x00, // key: 0 [signer]
-                    0xbf, // value: map(indef) [corim-signer-map]
-                     0x00, // key: 0 [signer-name]
-                      0x6e, // value: tstr(14)
-                        0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, // "Example "
-                        0x53, 0x69, 0x67, 0x6e, 0x65, 0x72,             // "Signer"
-                    0xff, // break
-                  0xff, // break
-                0xff, // break
-              0xa0, // map(0) -- COSE unprotected header
-              0x58, 0xbe, // bstr(190) -- COSE payload
-                0xd9, 0x01, 0xf5, // tag(501) -- CoRIM
-                  0xbf, // map(indef)
-                    0x00, // key: 0 [id]
-                    0x69, // value: tstr(9)
-                      0x63, 0x6f, 0x72, 0x69, 0x6d, 0x2d, 0x30, 0x30, // "corim-00"
-                      0x31,                                           // "1"
-                    0x01, // key: 1 [tags]
-                    0x82, // value: array(2)
-                      0xd9, 0x01, 0xf9, // tag(505) -- CoSWID
-                        0x58, 0x3e, // bstr(62)
-                          0xbf, // map(indef)
-                            0x61, // key: tstr(1)
-                              0x30, // "0"
-                            0x68, // value: tstr(8)
-                              0x73, 0x77, 0x69, 0x64, 0x2d, 0x31, 0x32, 0x33,  // "swid-123"
-                            0x62,  // key: tstr(2)
-                              0x31, 0x32, // "12"
-                            0x00, // value: 0
-                            0x61, // key: tstr(1)
-                              0x31, // "1"
-                            0x70, // value: tstr(16)
-                              0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, // "Example "
-                              0x53, 0x6f, 0x66, 0x74, 0x77, 0x61, 0x72, 0x65, // "Software"
-                            0x61, // key: tstr(1)
-                              0x32, // "2"
-                            0xbf, // value: map(indef)
-                              0x62, // key: tstr(2)
-                                0x33, 0x31, // "31"
-                              0x6e, // value: tstr(14)
-                                0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, // "Example "
-                                0x45, 0x6e, 0x74, 0x69, 0x74, 0x79,             // "Entity"
-                              0x62, // key: tstr(2)
-                                0x33, 0x33, // "33"
-                              0x01, // value: 1
-                            0xff,  // break(map)
-                          0xff,  // break(map)
-                      0xd9, 0x01, 0xfa, // tag (506) -- CoMID
-                        0x58, 0x64, // bstr(100)
-                          0xbf, // map(indef)
-                            0x00, // key: 0
-                            0x65, // value: tstr(5)
-                              0x65, 0x6e, 0x5f, 0x55, 0x53, // "en_US"
-                            0x01, // key: 1
-                            0xbf, // value: map(1)
-                              0x00, // key: 0 [tag-id]
-                              0x6b, // value: tstr(11)
-                                0x53, 0x6f, 0x6d, 0x65, 0x20, 0x54, 0x61, 0x67, // "Some Tag"
-                                0x20, 0x49, 0x44,                               // " ID"
-                            0xff, // break
-                            0x02, // key: 2
-                            0x81, // value: array(1)
-                              0xbf, // map(indef)
-                                0x00, // key: 0
-                                0x6f, // value: tstr(15)
-                                  0x53, 0x6f, 0x6d, 0x65, 0x20, 0x43, 0x6f, 0x4d,
-                                  0x49, 0x44, 0x20, 0x4e, 0x61, 0x6d, 0x65,
-                                0x02, // key: 2
-                                0x81, // value: array(1)
-                                  0x00, // 0 [tag-creator]
-                              0xff, // break(map)
-                            0x04, // key: 4
-                            0xbf, // value: map(indef)
-                              0x00, // key: 0
-                              0x81, // value: array(1)
-                                0x82, // array(2)
-                                  0xbf, //  map(indef)
-                                    0x00, // 0
-                                    0xbf, // value: map(indef)
-                                      0x01, // key: 1
-                                      0x6b, // value: tstr(11)
-                                        0x53, 0x6f, 0x6d, 0x65, 0x20, 0x56, 0x65, 0x6e, // "Some Ven"
-                                        0x64, 0x6f, 0x72,                               // "dor"
-                                    0xff,
-                                  0xff,
-                                  0x81, // array(1)
-                                    0xbf, // map(indef)
-                                      0x00, // key: 0
-                                      0x68, // value: str(8)
-                                        0x53, 0x6f, 0x6d, 0x65, 0x20, 0x4b, 0x65, 0x79, // "Some Key"
-                                      0x01, // key: 1
-                                      0xbf, // value: map(indef)
-                                        0x0b, // key: 11
-                                        0x69, // value: tstr(9)
-                                          0x53, 0x6f, 0x6d, 0x65, 0x20, 0x4e, 0x61, 0x6d, // "Some Nam"
-                                          0x65,                                           // "e"
-                                      0xff, // break
-                                    0xff, // break
-                            0xff, // break
-                          0xff, // break
-                  0xff, // break
-              0xd9, 0x02, 0x30, // tag(560) -- COSE signature
-                0x41, // bstr(1)
-                  0x00
-        ];
-
-        let triples = TriplesMapBuilder::default()
-            .reference_triples(vec![ReferenceTripleRecord {
-                ref_env: EnvironmentMap {
-                    class: Some(ClassMap {
-                        class_id: None,
-                        vendor: Some("Some Vendor".into()),
-                        ..Default::default()
-                    }),
-                    instance: None,
-                    group: None,
-                },
-                ref_claims: vec![MeasurementMap {
-                    mkey: Some("Some Key".into()),
-                    mval: MeasurementValuesMap {
-                        name: Some("Some Name".into()),
-                        version: None,
-                        svn: None,
-                        digests: None,
-                        flags: None,
-                        raw: None,
-                        mac_addr: None,
-                        ip_addr: None,
-                        serial_number: None,
-                        ueid: None,
-                        uuid: None,
-                        cryptokeys: None,
-                        integrity_registers: None,
-                        extensions: None,
-                    },
-                    authorized_by: None,
-                }],
-            }])
-            .build()
-            .unwrap();
-
-        let cose_corim = COSESign1Corim {
-            protected: ProtectedCorimHeaderMap {
-                alg: Integer(-7),
-                content_type: "application/rim+cbor".into(),
-                kid: vec![0x6B, 0x65, 0x79, 0x2D, 0x30, 0x30, 0x31].into(),
-                corim_meta: CorimMetaMap {
-                    signer: CorimSignerMap {
-                        signer_name: "Example Signer".into(),
-                        ..Default::default()
-                    },
-                    signature_validity: None,
-                    extensions: None,
-                },
-                cose_map: None,
-            },
-            unprotected: BTreeMap::new(),
-            payload: UnsignedCorimMap {
-                id: "corim-001".into(),
-                tags: vec![
-                    ConciseSwidTag {
-                        tag_id: "swid-123".into(),
-                        tag_version: Integer(0),
-                        software_name: "Example Software".into(),
-                        entity: EntityEntry {
-                            entity_name: "Example Entity".into(),
-                            reg_id: None,
-                            role: 1.into(),
-                            thumbprint: None,
-                            extensions: None,
-                            global_attributes: None,
-                        }
-                        .into(),
-                        corpus: None,
-                        patch: None,
-                        supplemental: None,
-                        software_version: None,
-                        version_scheme: None,
-                        media: None,
-                        software_meta: None,
-                        link: None,
-                        payload_or_evidence: None,
-                        extensions: None,
-                        global_attributes: None,
-                    }
-                    .into(),
-                    ConciseMidTag {
-                        language: Some("en_US".into()),
-                        tag_identity: TagIdentityMap {
-                            tag_id: "Some Tag ID".into(),
-                            tag_version: None,
-                        },
-                        entities: Some(vec![ComidEntityMap {
-                            entity_name: "Some CoMID Name".into(),
-                            reg_id: None,
-                            role: vec![ComidRoleTypeChoice::TagCreator],
-                            extensions: None,
-                        }]),
-                        linked_tags: None,
-                        triples,
-                        extensions: None,
-                    }
-                    .into(),
-                ],
-                dependent_rims: None,
-                profile: None,
-                rim_validity: None,
-                entities: None,
-                extensions: None,
-            }
-            .into(),
-            signature: Bytes::from(vec![0]).into(),
-        };
-        let mut actual: Vec<u8> = vec![];
-
-        ciborium::into_writer(&cose_corim, &mut actual).unwrap();
-
-        println!("{actual:02X?}");
-
-        assert_eq!(expected.as_slice(), &actual);
-
-        let deserialized: COSESign1Corim = ciborium::de::from_reader(actual.as_slice())
-            .expect("Failed to deserialize COSE_Sign1 CoRIM");
-
-        assert_eq!(cose_corim, deserialized);
-    }
-
     #[test]
     fn test_profile_type_choice() {
         let profile = ProfileTypeChoice::OidType(OidType::from(
@@ -2428,9 +2438,11 @@ mod tests {
         let expected_cbor = vec![
             0xbf, // map(indef)
               0x00, // key: 0 [not-before]
-              0x01, // value: 1
+              0xc1, // value: tag(1)
+                0x01, // 1
               0x01, // key: 1 [not-after]
-              0x02,// value: 2
+              0xc1, // value: tag(1)
+                0x02,// 2
             0xff, // break
         ];
 
@@ -2442,7 +2454,8 @@ mod tests {
 
         let actual_json = serde_json::to_string(&validity_map).unwrap();
 
-        let expected_json = r#"{"not-before":1,"not-after":2}"#;
+        let expected_json =
+            r#"{"not-before":{"type":"time","value":1},"not-after":{"type":"time","value":2}}"#;
 
         assert_eq!(actual_json, expected_json);
 
@@ -2598,7 +2611,8 @@ mod tests {
                       0x04, // key: 4 [rim-validity]
                       0xbf, // value: map(indef) [validity-map]
                         0x01, // key: 1 [not-after]
-                        0x01, // value: 1
+                        0xc1, // value: tag(1)
+                          0x01, // 1
                       0xff, // break
                       0x05, // key: 5 [entities]
                       0x81, // value: array(1)
@@ -2614,7 +2628,7 @@ mod tests {
                       0xf4, //  value: false
                     0xff, //break
                 ],
-                expected_json: r#"{"id":"foo","tags":[{"type":"comid","value":{"tag-identity":{"tag-id":"bar"},"triples":{"endorsed-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]]}}}],"dependent-rims":[{"href":{"type":"uri","value":"buzz"}}],"profile":{"type":"uri","value":"qux"},"rim-validity":{"not-after":1},"entities":[{"entity-name":"zot","role":["manifest-creator"]}],"-1":false}"#,
+                expected_json: r#"{"id":"foo","tags":[{"type":"comid","value":{"tag-identity":{"tag-id":"bar"},"triples":{"endorsed-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]]}}}],"dependent-rims":[{"href":{"type":"uri","value":"buzz"}}],"profile":{"type":"uri","value":"qux"},"rim-validity":{"not-after":{"type":"time","value":1}},"entities":[{"entity-name":"zot","role":["manifest-creator"]}],"-1":false}"#,
             },
         ];
 
@@ -2668,7 +2682,7 @@ mod tests {
                     }),
                     extensions: Some(extensions),
                 },
-                expected_json: r#"{"signer":{"signer-name":"foo","signer-uri":{"type":"uri","value":"bar"},"-1":true},"signature-validity":{"not-after":1},"-1":true}"#,
+                expected_json: r#"{"signer":{"signer-name":"foo","signer-uri":{"type":"uri","value":"bar"},"-1":true},"signature-validity":{"not-after":{"type":"time","value":1}},"-1":true}"#,
                 expected_cbor: vec![
                     0xbf, // map(indef) [corim-meta-map]
                       0x00, // key: 0 [signer]
@@ -2686,7 +2700,8 @@ mod tests {
                       0x01, // key: 1 [signature-validity]
                       0xbf, // value: map(indef) [validity-map]
                         0x01, // key: 1 [not-after]
-                        0x01, // value: 1
+                        0xc1, // value: tag(1)
+                          0x01, // 1
                       0xff, // break
                       0x20, // key: -1 [extension(-1)]
                       0xf5, // value: bool
@@ -2698,5 +2713,229 @@ mod tests {
         for tc in test_cases.into_iter() {
             tc.run();
         }
+    }
+
+    #[test]
+    fn test_signed_deserialize_and_verify() {
+        struct FakeSigner {}
+
+        impl CoseKeyOwner for FakeSigner {
+            fn to_cose_key(&self) -> CoseKey {
+                CoseKey {
+                    kty: crate::core::CoseKty::Ec2,
+                    kid: None,
+                    alg: Some(crate::core::CoseAlgorithm::ES256),
+                    key_ops: Some(vec![
+                        crate::core::CoseKeyOperation::Sign,
+                        crate::core::CoseKeyOperation::Verify,
+                    ]),
+                    base_iv: None,
+                    crv: None,
+                    x: None,
+                    y: None,
+                    d: None,
+                    k: None,
+                }
+            }
+        }
+
+        impl CoseSigner for FakeSigner {
+            fn sign(&self, _: CoseAlgorithm, _: &[u8]) -> Result<Vec<u8>, CorimError> {
+                Ok(vec![0xde, 0xad, 0xbe, 0xef])
+            }
+        }
+
+        impl CoseVerifier for FakeSigner {
+            fn verify_signature(
+                &self,
+                _: CoseAlgorithm,
+                _: &[u8],
+                _: &[u8],
+            ) -> Result<(), CorimError> {
+                Ok(())
+            }
+        }
+
+        let env = EnvironmentMapBuilder::default()
+            .instance(InstanceIdTypeChoice::Bytes(
+                [0x01, 0x02, 0x03].as_slice().into(),
+            ))
+            .build()
+            .unwrap();
+
+        let mvals = MeasurementValuesMapBuilder::default()
+            .svn(SvnTypeChoice::Svn(1.into()))
+            .build()
+            .unwrap();
+
+        let measurement_map = MeasurementMap {
+            mkey: None,
+            mval: mvals,
+            authorized_by: None,
+        };
+
+        let corim_map = CorimMapBuilder::default()
+            .id(CorimIdTypeChoice::Tstr("foo".into()))
+            .add_tag(ConciseTagTypeChoice::Mid(
+                ConciseMidTagBuilder::default()
+                    .tag_identity(TagIdentityMap {
+                        tag_id: TagIdTypeChoice::Tstr("bar".into()),
+                        tag_version: None,
+                    })
+                    .triples(
+                        TriplesMapBuilder::default()
+                            .endorsed_triples(vec![
+                                    EndorsedTripleRecord{
+                                        condition: env.clone(),
+                                        endorsement: vec![measurement_map.clone()],
+                                    }
+                                ])
+                            .build()
+                            .unwrap(),
+                    )
+                    .build()
+                    .unwrap()
+                    .into(),
+            ))
+            .add_entity(
+                CorimEntityMapBuilder::default()
+                    .entity_name("zot".into())
+                    .add_role(CorimRoleTypeChoice::ManifestCreator)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let meta = CorimMetaMap {
+            signer: CorimSignerMap {
+                signer_name: "signer name".into(),
+                signer_uri: Some("signer_uri".into()),
+                extensions: None,
+            },
+            signature_validity: Some(ValidityMap {
+                not_before: None,
+                not_after: 99999999999.into(),
+            }),
+            extensions: None,
+        };
+
+        let signer = FakeSigner {};
+
+        let signed: Corim = SignedCorimBuilder::default()
+            .alg(CoseAlgorithm::ES256)
+            .kid(vec![0x01, 0x02, 0x03])
+            .meta(meta)
+            .corim_map(corim_map)
+            .build_and_sign(signer)
+            .unwrap()
+            .into();
+
+        let actual = signed.to_cbor().unwrap();
+
+        let expected: Vec<u8> = vec![
+            0xd2, // tag(18) [COSE_Sign1_message]
+              0x84, // array(4) [COSE_Sign1]
+                0x58, 0x4f, // [0]bstr(79) [protected-header]
+                  0xa4, // map(4)
+                    0x01, // key: 1 [alg]
+                    0x26, // value: -7 [ES256]
+                    0x03, // key: 3 [content-type]
+                    0x74, // value: tstr(20)
+                      0x61, 0x70, 0x70, 0x6c, 0x69, 0x63, 0x61, 0x74, // "applicat"
+                      0x69, 0x6f, 0x6e, 0x2f, 0x72, 0x69, 0x6d, 0x2b, // "ion/rim+"
+                      0x63, 0x62, 0x6f, 0x72,                         // "cbor"
+                    0x04, // key: 4 [key-id]
+                    0x43, // bstr(3)
+                      0x01, 0x02, 0x03,
+                    0x08, // key: 8 [corim-meta]
+                    0x58, 0x2e, // value: bstr(46)
+                      0xbf, // map(indef) [corim-meta-map]
+                        0x00, // key: 0 [signer]
+                        0xbf, // value: map(indef) [corim-signer-map]
+                          0x00, // key: 0 [signer-name]
+                          0x6b, // value: tstr(10)
+                            0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x20, 0x6e, // "signer n"
+                            0x61, 0x6d, 0x65,                               // "ame"
+                          0x01, // key: 1 [signer-uri]
+                          0xd8, 0x20, //  value: tag(32) [uri]
+                            0x6a, // tstr(10)
+                              0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x5f, 0x75, // "signer u"
+                              0x72, 0x69,                                     // "ri"
+                        0xff, // break
+                        0x01, // key: 1 [signature-validity]
+                        0xbf, // value: map(indef) [validity-map]
+                          0x01, // key: 1 [not-after]
+                          0xc1, // value: tag(1) [time]
+                            0x1b,  // int(8)
+                              0x00, 0x00, 0x00, 0x17, 0x48, 0x76, 0xe7, 0xff, // 99999999999
+                        0xff, // break
+                      0xff, // break
+                0xa0, // [1]map(0) [unprotected-header]
+                0x58, 0x3f, // [2]bstr(63) [payload]
+                  0xd9, 0x01, 0xf5, // tag(501) [unsigned-corim]
+                    0xbf, // map(indef) [corim-map]
+                      0x00, // key: 0 [id]
+                      0x63, // value: tstr(3)
+                        0x66, 0x6f, 0x6f, // "foo"
+                      0x01, // key: 1 [tags]
+                        0x81, // value: array(1)
+                          0xd9, 0x01, 0xfa, // [0]tag(506) [tagged-concise-mid-tag]
+                      0x58, 0x22, // bstr(34)
+                        0xbf, // map(indef) [concise-mid-tag]
+                          0x01, // key: 1 [tag-identity]
+                          0xbf, // value: map(indef) [tag-identity-map]
+                            0x00, // key: 0 [tag-id]
+                            0x63, // value: tstr(3)
+                              0x62, 0x61, 0x72, // "bar"
+                          0xff, // break
+                          0x04, // key: 4 [triples]
+                          0xbf, // value: map(indef) [triples-map]
+                            0x01, // key: 1 [endorsed-triples]
+                            0x81, // value: array(1)
+                              0x82, // [0]value: array(2) [endorsed-triple-record]
+                                0xbf, // [0]value: map(indef) [condition: environment-map]
+                                  0x01, // key: 1 [instance]
+                                  0xd9, 0x02, 0x30,  // value: tag(560) [tagged-bytes]
+                                    0x43, // bstr(3)
+                                      0x01, 0x02, 0x03,
+                                0xff, // break
+                                0x81, // [1]array(1) [endorsement]
+                                  0xbf, // [0]map(indef) [measurement-map]
+                                    0x01, // key: 1 [mval]
+                                    0xbf, // value: map(indef) [measurement-values-map]
+                                      0x01, // key: 1 [svn]
+                                      0x01, // value: 1
+                                    0xff, // break
+                                  0xff, // break
+                          0xff, // break
+                        0xff, // break
+                        0x05, // key: 5 [entities]
+                        0x81, // value: array(1)
+                          0xbf, // [0]map(indef) [corim-entity-map]
+                            0x00, // key: 0 [entity-name]
+                            0x63, // value: tstr(3)
+                              0x7a, 0x6f, 0x74, // "zot"
+                            0x02, // key: 2 [role]
+                            0x81, // value: array(1)
+                              0x01, // [0]1 [manifest-creator]
+                          0xff, // break
+                    0xff, // break
+                0x44, // [3]bstr(4) [signature]
+                  0xde, 0xad, 0xbe, 0xef
+        ];
+
+        assert_eq!(actual, expected);
+
+        let tagged_signed = TaggedSignedCorim::from_cbor(actual.as_slice()).unwrap();
+
+        let signed_de = tagged_signed.as_ref();
+        let verifier = FakeSigner {};
+
+        assert_eq!(signed_de.alg, crate::core::CoseAlgorithm::ES256);
+        assert_eq!(signed_de.kid, vec![0x01, 0x02, 0x03]);
+        assert_eq!(signed_de.corim_map.id.as_str().unwrap(), "foo");
+
+        signed_de.verify_signature(verifier).unwrap();
     }
 }

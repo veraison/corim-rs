@@ -47,11 +47,22 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "ciborium",
+ "coset",
  "derive_more",
  "oid",
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "coset"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4c8cc80f631f8307b887faca24dcc3abc427cd0367f6eb6188f6e8f5b7ad8fb"
+dependencies = [
+ "ciborium",
+ "ciborium-io",
 ]
 
 [[package]]
