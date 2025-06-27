@@ -55,14 +55,14 @@ pub mod numbers;
 pub(crate) mod test;
 
 // Use all public items from each module
-use comid::*;
-use core::*;
-use corim::*;
-use coswid::*;
-use cotl::*;
-use empty::*;
-use error::*;
-use fixed_bytes::*;
-use numbers::*;
-use result::*;
-use triples::*;
+pub use comid::*;
+pub use core::*;
+pub use corim::*;
+pub use coswid::*;
+pub use cotl::*;
+pub use empty::*;
+pub use error::*;
+pub use fixed_bytes::*;
+pub use numbers::*;
+pub use result::*;
+pub use triples::*;
