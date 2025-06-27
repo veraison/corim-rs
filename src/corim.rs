@@ -46,22 +46,117 @@
 //! ## Example Usage
 //!
 //! ```rust
-//! use corim_rs::corim::{Corim, CorimMap, CorimIdTypeChoice, TaggedUnsignedCorim};
+//! use corim_rs::{
+//!     ConciseMidTagBuilder, Corim, CorimEntityMapBuilder, CorimError, CorimMapBuilder,
+//!     CorimMetaMapBuilder, CorimRoleTypeChoice, CoseAlgorithm, CoseKey, CoseKeyOwner, CoseSigner,
+//!     CoseVerifier, EndorsedTripleRecord, EnvironmentMapBuilder, MeasurementMap,
+//!     MeasurementValuesMapBuilder, SignedCorimBuilder, TagIdentityMap, TriplesMapBuilder,
+//! };
 //!
-//! // Create an unsigned CoRIM
-//! let rim = Corim::UnsignedCorim(
-//!     TaggedUnsignedCorim::new(
-//!         CorimMap {
-//!             id: "Corim-Unique-Identifier-01".into(),
-//!             tags: vec![].into(),
-//!             dependent_rims: None,
-//!             profile: None,
-//!             rim_validity: None,
-//!             entities: None,
-//!             extensions: None
-//!         }
+//! let corim: Corim = CorimMapBuilder::new()
+//!     .id("foo".into())
+//!     .add_tag(
+//!         ConciseMidTagBuilder::new()
+//!             .tag_identity(TagIdentityMap {
+//!                 tag_id: "bar".into(),
+//!                 tag_version: None,
+//!             })
+//!             .triples(
+//!                 TriplesMapBuilder::new()
+//!                     .endorsed_triples(vec![EndorsedTripleRecord {
+//!                         condition: EnvironmentMapBuilder::default()
+//!                             .instance([0x01, 0x02, 0x03].as_slice().into())
+//!                             .build()
+//!                             .unwrap(),
+//!                         endorsement: vec![MeasurementMap {
+//!                             mkey: None,
+//!                             mval: MeasurementValuesMapBuilder::default()
+//!                                 .svn(1.into())
+//!                                 .build()
+//!                                 .unwrap(),
+//!                             authorized_by: None,
+//!                         }],
+//!                     }])
+//!                     .build()
+//!                     .unwrap(),
+//!             )
+//!             .build()
+//!             .unwrap()
+//!             .into(),
 //!     )
-//! );
+//!     .add_entity(
+//!         CorimEntityMapBuilder::new()
+//!             .entity_name("baz".into())
+//!             .add_role(CorimRoleTypeChoice::ManifestCreator)
+//!             .build()
+//!             .unwrap(),
+//!     )
+//!     .build()
+//!     .unwrap()
+//!     .into();
+//!
+//!     let output = corim.to_cbor().unwrap();
+//!
+//! // Signing
+//!
+//! // A fake signer to avoid pulling additional dependencies
+//! struct FakeSigner {}
+//!
+//! impl CoseKeyOwner for FakeSigner {
+//!     fn to_cose_key(&self) -> CoseKey {
+//!         CoseKey {
+//!             kty: corim_rs::core::CoseKty::Ec2,
+//!             kid: None,
+//!             alg: Some(corim_rs::core::CoseAlgorithm::ES256),
+//!             key_ops: Some(vec![
+//!                 corim_rs::core::CoseKeyOperation::Sign,
+//!                 corim_rs::core::CoseKeyOperation::Verify,
+//!             ]),
+//!             base_iv: None,
+//!             crv: None,
+//!             x: None,
+//!             y: None,
+//!             d: None,
+//!             k: None,
+//!         }
+//!     }
+//! }
+//!
+//! impl CoseSigner for FakeSigner {
+//!     fn sign(&self, _: CoseAlgorithm, _: &[u8]) -> Result<Vec<u8>, CorimError> {
+//!         Ok(vec![0xde, 0xad, 0xbe, 0xef])
+//!     }
+//! }
+//!
+//! impl CoseVerifier for FakeSigner {
+//!     fn verify_signature(&self, _: CoseAlgorithm, _: &[u8], _: &[u8]) -> Result<(), CorimError> {
+//!         Ok(())
+//!     }
+//! }
+//!
+//! let signer = FakeSigner {};
+//!
+//! let signed: Corim = SignedCorimBuilder::new()
+//!     .alg(CoseAlgorithm::ES256)
+//!     .kid(vec![0x01, 0x02, 0x03])
+//!     .meta(CorimMetaMapBuilder::new()
+//!         .signer_name("fake signer".into())
+//!         .build()
+//!         .unwrap()
+//!     )
+//!     .corim_map(corim.into()) // CorimMap unpacked from the unsigned CoRIM
+//!     .build_and_sign(signer)
+//!     .unwrap()
+//!     .into();
+//!
+//! let output = signed.to_cbor().unwrap();
+//!
+//! // Siganture verfication
+//!
+//! let verifier = FakeSigner {};
+//! let corim = Corim::from_cbor(output.as_slice()).unwrap();
+//!
+//! corim.as_signed().unwrap().verify_signature(verifier).unwrap();
 //! ```
 //!
 //! ## CBOR Tags
