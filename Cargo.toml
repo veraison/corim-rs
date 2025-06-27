@@ -37,4 +37,5 @@ serde_json = {version = "1.0.140", features = [
     "arbitrary_precision",
 ]}
 coset = { version = "0.3.8", features = ["std"] }
+openssl = { version = "0.10", features = ["vendored"], optional=true}
 

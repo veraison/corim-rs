@@ -50,6 +50,12 @@ pub mod empty;
 /// Provides the Number Traits.
 pub mod numbers;
 
+/// Optional signing implementation
+#[cfg(feature = "openssl")]
+pub mod openssl;
+#[cfg(feature = "openssl")]
+pub use openssl::*;
+
 /// Test utilities
 #[cfg(test)]
 pub(crate) mod test;
