@@ -2409,6 +2409,12 @@ impl SvnTypeChoice {
     }
 }
 
+impl From<u64> for SvnTypeChoice {
+    fn from(value: u64) -> Self {
+        Self::Svn(value.into())
+    }
+}
+
 impl<'de> Deserialize<'de> for SvnTypeChoice {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
