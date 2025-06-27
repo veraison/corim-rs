@@ -2152,7 +2152,7 @@ impl CoseKeyBuilder {
     }
 
     pub fn get_kty(&self) -> CoseKty {
-        self.cose_key.kty.clone()
+        self.cose_key.kty
     }
 
     pub fn kty(mut self, kty: CoseKty) -> Self {
@@ -3378,7 +3378,7 @@ impl<'de> Deserialize<'de> for HashAlgorithm {
 /// let alg = CoseAlgorithm::ES256;  // ECDSA with SHA-256
 /// let hash_alg = CoseAlgorithm::Sha256;  // SHA-256 hash function
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
 #[repr(i64)]
 pub enum CoseAlgorithm {
     // Reserved for Private Use
@@ -3924,7 +3924,7 @@ impl<'de> Deserialize<'de> for CoseAlgorithm {
 /// let okp = CoseKty::Okp;  // Octet Key Pair
 /// let ec2 = CoseKty::Ec2;  // Elliptic Curve w/ x/y coordinates
 /// ```
-#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
 #[repr(i8)]
 pub enum CoseKty {
     // key type is invalid/has not been set
