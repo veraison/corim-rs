@@ -498,6 +498,10 @@ pub struct ConciseMidTagBuilder<'a> {
 }
 
 impl<'a> ConciseMidTagBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn language(mut self, value: Text<'a>) -> Self {
         self.language = Some(value);
         self
@@ -1638,6 +1642,10 @@ pub struct TriplesMapBuilder<'a> {
 }
 
 impl<'a> TriplesMapBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Creates an empty TriplesMapBuilder
     ///
     /// # Example

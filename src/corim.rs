@@ -381,7 +381,7 @@ impl<'de> Deserialize<'de> for CorimMap<'_> {
             where
                 A: de::MapAccess<'de>,
             {
-                let mut builder = CorimMapBuilder::default();
+                let mut builder = CorimMapBuilder::new();
 
                 loop {
                     if self.is_human_readable {
@@ -471,7 +471,7 @@ impl<'de> Deserialize<'de> for CorimMap<'_> {
     }
 }
 
-#[derive(Debug, Constructor, Default)]
+#[derive(Debug, Default)]
 #[repr(C)]
 pub struct CorimMapBuilder<'a> {
     id: Option<CorimIdTypeChoice<'a>>,
@@ -484,6 +484,10 @@ pub struct CorimMapBuilder<'a> {
 }
 
 impl<'a> CorimMapBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn id(mut self, value: CorimIdTypeChoice<'a>) -> Self {
         self.id = Some(value);
         self
@@ -1345,7 +1349,7 @@ impl<'de> Deserialize<'de> for CorimEntityMap<'_> {
             where
                 A: de::MapAccess<'de>,
             {
-                let mut builder = CorimEntityMapBuilder::default();
+                let mut builder = CorimEntityMapBuilder::new();
 
                 loop {
                     if self.is_human_readable {
@@ -1854,6 +1858,10 @@ pub struct SignedCorimBuilder<'a> {
 }
 
 impl<'a> SignedCorimBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn alg(mut self, alg: CoseAlgorithm) -> Self {
         self.alg = Some(alg);
         self
