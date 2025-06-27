@@ -2075,6 +2075,107 @@ impl<'de> Deserialize<'de> for CorimMetaMap<'_> {
     }
 }
 
+#[derive(Default, Debug)]
+#[repr(C)]
+pub struct CorimMetaMapBuilder<'a> {
+    signer_name: Option<EntityNameTypeChoice<'a>>,
+    signer_uri: Option<Uri<'a>>,
+    not_before: Option<IntegerTime>,
+    not_after: Option<IntegerTime>,
+    signer_extensions: Option<ExtensionMap<'a>>,
+    extensions: Option<ExtensionMap<'a>>,
+}
+
+impl<'a> CorimMetaMapBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn signer_name(mut self, signer_name: EntityNameTypeChoice<'a>) -> Self {
+        self.signer_name = Some(signer_name);
+        self
+    }
+
+    pub fn signer_uri(mut self, signer_uri: Uri<'a>) -> Self {
+        self.signer_uri = Some(signer_uri);
+        self
+    }
+
+    pub fn not_before(mut self, not_before: IntegerTime) -> Self {
+        self.not_before = Some(not_before);
+        self
+    }
+
+    pub fn not_after(mut self, not_after: IntegerTime) -> Self {
+        self.not_after = Some(not_after);
+        self
+    }
+
+    pub fn extensions(mut self, extensions: ExtensionMap<'a>) -> Self {
+        self.extensions = Some(extensions);
+        self
+    }
+
+    pub fn add_extension(mut self, key: i128, value: ExtensionValue<'a>) -> Self {
+        if let Some(ref mut extensions) = self.extensions {
+            extensions.insert(Integer(key), value);
+        } else {
+            let mut extensions = ExtensionMap::default();
+            extensions.insert(Integer(key), value);
+            self.extensions = Some(extensions);
+        }
+        self
+    }
+
+    pub fn signer_extensions(mut self, signer_extensions: ExtensionMap<'a>) -> Self {
+        self.signer_extensions = Some(signer_extensions);
+        self
+    }
+
+    pub fn add_signer_extension(mut self, key: i128, value: ExtensionValue<'a>) -> Self {
+        if let Some(ref mut extensions) = self.signer_extensions {
+            extensions.insert(Integer(key), value);
+        } else {
+            let mut extensions = ExtensionMap::default();
+            extensions.insert(Integer(key), value);
+            self.signer_extensions = Some(extensions);
+        }
+        self
+    }
+
+    pub fn build(self) -> Result<CorimMetaMap<'a>, CorimError> {
+        if self.signer_name.is_none() {
+            return Err(CorimError::unset_mandatory_field(
+                "CorimSignerMap",
+                "signer_name",
+            ));
+        }
+
+        let validity: Option<ValidityMap> = match self.not_after {
+            Some(not_after) => Some(ValidityMap {
+                not_before: self.not_before,
+                not_after,
+            }),
+            None => {
+                if self.not_before.is_some() {
+                    return Err(CorimError::custom("not_before is set but not_after is not"));
+                }
+                None
+            }
+        };
+
+        Ok(CorimMetaMap {
+            signer: CorimSignerMap {
+                signer_name: self.signer_name.unwrap(),
+                signer_uri: self.signer_uri,
+                extensions: self.signer_extensions,
+            },
+            signature_validity: validity,
+            extensions: self.extensions,
+        })
+    }
+}
+
 /// Information about the entity that signed the CoRIM
 #[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
