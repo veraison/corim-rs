@@ -306,6 +306,10 @@ pub struct EnvironmentMapBuilder<'a> {
 }
 
 impl<'a> EnvironmentMapBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn class(mut self, values: ClassMap<'a>) -> Self {
         self.class = Some(values);
         self
@@ -496,6 +500,10 @@ pub struct ClassMapBuilder<'a> {
 }
 
 impl<'a> ClassMapBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn class_id(mut self, value: ClassIdTypeChoice<'a>) -> Self {
         self.class_id = Some(value);
         self
@@ -2165,6 +2173,10 @@ pub struct MeasurementValuesMapBuilder<'a> {
 }
 
 impl<'a> MeasurementValuesMapBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn version(mut self, value: VersionMap<'a>) -> Self {
         self.version = Some(value);
         self
@@ -3518,6 +3530,10 @@ pub struct TriplesRecordConditionBuilder<'a> {
 }
 
 impl<'a> TriplesRecordConditionBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn mkey(mut self, value: MeasuredElementTypeChoice<'a>) -> Self {
         self.mkey = Some(value);
         self
