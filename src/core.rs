@@ -1626,12 +1626,28 @@ impl<'de> Deserialize<'de> for Ulabel<'_> {
 }
 
 /// Represents one or more values that can be either text or integers
-#[derive(Debug, Clone, PartialEq, Serialize, Eq, PartialOrd, Ord, From, TryFrom)]
+#[derive(Debug, Clone, PartialEq, Serialize, Eq, PartialOrd, Ord, TryFrom)]
 #[serde(untagged)]
 #[repr(C)]
 pub enum OneOrMore<T> {
     One(T),
     More(Vec<T>),
+}
+
+impl<T> From<T> for OneOrMore<T> {
+    fn from(value: T) -> Self {
+        Self::One(value)
+    }
+}
+
+impl<T: Clone> From<Vec<T>> for OneOrMore<T> {
+    fn from(value: Vec<T>) -> Self {
+        if value.len() == 1 {
+            Self::One(value[0].clone())
+        } else {
+            Self::More(value)
+        }
+    }
 }
 
 impl<T: Clone> From<&[T]> for OneOrMore<T> {
@@ -1645,6 +1661,13 @@ impl<T: Clone> From<&[T]> for OneOrMore<T> {
 }
 
 impl<T: Clone> OneOrMore<T> {
+    pub fn is_one(&self) -> bool {
+        match self {
+            Self::One(_) => true,
+            Self::More(_) => false,
+        }
+    }
+
     pub fn as_one(&self) -> Option<T> {
         match self {
             Self::One(val) => Some(val.clone()),
@@ -1656,6 +1679,13 @@ impl<T: Clone> OneOrMore<T> {
         match self {
             Self::More(val) => Some(val),
             _ => None,
+        }
+    }
+
+    pub fn to_vec(&self) -> Vec<T> {
+        match self {
+            Self::One(val) => vec![val.clone()],
+            Self::More(val) => val.clone(),
         }
     }
 }
@@ -1685,6 +1715,18 @@ impl<T> OneOrMore<T> {
                 }
             }
             OneOrMore::More(items) => items.get(index),
+        }
+    }
+}
+
+impl<T: Clone> IntoIterator for OneOrMore<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Self::One(one) => vec![one].into_iter(),
+            Self::More(more) => more.into_iter(),
         }
     }
 }
@@ -1746,13 +1788,14 @@ impl<'de, T: Clone + DeserializeOwned> Deserialize<'de> for OneOrMore<T> {
     }
 }
 
-/// Represents an attribute value that can be either text or integer, single or multiple
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, TryFrom)]
+/// Represents the value of a global attribute. Either one or more integers, or one or more text
+/// strings.
+#[derive(Debug, Clone, PartialEq, Serialize, Eq, PartialOrd, Ord, From, TryFrom)]
 #[serde(untagged)]
 #[repr(C)]
 pub enum AttributeValue<'a> {
     Text(OneOrMore<Text<'a>>),
-    Int(OneOrMore<Int>),
+    Int(OneOrMore<Integer>),
 }
 
 impl<'a> AttributeValue<'a> {
@@ -1767,6 +1810,49 @@ impl<'a> AttributeValue<'a> {
         match self {
             AttributeValue::Text(value) => value.len(),
             AttributeValue::Int(value) => value.len(),
+        }
+    }
+
+    pub fn is_one(&self) -> bool {
+        match self {
+            AttributeValue::Text(value) => value.is_one(),
+            AttributeValue::Int(value) => value.is_one(),
+        }
+    }
+
+    pub fn is_int(&self) -> bool {
+        matches!(self, AttributeValue::Int(_))
+    }
+
+    pub fn is_text(&self) -> bool {
+        matches!(self, AttributeValue::Text(_))
+    }
+
+    pub fn as_int(&self) -> Option<&OneOrMore<Integer>> {
+        match self {
+            Self::Int(val) => Some(val),
+            _ => None,
+        }
+    }
+
+    pub fn as_text(&self) -> Option<&OneOrMore<Text>> {
+        match self {
+            Self::Text(val) => Some(val),
+            _ => None,
+        }
+    }
+
+    pub fn into_int(self) -> Option<OneOrMore<Integer>> {
+        match self {
+            Self::Int(val) => Some(val),
+            _ => None,
+        }
+    }
+
+    pub fn into_text(self) -> Option<OneOrMore<Text<'a>>> {
+        match self {
+            Self::Text(val) => Some(val),
+            _ => None,
         }
     }
 
@@ -1795,6 +1881,212 @@ impl<'a> AttributeValue<'a> {
         match self {
             AttributeValue::Int(value) => value.as_many(),
             _ => None,
+        }
+    }
+}
+
+impl From<i64> for AttributeValue<'_> {
+    fn from(value: i64) -> Self {
+        Self::Int(OneOrMore::One(value.into()))
+    }
+}
+
+impl From<String> for AttributeValue<'_> {
+    fn from(value: String) -> Self {
+        Self::Text(OneOrMore::One(value.into()))
+    }
+}
+
+impl<'a> From<&'a str> for AttributeValue<'a> {
+    fn from(value: &'a str) -> Self {
+        Self::Text(OneOrMore::One(value.into()))
+    }
+}
+
+impl From<&[i64]> for AttributeValue<'_> {
+    fn from(value: &[i64]) -> Self {
+        Self::Int(
+            value
+                .iter()
+                .map(|v| Integer::from(*v))
+                .collect::<Vec<Integer>>()
+                .into(),
+        )
+    }
+}
+
+impl From<&[String]> for AttributeValue<'_> {
+    fn from(value: &[String]) -> Self {
+        Self::Text(
+            value
+                .iter()
+                .map(|v| Text::from(v.to_owned()))
+                .collect::<Vec<Text>>()
+                .into(),
+        )
+    }
+}
+
+impl<'a> From<&[&'a str]> for AttributeValue<'a> {
+    fn from(value: &[&'a str]) -> Self {
+        Self::Text(
+            value
+                .iter()
+                .map(|v| Text::from(*v))
+                .collect::<Vec<Text>>()
+                .into(),
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for AttributeValue<'_> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let is_human_readable = deserializer.is_human_readable();
+
+        if is_human_readable {
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::String(text) => Ok(Self::Text(OneOrMore::One(text.into()))),
+                serde_json::Value::Number(n) => {
+                    if n.is_u64() {
+                        Ok(Self::Int(OneOrMore::One(n.as_u64().unwrap().into())))
+                    } else if n.is_i64() {
+                        Ok(Self::Int(OneOrMore::One(n.as_i64().unwrap().into())))
+                    } else {
+                        Err(de::Error::custom(format!(
+                            "invalid global attribute value: {:?}",
+                            n,
+                        )))
+                    }
+                }
+                serde_json::Value::Array(arr) => {
+                    if arr.is_empty() {
+                        return Err(de::Error::custom("empty global attribute value array"));
+                    }
+
+                    let is_int = match arr[0] {
+                        serde_json::Value::Number(_) => Ok(true),
+                        serde_json::Value::String(_) => Ok(false),
+                        _ => Err(de::Error::custom(format!(
+                            "invalid global attribute value: {:?}",
+                            &arr[0]
+                        ))),
+                    }?;
+
+                    if is_int {
+                        let mut ret: Vec<Integer> = vec![];
+
+                        for elt_value in arr.into_iter() {
+                            match elt_value {
+                                serde_json::Value::Number(n) => {
+                                    if n.is_u64() {
+                                        ret.push(n.as_u64().unwrap().into());
+                                    } else if n.is_i64() {
+                                        ret.push(n.as_i64().unwrap().into());
+                                    } else {
+                                        return Err(de::Error::custom(format!(
+                                            "invalid global attribute value array element: {:?}",
+                                            n,
+                                        )));
+                                    }
+                                }
+                                _ => {
+                                    return Err(de::Error::custom(
+                                        "mixed types inside global attribute value array",
+                                    ))
+                                }
+                            }
+                        }
+
+                        Ok(Self::Int(OneOrMore::More(ret)))
+                    } else {
+                        // ! is_int
+                        let mut ret: Vec<Text> = vec![];
+
+                        for elt_value in arr.into_iter() {
+                            match elt_value {
+                                serde_json::Value::String(text) => {
+                                    ret.push(text.into());
+                                }
+                                _ => {
+                                    return Err(de::Error::custom(
+                                        "mixed types inside global attribute value array",
+                                    ))
+                                }
+                            }
+                        }
+
+                        Ok(Self::Text(OneOrMore::More(ret)))
+                    }
+                }
+                value => Err(de::Error::custom(format!(
+                    "invalid global attribute value: {:?}",
+                    value
+                ))),
+            }
+        } else {
+            // ! is_human_readable
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Text(text) => Ok(Self::Text(OneOrMore::One(text.into()))),
+                ciborium::Value::Integer(n) => Ok(Self::Int(OneOrMore::One(i128::from(n).into()))),
+                ciborium::Value::Array(arr) => {
+                    if arr.is_empty() {
+                        return Err(de::Error::custom("empty global attribute value array"));
+                    }
+
+                    let is_int = match arr[0] {
+                        ciborium::Value::Integer(_) => Ok(true),
+                        ciborium::Value::Text(_) => Ok(false),
+                        _ => Err(de::Error::custom(format!(
+                            "invalid global attribute value: {:?}",
+                            &arr[0]
+                        ))),
+                    }?;
+
+                    if is_int {
+                        let mut ret: Vec<Integer> = vec![];
+
+                        for elt_value in arr.into_iter() {
+                            match elt_value {
+                                ciborium::Value::Integer(n) => {
+                                    ret.push(i128::from(n).into());
+                                }
+                                _ => {
+                                    return Err(de::Error::custom(
+                                        "mixed types inside global attribute value array",
+                                    ))
+                                }
+                            }
+                        }
+
+                        Ok(Self::Int(OneOrMore::More(ret)))
+                    } else {
+                        // ! is_int
+                        let mut ret: Vec<Text> = vec![];
+
+                        for elt_value in arr.into_iter() {
+                            match elt_value {
+                                ciborium::Value::Text(text) => {
+                                    ret.push(text.into());
+                                }
+                                _ => {
+                                    return Err(de::Error::custom(
+                                        "mixed types inside global attribute value array",
+                                    ))
+                                }
+                            }
+                        }
+
+                        Ok(Self::Text(OneOrMore::More(ret)))
+                    }
+                }
+                value => Err(de::Error::custom(format!(
+                    "invalid global attribute value: {:?}",
+                    value
+                ))),
+            }
         }
     }
 }
@@ -5654,5 +5946,62 @@ mod tests {
         for tc in int_test_cases.into_iter() {
             tc.run();
         }
+    }
+
+    #[test]
+    fn test_global_attribute_value() {
+        let test_cases: Vec<SerdeTestCase<AttributeValue>> = vec! [
+            SerdeTestCase {
+                value: 1.into(),
+                expected_json: "1",
+                expected_cbor: vec![0x01],
+            },
+            SerdeTestCase {
+                value: "foo".into(),
+                expected_json: "\"foo\"",
+                expected_cbor: vec![
+                    0x63, // tstr(3)
+                      0x66, 0x6f, 0x6f, // "foo"
+                ],
+            },
+            SerdeTestCase {
+                value: [1, 2, 3].as_slice().into(),
+                expected_json: "[1,2,3]",
+                expected_cbor: vec![
+                    0x83, // array(3)
+                      0x01,
+                      0x02,
+                      0x03,
+                ],
+            },
+            SerdeTestCase {
+                value: ["foo", "bar", "qux"].as_slice().into(),
+                expected_json: r#"["foo","bar","qux"]"#,
+                expected_cbor: vec![
+                    0x83, // array(3)
+                      0x63, // [0]tstr(3)
+                        0x66, 0x6f, 0x6f, // "foo"
+                      0x63, // [1]tstr(3)
+                        0x62, 0x61, 0x72, // "bar"
+                      0x63, // [2]tstr(3)
+                        0x71, 0x75, 0x78, // "qux"
+                ],
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            tc.run();
+        }
+
+        let value: AttributeValue = [1].as_slice().into();
+
+        assert!(value.is_one());
+
+        let mut actual_cbor: Vec<u8> = vec![];
+        ciborium::into_writer(&value, &mut actual_cbor).unwrap();
+
+        let expected_cbor: Vec<u8> = vec![0x01];
+
+        assert_eq!(actual_cbor, expected_cbor);
     }
 }
