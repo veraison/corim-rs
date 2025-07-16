@@ -173,15 +173,13 @@
 use std::{
     fmt,
     marker::PhantomData,
+    ops::Deref,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
     comid::ConciseMidTag,
-    core::{
-        CoseAlgorithm, CoseKey, CoseKeyOperation, IntegerTime, ObjectIdentifier, OneOrMore,
-        TaggedJsonValue,
-    },
+    core::{CoseAlgorithm, CoseKey, CoseKeyOperation, IntegerTime, ObjectIdentifier, OneOrMore},
     coswid::ConciseSwidTag,
     cotl::ConciseTlTag,
     error::CorimError,
@@ -1170,10 +1168,24 @@ pub enum ProfileTypeChoice<'a> {
     /// URI-based profile identifier
     Uri(Uri<'a>),
     /// OID-based profile identifier
-    OidType(OidType),
+    Oid(OidType),
+    /// Type extension
+    Extension(ExtensionValue<'a>),
 }
 
-impl ProfileTypeChoice<'_> {
+impl<'a> ProfileTypeChoice<'a> {
+    pub fn is_uri(&self) -> bool {
+        matches!(self, Self::Uri(_))
+    }
+
+    pub fn is_oid(&self) -> bool {
+        matches!(self, Self::Oid(_))
+    }
+
+    pub fn is_extension(&self) -> bool {
+        matches!(self, Self::Extension(_))
+    }
+
     pub fn as_uri(&self) -> Option<Uri> {
         match self {
             Self::Uri(uri) => Some(uri.clone()),
@@ -1190,7 +1202,21 @@ impl ProfileTypeChoice<'_> {
 
     pub fn as_oid_bytes(&self) -> Option<&[u8]> {
         match self {
-            Self::OidType(oid) => Some(oid.as_ref().as_ref()),
+            Self::Oid(oid) => Some(oid.as_ref().as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn as_ref_extension(&self) -> Option<&ExtensionValue<'a>> {
+        match self {
+            Self::Extension(ext) => Some(ext),
+            _ => None,
+        }
+    }
+
+    pub fn as_extension(&self) -> Option<ExtensionValue<'a>> {
+        match self {
+            Self::Extension(ext) => Some(ext.clone()),
             _ => None,
         }
     }
@@ -1203,7 +1229,8 @@ impl Serialize for ProfileTypeChoice<'_> {
     {
         match self {
             Self::Uri(uri) => uri.serialize(serializer),
-            Self::OidType(oid) => oid.serialize(serializer),
+            Self::Oid(oid) => oid.serialize(serializer),
+            Self::Extension(ext) => ext.serialize(serializer),
         }
     }
 }
@@ -1214,22 +1241,61 @@ impl<'de> Deserialize<'de> for ProfileTypeChoice<'_> {
         D: Deserializer<'de>,
     {
         if deserializer.is_human_readable() {
-            let tagged_value = TaggedJsonValue::deserialize(deserializer)?;
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::Object(map) => {
+                    if map.contains_key("type") && map.contains_key("value") && map.len() == 2 {
+                        let value = match &map["value"] {
+                            serde_json::Value::String(s) => Ok(s),
+                            v => Err(de::Error::custom(format!(
+                                "value must be a string, got {v:?}"
+                            ))),
+                        }?;
 
-            match tagged_value.typ {
-                "oid" => {
-                    let oid: ObjectIdentifier = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(ProfileTypeChoice::OidType(oid.into()))
+                        match &map["type"] {
+                            serde_json::Value::String(typ) => match typ.as_str() {
+                                "oid" => {
+                                    let oid = ObjectIdentifier::try_from(value.as_str())
+                                        .map_err(|e| de::Error::custom(format!("{:?}", e)))?;
+                                    Ok(ProfileTypeChoice::Oid(oid.into()))
+                                }
+                                "uri" => {
+                                    Ok(ProfileTypeChoice::Uri(Text::from(value.clone()).into()))
+                                }
+                                s => Err(de::Error::custom(format!(
+                                    "unexpected ProfileTypeChoice type \"{s}\""
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!(
+                                "type must be as string, got {v:?}"
+                            ))),
+                        }
+                    } else if map.contains_key("tag") && map.contains_key("value") && map.len() == 2
+                    {
+                        match &map["tag"] {
+                            serde_json::Value::Number(n) => match n.as_u64() {
+                                Some(u) => Ok(ProfileTypeChoice::Extension(ExtensionValue::Tag(
+                                    u,
+                                    Box::new(
+                                        ExtensionValue::try_from(map["value"].clone())
+                                            .map_err(de::Error::custom)?,
+                                    ),
+                                ))),
+                                None => Err(de::Error::custom(format!(
+                                    "a number must be an unsinged integer, got {n:?}"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!("invalid tag {v:?}"))),
+                        }
+                    } else {
+                        Ok(ProfileTypeChoice::Extension(
+                            ExtensionValue::try_from(serde_json::Value::Object(map))
+                                .map_err(de::Error::custom)?,
+                        ))
+                    }
                 }
-                "uri" => {
-                    let uri: Text = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(ProfileTypeChoice::Uri(uri.into()))
-                }
-                s => Err(de::Error::custom(format!(
-                    "unexpected ProfileTypeChoice type \"{s}\""
-                ))),
+                other => Ok(ProfileTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
+                )),
             }
         } else {
             match ciborium::Value::deserialize(deserializer)? {
@@ -1244,19 +1310,25 @@ impl<'de> Deserialize<'de> for ProfileTypeChoice<'_> {
                         111 => {
                             let oid: ObjectIdentifier =
                                 ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
-                            Ok(ProfileTypeChoice::OidType(oid.into()))
+                            Ok(ProfileTypeChoice::Oid(oid.into()))
                         }
                         32 => {
                             let uri: Text =
                                 ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
                             Ok(ProfileTypeChoice::Uri(uri.into()))
                         }
-                        n => Err(de::Error::custom(format!(
-                            "unexpected ProfileTypeChoice tag {n}"
+                        n => Ok(ProfileTypeChoice::Extension(ExtensionValue::Tag(
+                            n,
+                            Box::new(
+                                ExtensionValue::try_from(inner.deref().to_owned())
+                                    .map_err(de::Error::custom)?,
+                            ),
                         ))),
                     }
                 }
-                _ => Err(de::Error::custom("did not see a tag for ProfileTypeChoice")),
+                other => Ok(ProfileTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
+                )),
             }
         }
     }
@@ -2479,35 +2551,40 @@ mod tests {
     use super::*;
     #[test]
     fn test_profile_type_choice() {
-        let profile = ProfileTypeChoice::OidType(OidType::from(
-            ObjectIdentifier::try_from("1.2.3.4").unwrap(),
-        ));
-
-        let mut actual: Vec<u8> = vec![];
-
-        ciborium::into_writer(&profile, &mut actual).unwrap();
-
-        let expected: Vec<u8> = vec![
-            0xd8, 0x6f, // tag(111)
-              0x43, // bstr(3)
-                0x2a, 0x03, 0x04
+        let test_cases = vec![
+            SerdeTestCase {
+                value: ProfileTypeChoice::Oid(OidType::from(
+                    ObjectIdentifier::try_from("1.2.3.4").unwrap(),
+                )),
+                expected_json: r#"{"type":"oid","value":"1.2.3.4"}"#,
+                expected_cbor: vec![
+                    0xd8, 0x6f, // tag(111)
+                      0x43, // bstr(3)
+                        0x2a, 0x03, 0x04
+                ],
+            },
+            SerdeTestCase {
+                value: ProfileTypeChoice::Uri(Uri::from("foo")),
+                expected_json: r#"{"type":"uri","value":"foo"}"#,
+                expected_cbor: vec![
+                    0xd8, 0x20, // tag(32)
+                      0x63, // tstr(3)
+                        0x66, 0x6f, 0x6f, // "foo"
+                ],
+            },
+            SerdeTestCase {
+                value: ProfileTypeChoice::Extension("bar".into()),
+                expected_json: r#""bar""#,
+                expected_cbor: vec![
+                  0x63, // tstr(3)
+                    0x62, 0x61, 0x72, // "bar"
+                ],
+            },
         ];
 
-        assert_eq!(actual, expected);
-
-        let profile_de: ProfileTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
-
-        assert_eq!(profile_de, profile);
-
-        let actual = serde_json::to_string(&profile).unwrap();
-
-        let expected = r#"{"type":"oid","value":"1.2.3.4"}"#;
-
-        assert_eq!(actual, expected);
-
-        let profile_de: ProfileTypeChoice = serde_json::from_str(expected).unwrap();
-
-        assert_eq!(profile_de, profile);
+        for tc in test_cases.into_iter() {
+            tc.run();
+        }
     }
 
     #[test]
