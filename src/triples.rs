@@ -1141,9 +1141,47 @@ pub enum CryptoKeyTypeChoice<'a> {
     PkixAsn1DerCert(PkixAsn1DerCertType),
     /// Raw bytes
     Bytes(TaggedBytes),
+    /// Extensions
+    Extension(ExtensionValue<'a>),
 }
 
 impl CryptoKeyTypeChoice<'_> {
+    pub fn is_pkix_key(&self) -> bool {
+        matches!(self, Self::PkixBase64Key(_))
+    }
+
+    pub fn is_pkix_cert(&self) -> bool {
+        matches!(self, Self::PkixBase64Cert(_))
+    }
+
+    pub fn is_pkix_cert_path(&self) -> bool {
+        matches!(self, Self::PkixBase64CertPath(_))
+    }
+
+    pub fn is_cose_key(&self) -> bool {
+        matches!(self, Self::CoseKey(_))
+    }
+
+    pub fn is_thumbprint(&self) -> bool {
+        matches!(self, Self::Thumbprint(_))
+    }
+
+    pub fn is_cert_path_thumbprint(&self) -> bool {
+        matches!(self, Self::CertPathThumbprint(_))
+    }
+
+    pub fn is_pkix_asn1_der_cert(&self) -> bool {
+        matches!(self, Self::PkixAsn1DerCert(_))
+    }
+
+    pub fn is_bytes(&self) -> bool {
+        matches!(self, Self::Bytes(_))
+    }
+
+    pub fn is_extension(&self) -> bool {
+        matches!(self, Self::Extension(_))
+    }
+
     pub fn as_pkix_key(&self) -> Option<PkixBase64KeyType> {
         match self {
             Self::PkixBase64Key(key) => Some(key.clone()),
@@ -1262,6 +1300,13 @@ impl CryptoKeyTypeChoice<'_> {
             _ => &[],
         }
     }
+
+    pub fn as_extension(&self) -> Option<&ExtensionValue> {
+        match self {
+            Self::Extension(ext) => Some(ext),
+            _ => None,
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for CryptoKeyTypeChoice<'_> {
@@ -1272,71 +1317,108 @@ impl<'de> Deserialize<'de> for CryptoKeyTypeChoice<'_> {
         let is_human_readable = deserializer.is_human_readable();
 
         if is_human_readable {
-            let tagged_value = TaggedJsonValue::deserialize(deserializer)?;
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::Object(map) => {
+                    if map.contains_key("type") && map.contains_key("value") && map.len() == 2 {
+                        let value = serde_json::to_string(&map["value"]).unwrap();
 
-            match tagged_value.typ {
-                "pkix-base64-key" => {
-                    let tstr: Tstr = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(CryptoKeyTypeChoice::PkixBase64Key(PkixBase64KeyType::from(
-                        tstr,
-                    )))
+                        match &map["type"] {
+
+                            serde_json::Value::String(typ) => match typ.as_str() {
+                                "pkix-base64-key" => {
+                                    let tstr: Tstr = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(CryptoKeyTypeChoice::PkixBase64Key(PkixBase64KeyType::from(
+                                        tstr,
+                                    )))
+                                }
+                                "pkix-base64-cert" => {
+                                    let tstr: Tstr = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(CryptoKeyTypeChoice::PkixBase64Cert(
+                                        PkixBase64CertType::from(tstr),
+                                    ))
+                                }
+                                "pkix-base64-cert-path" => {
+                                    let tstr: Tstr = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(CryptoKeyTypeChoice::PkixBase64CertPath(
+                                        PkixBase64CertPathType::from(tstr),
+                                    ))
+                                }
+                                "cose-key" => {
+                                    let sok: CoseKeySetOrKey = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(CryptoKeyTypeChoice::CoseKey(CoseKeyType::from(sok)))
+                                }
+                                "thumbprint" => {
+                                    let digest: Digest = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(CryptoKeyTypeChoice::Thumbprint(ThumbprintType::from(
+                                        digest,
+                                    )))
+                                }
+                                "cert-thumbprint" => {
+                                    let digest: Digest = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(CryptoKeyTypeChoice::CertThumbprint(
+                                        CertThumbprintType::from(digest),
+                                    ))
+                                }
+                                "cert-path-thumbprint" => {
+                                    let digest: Digest = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(CryptoKeyTypeChoice::CertPathThumbprint(
+                                        CertPathThumbprintType::from(digest),
+                                    ))
+                                }
+                                "pkix-asn1-der-cert" => {
+                                    let bytes: Bytes = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(CryptoKeyTypeChoice::PkixAsn1DerCert(
+                                        PkixAsn1DerCertType::from(bytes),
+                                    ))
+                                }
+                                "bytes" => {
+                                    let bytes: Bytes = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(CryptoKeyTypeChoice::Bytes(TaggedBytes::from(bytes)))
+                                }
+                                s => Err(de::Error::custom(format!(
+                                    "unexpected CryptoKeyTypeChoice type \"{s}\""
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!(
+                                "type must be as string, got {v:?}"
+                            ))),
+                        }
+                    } else if map.contains_key("tag") && map.contains_key("value") && map.len() == 2
+                    {
+                        match &map["tag"] {
+                            serde_json::Value::Number(n) => match n.as_u64() {
+                                Some(u) => Ok(CryptoKeyTypeChoice::Extension(ExtensionValue::Tag(
+                                    u,
+                                    Box::new(
+                                        ExtensionValue::try_from(map["value"].clone())
+                                            .map_err(de::Error::custom)?,
+                                    ),
+                                ))),
+                                None => Err(de::Error::custom(format!(
+                                    "a number must be an unsinged integer, got {n:?}"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!("invalid tag {v:?}"))),
+                        }
+                    } else {
+                        Ok(CryptoKeyTypeChoice::Extension(
+                            ExtensionValue::try_from(serde_json::Value::Object(map))
+                                .map_err(de::Error::custom)?,
+                        ))
+                    }
                 }
-                "pkix-base64-cert" => {
-                    let tstr: Tstr = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(CryptoKeyTypeChoice::PkixBase64Cert(
-                        PkixBase64CertType::from(tstr),
-                    ))
-                }
-                "pkix-base64-cert-path" => {
-                    let tstr: Tstr = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(CryptoKeyTypeChoice::PkixBase64CertPath(
-                        PkixBase64CertPathType::from(tstr),
-                    ))
-                }
-                "cose-key" => {
-                    let sok: CoseKeySetOrKey = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(CryptoKeyTypeChoice::CoseKey(CoseKeyType::from(sok)))
-                }
-                "thumbprint" => {
-                    let digest: Digest = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(CryptoKeyTypeChoice::Thumbprint(ThumbprintType::from(
-                        digest,
-                    )))
-                }
-                "cert-thumbprint" => {
-                    let digest: Digest = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(CryptoKeyTypeChoice::CertThumbprint(
-                        CertThumbprintType::from(digest),
-                    ))
-                }
-                "cert-path-thumbprint" => {
-                    let digest: Digest = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(CryptoKeyTypeChoice::CertPathThumbprint(
-                        CertPathThumbprintType::from(digest),
-                    ))
-                }
-                "pkix-asn1-der-cert" => {
-                    let bytes: Bytes = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(CryptoKeyTypeChoice::PkixAsn1DerCert(
-                        PkixAsn1DerCertType::from(bytes),
-                    ))
-                }
-                "bytes" => {
-                    let bytes: Bytes = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(CryptoKeyTypeChoice::Bytes(TaggedBytes::from(bytes)))
-                }
-                s => Err(de::Error::custom(format!(
-                    "unexpected CryptoKeyTypeChoice type \"{s}\""
-                ))),
+                other => Ok(CryptoKeyTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
+                )),
             }
         } else {
             match ciborium::Value::deserialize(deserializer)? {
@@ -1407,12 +1489,18 @@ impl<'de> Deserialize<'de> for CryptoKeyTypeChoice<'_> {
                                 ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
                             Ok(CryptoKeyTypeChoice::Bytes(TaggedBytes::from(bytes)))
                         }
-                        n => Err(de::Error::custom(format!(
-                            "unexpected ClassIdTypeChoice tag {n}"
+                        n => Ok(CryptoKeyTypeChoice::Extension(ExtensionValue::Tag(
+                            n,
+                            Box::new(
+                                ExtensionValue::try_from(inner.deref().to_owned())
+                                    .map_err(de::Error::custom)?,
+                            ),
                         ))),
                     }
                 }
-                _ => Err(de::Error::custom("did not see a tag")),
+                other => Ok(CryptoKeyTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
+                )),
             }
         }
     }
@@ -4510,40 +4598,43 @@ mod test {
 
     #[test]
     fn test_crypo_key_type_choice_serde() {
-        let thumbprint_bytes = [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80];
-        let crypto_key = CryptoKeyTypeChoice::Thumbprint(ThumbprintType::from(Digest {
-            alg: HashAlgorithm::Sha384,
-            val: Bytes::from(thumbprint_bytes.to_vec()),
-        }));
-
-        let expected: Vec<u8> = vec![
-            0xd9, 0x02, 0x2d, // tag(557)
-              0x82, // array(2)
-                0x07,  // 7 [SHA-384]
-                0x48, // bstr(8)
-                  0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80,
+        let test_cases = vec![
+            SerdeTestCase {
+                value: CryptoKeyTypeChoice::Thumbprint(ThumbprintType::from(Digest {
+                    alg: HashAlgorithm::Sha384,
+                    val: Bytes::from(vec![0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80]),
+                })),
+                expected_json: r#"{"type":"thumbprint","value":"sha-384;ECAwQFBgcIA"}"#,
+                expected_cbor: vec![
+                    0xd9, 0x02, 0x2d, // tag(557)
+                      0x82, // array(2)
+                        0x07,  // 7 [SHA-384]
+                        0x48, // bstr(8)
+                          0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80,
+                ],
+            },
+            SerdeTestCase {
+                value: CryptoKeyTypeChoice::PkixBase64Key("foo".into()),
+                expected_json: r#"{"type":"pkix-base64-key","value":"foo"}"#,
+                expected_cbor: vec![
+                    0xd9, 0x02, 0x2a, // tag(554)
+                      0x63, // tstr(3)
+                        0x66, 0x6f, 0x6f, // "foo"
+                ],
+            },
+            SerdeTestCase {
+                value: CryptoKeyTypeChoice::Extension("bar".into()),
+                expected_json: r#""bar""#,
+                expected_cbor: vec![
+                  0x63, // tstr(3)
+                    0x62, 0x61, 0x72, // "bar"
+                ],
+            },
         ];
 
-        let mut buffer: Vec<u8> = vec![];
-
-        ciborium::into_writer(&crypto_key, &mut buffer).unwrap();
-
-        assert_eq!(buffer, expected);
-
-        let crypto_key_de: CryptoKeyTypeChoice =
-            ciborium::from_reader(expected.as_slice()).unwrap();
-
-        assert_eq!(crypto_key_de, crypto_key);
-
-        let actual = serde_json::to_string(&crypto_key).unwrap();
-
-        let expected = r#"{"type":"thumbprint","value":"sha-384;ECAwQFBgcIA"}"#;
-
-        assert_eq!(actual, expected);
-
-        let crypto_key_de: CryptoKeyTypeChoice = serde_json::from_str(expected).unwrap();
-
-        assert_eq!(crypto_key_de, crypto_key);
+        for tc in test_cases.into_iter() {
+            tc.run();
+        }
     }
 
     #[test]
