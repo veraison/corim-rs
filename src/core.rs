@@ -53,9 +53,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use crate::{
-    empty::Empty, empty_map_as_none, error::CoreError, generate_tagged, FixedBytes, Integer,
-};
+use crate::{empty::Empty, error::CoreError, generate_tagged, FixedBytes, Integer};
 
 /// Text represents a UTF-8 string value
 pub type Text<'a> = Cow<'a, str>;
@@ -66,8 +64,6 @@ pub type Tstr<'a> = Text<'a>;
 pub type AnyUri<'a> = Uri<'a>;
 /// Time represents an integer value for time measurements
 pub type Time = Integer;
-/// Role represents an unsigned 8-bit integer for role identifiers
-pub type Role = u8;
 /// Uint represents an unsigned 32-bit integer
 pub type Uint = Integer;
 /// Int represents a signed 32-bit integer
@@ -266,6 +262,10 @@ impl<'de> Deserialize<'de> for Bytes {
 pub struct ExtensionMap<'a>(pub BTreeMap<Integer, ExtensionValue<'a>>);
 
 impl<'a> ExtensionMap<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn insert(&mut self, key: Integer, value: ExtensionValue<'a>) {
         self.0.insert(key, value);
     }
@@ -455,6 +455,66 @@ impl<'a> ExtensionValue<'a> {
             },
             _ => None,
         }
+    }
+}
+
+impl From<bool> for ExtensionValue<'_> {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+
+impl From<u64> for ExtensionValue<'_> {
+    fn from(value: u64) -> Self {
+        Self::Uint(value.into())
+    }
+}
+
+impl From<i64> for ExtensionValue<'_> {
+    fn from(value: i64) -> Self {
+        Self::Int(value.into())
+    }
+}
+
+impl From<i128> for ExtensionValue<'_> {
+    fn from(value: i128) -> Self {
+        Self::Int(value.into())
+    }
+}
+
+impl<'a> From<&'a str> for ExtensionValue<'a> {
+    fn from(value: &'a str) -> Self {
+        Self::Text(value.into())
+    }
+}
+
+impl From<String> for ExtensionValue<'_> {
+    fn from(value: String) -> Self {
+        Self::Text(value.into())
+    }
+}
+
+impl<'a> From<&'a [u8]> for ExtensionValue<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        Self::Bytes(value.into())
+    }
+}
+
+impl From<Vec<u8>> for ExtensionValue<'_> {
+    fn from(value: Vec<u8>) -> Self {
+        Self::Bytes(value.into())
+    }
+}
+
+impl<'a> From<Vec<ExtensionValue<'a>>> for ExtensionValue<'a> {
+    fn from(value: Vec<ExtensionValue<'a>>) -> Self {
+        Self::Array(value)
+    }
+}
+
+impl<'a> From<BTreeMap<Label<'a>, ExtensionValue<'a>>> for ExtensionValue<'a> {
+    fn from(value: BTreeMap<Label<'a>, ExtensionValue<'a>>) -> Self {
+        Self::Map(value)
     }
 }
 
@@ -1265,8 +1325,7 @@ impl<'a> From<&'a str> for TextOrBytes<'a> {
 
 /// Represents a value that can be either text or fixed-size bytes
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
-#[serde(untagged)]
+#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum TextOrBytesSized<'a, const N: usize> {
     /// UTF-8 string value
     Text(Text<'a>),
@@ -1304,80 +1363,80 @@ impl<const N: usize> TextOrBytesSized<'_, N> {
     }
 }
 
-/// Represents a hash entry with algorithm ID and hash value
-#[repr(C)]
-#[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct HashEntry {
-    /// Algorithm identifier for the hash
-    pub hash_alg_id: CoseAlgorithm,
-    /// The hash value as bytes
-    pub hash_value: Bytes,
+impl<'a, const N: usize> From<&'a str> for TextOrBytesSized<'a, N> {
+    fn from(value: &'a str) -> Self {
+        TextOrBytesSized::Text(value.into())
+    }
 }
 
-impl Serialize for HashEntry {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+impl<const N: usize> From<String> for TextOrBytesSized<'_, N> {
+    fn from(value: String) -> Self {
+        TextOrBytesSized::Text(value.into())
+    }
+}
+
+impl<const N: usize> TryFrom<Vec<u8>> for TextOrBytesSized<'_, N> {
+    type Error = CoreError;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        Ok(TextOrBytesSized::Bytes(FixedBytes(
+            value.try_into().map_err(|bytes: Vec<u8>| {
+                CoreError::custom(format!(
+                    "invalid TextOrBytesSized<{}> len: {}",
+                    N,
+                    bytes.len()
+                ))
+            })?,
+        )))
+    }
+}
+
+impl<const N: usize> Serialize for TextOrBytesSized<'_, N> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        use serde::ser::SerializeSeq;
-        // The total length is 1 (for hash_alg_id) plus the number of bytes in hash_value
-
-        let mut seq = serializer.serialize_seq(Some(2))?;
-
-        // Serialize hash_alg_id first
-        seq.serialize_element(&self.hash_alg_id)?;
-
-        // Serialize the bytes into a bstr
-        seq.serialize_element(&self.hash_value)?;
-
-        seq.end()
+        match self {
+            TextOrBytesSized::Text(text) => text.serialize(serializer),
+            TextOrBytesSized::Bytes(fixed_bytes) => Bytes::from(fixed_bytes).serialize(serializer),
+        }
     }
 }
 
-impl<'de> Deserialize<'de> for HashEntry {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+impl<'de, const N: usize> Deserialize<'de> for TextOrBytesSized<'_, N> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        use serde::de::{SeqAccess, Visitor};
-        use std::fmt;
+        let is_human_readable = deserializer.is_human_readable();
 
-        struct HashEntryVisitor;
+        if is_human_readable {
+            let text = String::deserialize(deserializer)?;
 
-        impl<'de> Visitor<'de> for HashEntryVisitor {
-            type Value = HashEntry;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str(
-                    "a sequence with at least one element (hash_alg_id followed by bytes)",
-                )
+            match FixedBytes::<N>::try_from(text.clone()) {
+                Ok(bytes) => Ok(TextOrBytesSized::Bytes(bytes)),
+                Err(_) => Ok(TextOrBytesSized::Text(text.into())),
             }
+        } else {
+            let value = ciborium::Value::deserialize(deserializer)?;
 
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                // Get the first element (hash_alg_id)
-                let hash_alg_id = seq
-                    .next_element::<CoseAlgorithm>()?
-                    .ok_or_else(|| serde::de::Error::custom("missing hash_alg_id"))?;
-
-                // Collect the remaining elements as bytes
-                let mut bytes = Vec::new();
-                while let Some(byte) = seq.next_element::<u8>()? {
-                    bytes.push(byte);
-                }
-
-                Ok(HashEntry {
-                    hash_alg_id,
-                    hash_value: bytes.into(),
-                })
+            match value {
+                ciborium::Value::Text(text) => Ok(TextOrBytesSized::Text(text.into())),
+                ciborium::Value::Bytes(bytes) => Ok(TextOrBytesSized::Bytes(FixedBytes(
+                    bytes.try_into().map_err(|bytes: Vec<u8>| {
+                        de::Error::custom(format!("invalid TextOrBytesSized len: {}", bytes.len()))
+                    })?,
+                ))),
+                other => Err(de::Error::custom(format!(
+                    "invalid TextOrBytesSized type: {:?}",
+                    other
+                ))),
             }
         }
-
-        deserializer.deserialize_seq(HashEntryVisitor)
     }
 }
+
+pub type HashEntry = Digest;
 
 /// Represents a label that can be either text or integer
 #[repr(C)]
@@ -1431,6 +1490,12 @@ impl Label<'_> {
 
 impl From<i64> for Label<'_> {
     fn from(value: i64) -> Self {
+        Label::Int(value.into())
+    }
+}
+
+impl From<i128> for Label<'_> {
+    fn from(value: i128) -> Self {
         Label::Int(value.into())
     }
 }
@@ -1642,6 +1707,31 @@ pub enum OneOrMore<T> {
     More(Vec<T>),
 }
 
+impl<T: Clone> std::ops::Add for OneOrMore<T> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::One(lhs), Self::One(rhs)) => Self::More(vec![lhs, rhs]),
+            (Self::More(lhs_vec), Self::One(rhs)) => {
+                let mut new = lhs_vec.clone();
+                new.push(rhs);
+                Self::More(new)
+            }
+            (Self::One(lhs), Self::More(rhs_vec)) => {
+                let mut new = vec![lhs];
+                new.extend(rhs_vec.clone());
+                Self::More(new)
+            }
+            (Self::More(lhs_vec), Self::More(rhs_vec)) => {
+                let mut new = lhs_vec.clone();
+                new.extend(rhs_vec.clone());
+                Self::More(new)
+            }
+        }
+    }
+}
+
 impl<T> From<T> for OneOrMore<T> {
     fn from(value: T) -> Self {
         Self::One(value)
@@ -1739,6 +1829,27 @@ impl<T: Clone> IntoIterator for OneOrMore<T> {
     }
 }
 
+impl<T: Display> Display for OneOrMore<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::One(one) => f.write_str(one.to_string().as_str()),
+            Self::More(more) => {
+                f.write_str("[")?;
+
+                let last = more.len() - 1;
+                for (i, val) in more.iter().enumerate() {
+                    f.write_str(val.to_string().as_str())?;
+                    if i < last {
+                        f.write_str(", ")?;
+                    }
+                }
+
+                f.write_str("[")
+            }
+        }
+    }
+}
+
 // note(setrofim): we cannot rely on the derived implementation as it cannot handle CBOR tags
 // inside enum variants. Since we cannot rely on EnumAccess, I cannot think of a better way of
 // handling this other than deserializing as Value, checking if it is a sequence (and therfore the
@@ -1793,6 +1904,37 @@ impl<'de, T: Clone + DeserializeOwned> Deserialize<'de> for OneOrMore<T> {
                 ))
             }
         }
+    }
+}
+
+/// Represents global attributes used by various SWID structures
+#[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, Clone, Default)]
+pub struct AttributeMap<'a>(pub BTreeMap<Label<'a>, AttributeValue<'a>>);
+
+impl<'a> AttributeMap<'a> {
+    pub fn insert(&mut self, key: Label<'a>, value: AttributeValue<'a>) {
+        self.0.insert(key, value);
+    }
+
+    pub fn serialize_map<M, O, E>(&self, map: &mut M, _is_human_readable: bool) -> Result<(), E>
+    where
+        M: ser::SerializeMap<Ok = O, Error = E>,
+    {
+        for (key, value) in self.0.iter() {
+            map.serialize_entry(key, value)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl AttributeMap<'_> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -1899,6 +2041,12 @@ impl From<i64> for AttributeValue<'_> {
     }
 }
 
+impl From<i128> for AttributeValue<'_> {
+    fn from(value: i128) -> Self {
+        Self::Int(OneOrMore::One(value.into()))
+    }
+}
+
 impl From<String> for AttributeValue<'_> {
     fn from(value: String) -> Self {
         Self::Text(OneOrMore::One(value.into()))
@@ -1944,6 +2092,15 @@ impl<'a> From<&[&'a str]> for AttributeValue<'a> {
                 .collect::<Vec<Text>>()
                 .into(),
         )
+    }
+}
+
+impl Display for AttributeValue<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Int(val) => f.write_str(val.to_string().as_str()),
+            Self::Text(val) => f.write_str(val.to_string().as_str()),
+        }
     }
 }
 
@@ -2100,24 +2257,77 @@ impl<'de> Deserialize<'de> for AttributeValue<'_> {
 }
 
 /// Represents global attributes with optional language tag and arbitrary attributes
-#[derive(
-    Debug, Clone, Serialize, Deserialize, From, Constructor, PartialEq, Eq, PartialOrd, Ord,
-)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, From, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub struct GlobalAttributes<'a> {
     /// Optional language tag (ex. en_US)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub lang: Option<Text<'a>>,
     /// Arbitrary attributes
-    #[serde(flatten)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "empty_map_as_none")]
-    pub attributes: Option<ExtensionMap<'a>>,
+    pub attributes: Option<AttributeMap<'a>>,
+}
+
+impl<'a> GlobalAttributes<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        if self.lang.is_some() {
+            return false;
+        }
+
+        match &self.attributes {
+            Some(attributes) => attributes.is_empty(),
+            None => true,
+        }
+    }
+
+    pub fn insert(&mut self, key: Label<'a>, value: AttributeValue<'a>) -> Result<(), CoreError> {
+        if key == Label::from("lang") || key == Label::from(15i64) {
+            match value.as_one_text() {
+                val @ Some(_) => self.lang = val,
+                None => return Err(CoreError::InvalidValue(format!("lang: {:?}", value))),
+            }
+        }
+
+        match self.attributes.as_mut() {
+            Some(attributes) => {
+                attributes.insert(key, value);
+            }
+            None => {
+                let mut attributes = AttributeMap::new();
+                attributes.insert(key, value);
+                self.attributes = Some(attributes);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn serialize_map<M, O, E>(&self, map: &mut M, is_human_readable: bool) -> Result<(), E>
+    where
+        M: ser::SerializeMap<Ok = O, Error = E>,
+    {
+        if let Some(lang) = &self.lang {
+            if is_human_readable {
+                map.serialize_entry("lang", lang)?;
+            } else {
+                map.serialize_entry(&15, lang)?;
+            }
+        }
+
+        if let Some(attributes) = &self.attributes {
+            attributes.serialize_map(map, is_human_readable)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl Empty for GlobalAttributes<'_> {
     fn is_empty(&self) -> bool {
-        self.lang.is_none() && self.attributes.is_none()
+        self.lang.is_none()
+            && (self.attributes.is_none() || self.attributes.as_ref().unwrap().is_empty())
     }
 }
 
@@ -3213,7 +3423,7 @@ impl TryFrom<&VersionScheme<'_>> for i64 {
             VersionScheme::MultipartnumericSuffix => Ok(2),
             VersionScheme::Alphanumeric => Ok(3),
             VersionScheme::Decimal => Ok(4),
-            VersionScheme::Semver => Ok(5),
+            VersionScheme::Semver => Ok(16384),
             VersionScheme::PrivateUse(label) => match label {
                 Label::Int(int) => (*int).try_into().map_err(|e: crate::error::NumbersError| {
                     CoreError::InvalidValue(e.to_string())
@@ -4788,21 +4998,21 @@ mod tests {
     use crate::test::SerdeTestCase;
 
     mod hash_entry {
-        use super::{CoseAlgorithm, HashEntry};
+        use super::{HashAlgorithm, HashEntry};
         #[test]
         fn test_hash_entry_serialize() {
             /*********************************************************************
              * Explanation of Expected Bytes:
              * 0x82: CBOR array with 2 elements
-             * 0x01: COSE algorithm identifier A128GCM
+             * 0x01: Hash algorithm identifier Sha256
              * 0x45: CBOR byte string with 5 bytes
              * 0x01, 0x02, 0x03, 0x04, 0x05: 5 bytes of hash value
              *********************************************************************/
             let expected = [0x82, 0x01, 0x45, 0x01, 0x02, 0x03, 0x04, 0x05];
 
             let hash_entry: HashEntry = HashEntry {
-                hash_alg_id: CoseAlgorithm::A128GCM,
-                hash_value: vec![1, 2, 3, 4, 5].into(),
+                alg: HashAlgorithm::Sha256,
+                val: vec![1, 2, 3, 4, 5].into(),
             };
 
             let mut actual: Vec<u8> = vec![];
@@ -5960,7 +6170,7 @@ mod tests {
     fn test_global_attribute_value() {
         let test_cases: Vec<SerdeTestCase<AttributeValue>> = vec! [
             SerdeTestCase {
-                value: 1.into(),
+                value: 1i64.into(),
                 expected_json: "1",
                 expected_cbor: vec![0x01],
             },
@@ -6011,5 +6221,31 @@ mod tests {
         let expected_cbor: Vec<u8> = vec![0x01];
 
         assert_eq!(actual_cbor, expected_cbor);
+    }
+
+    #[test]
+    fn test_text_or_bytes_sized_serde() {
+        let test_cases: Vec<SerdeTestCase<TextOrBytesSized<3>>> = vec! [
+            SerdeTestCase {
+                value: "foo".into(),
+                expected_json: r#""foo""#,
+                expected_cbor: vec![
+                    0x63, // tstr(3)
+                      0x66, 0x6f, 0x6f, // "foo"
+                ],
+            },
+            SerdeTestCase {
+                value: vec![0x01, 0x02, 0x03].try_into().unwrap(),
+                expected_json: r#""AQID""#,
+                expected_cbor: vec![
+                    0x43, // bstr(3)
+                      0x01, 0x02, 0x03,
+                ],
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            tc.run();
+        }
     }
 }
