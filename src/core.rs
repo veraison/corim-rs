@@ -116,6 +116,14 @@ impl From<&Bytes> for Vec<u8> {
     }
 }
 
+impl<const N: usize> From<&FixedBytes<N>> for Bytes {
+    fn from(value: &FixedBytes<N>) -> Self {
+        Self {
+            bytes: value.0.into(),
+        }
+    }
+}
+
 impl Display for Bytes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(URL_SAFE_NO_PAD.encode(&self.bytes).as_str())

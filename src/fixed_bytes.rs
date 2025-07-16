@@ -37,6 +37,7 @@ use std::{
     ops::{Deref, DerefMut, Index, IndexMut},
 };
 
+use base64::{self, engine::general_purpose::URL_SAFE_NO_PAD, DecodeError, Engine as _};
 use derive_more::From;
 use serde::{
     de::{Error, Visitor},
@@ -168,6 +169,18 @@ where
 impl<const N: usize> DerefMut for FixedBytes<N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl<const N: usize> TryFrom<String> for FixedBytes<N> {
+    type Error = DecodeError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let bytes: Vec<u8> = URL_SAFE_NO_PAD.decode(value)?;
+
+        Ok(FixedBytes(bytes.try_into().map_err(|bytes: Vec<u8>| {
+            DecodeError::InvalidLength(bytes.len())
+        })?))
     }
 }
 
