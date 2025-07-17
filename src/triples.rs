@@ -808,9 +808,31 @@ pub enum InstanceIdTypeChoice<'a> {
     CryptoKey(CryptoKeyTypeChoice<'a>),
     /// Raw bytes
     Bytes(TaggedBytes),
+    /// Extensions
+    Extension(ExtensionValue<'a>),
 }
 
 impl InstanceIdTypeChoice<'_> {
+    pub fn is_ueid(&self) -> bool {
+        matches!(self, Self::Ueid(_))
+    }
+
+    pub fn is_uuid(&self) -> bool {
+        matches!(self, Self::Uuid(_))
+    }
+
+    pub fn is_crypto_key(&self) -> bool {
+        matches!(self, Self::CryptoKey(_))
+    }
+
+    pub fn is_raw_bytes(&self) -> bool {
+        matches!(self, Self::Bytes(_))
+    }
+
+    pub fn is_extension(&self) -> bool {
+        matches!(self, Self::Extension(_))
+    }
+
     pub fn as_ueid_bytes(&self) -> Option<&[u8]> {
         match self {
             Self::Ueid(ueid) => Some(ueid.as_ref()),
@@ -845,6 +867,20 @@ impl InstanceIdTypeChoice<'_> {
             _ => None,
         }
     }
+
+    pub fn as_ref_extension(&self) -> Option<&ExtensionValue> {
+        match self {
+            Self::Extension(ext) => Some(ext),
+            _ => None,
+        }
+    }
+
+    pub fn as_extension(&self) -> Option<ExtensionValue> {
+        match self {
+            Self::Extension(ext) => Some(ext.clone()),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> From<&'a [u8]> for InstanceIdTypeChoice<'a> {
@@ -861,93 +897,146 @@ impl<'de> Deserialize<'de> for InstanceIdTypeChoice<'_> {
         let is_human_readable = deserializer.is_human_readable();
 
         if is_human_readable {
-            let tagged_value = TaggedJsonValue::deserialize(deserializer)?;
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::Object(map) => {
+                    if map.contains_key("type") && map.contains_key("value") && map.len() == 2 {
+                        let value = serde_json::to_string(&map["value"]).unwrap();
 
-            match tagged_value.typ {
-                "pkix-base64-key" => {
-                    let tstr: Tstr = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(InstanceIdTypeChoice::CryptoKey(
-                        CryptoKeyTypeChoice::PkixBase64Key(PkixBase64KeyType::from(tstr)),
-                    ))
+                        match &map["type"] {
+                            serde_json::Value::String(typ) => match typ.as_str() {
+                                "pkix-base64-key" => {
+                                    let tstr: Tstr = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(InstanceIdTypeChoice::CryptoKey(
+                                        CryptoKeyTypeChoice::PkixBase64Key(
+                                            PkixBase64KeyType::from(tstr),
+                                        ),
+                                    ))
+                                }
+                                "pkix-base64-cert" => {
+                                    let tstr: Tstr = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(InstanceIdTypeChoice::CryptoKey(
+                                        CryptoKeyTypeChoice::PkixBase64Cert(
+                                            PkixBase64CertType::from(tstr),
+                                        ),
+                                    ))
+                                }
+                                "pkix-base64-cert-path" => {
+                                    let tstr: Tstr = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(InstanceIdTypeChoice::CryptoKey(
+                                        CryptoKeyTypeChoice::PkixBase64CertPath(
+                                            PkixBase64CertPathType::from(tstr),
+                                        ),
+                                    ))
+                                }
+                                "cose-key" => {
+                                    let sok: CoseKeySetOrKey = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(InstanceIdTypeChoice::CryptoKey(
+                                        CryptoKeyTypeChoice::CoseKey(CoseKeyType::from(sok)),
+                                    ))
+                                }
+                                "thumbprint" => {
+                                    let digest: Digest = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(InstanceIdTypeChoice::CryptoKey(
+                                        CryptoKeyTypeChoice::Thumbprint(ThumbprintType::from(
+                                            digest,
+                                        )),
+                                    ))
+                                }
+                                "cert-thumbprint" => {
+                                    let digest: Digest = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(InstanceIdTypeChoice::CryptoKey(
+                                        CryptoKeyTypeChoice::CertThumbprint(
+                                            CertThumbprintType::from(digest),
+                                        ),
+                                    ))
+                                }
+                                "cert-path-thumbprint" => {
+                                    let digest: Digest = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(InstanceIdTypeChoice::CryptoKey(
+                                        CryptoKeyTypeChoice::CertPathThumbprint(
+                                            CertPathThumbprintType::from(digest),
+                                        ),
+                                    ))
+                                }
+                                "pkix-asn1-der-cert" => {
+                                    let bytes: Bytes = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(InstanceIdTypeChoice::CryptoKey(
+                                        CryptoKeyTypeChoice::PkixAsn1DerCert(
+                                            PkixAsn1DerCertType::from(bytes),
+                                        ),
+                                    ))
+                                }
+                                "bytes" => {
+                                    let bytes: Bytes = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    // TODO(setrofim): both instance-id-type-choice and
+                                    // crypto-key-type-choice specify tagged-bytes as a variant. It
+                                    // is not possible to distinguish between them (see
+                                    // https://github.com/ietf-rats-wg/draft-ietf-rats-corim/issues/428),
+                                    // so we have to make a choice whether we treat
+                                    // tagged-bytes as an instance ID or as a crypto key (that is
+                                    // an instance ID); both interpretations would be valid
+                                    // according to the spec (until the above issue is fixed in
+                                    // some way). Here, we're choosing to treat it as a generic ID,
+                                    // on the assumption that this is more likely to be the
+                                    // intent.
+                                    Ok(InstanceIdTypeChoice::Bytes(TaggedBytes::from(bytes)))
+                                }
+                                "uuid" => {
+                                    let uuid: UuidType = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(InstanceIdTypeChoice::Uuid(TaggedUuidType::from(uuid)))
+                                }
+                                "ueid" => {
+                                    let ueid: UeidType = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(InstanceIdTypeChoice::Ueid(TaggedUeidType::from(ueid)))
+                                }
+                                s => Err(de::Error::custom(format!(
+                                    "unexpected InstanceIdTypeChoice type \"{s}\""
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!(
+                                "type must be as string, got {v:?}"
+                            ))),
+                        }
+                    } else if map.contains_key("tag") && map.contains_key("value") && map.len() == 2
+                    {
+                        match &map["tag"] {
+                            serde_json::Value::Number(n) => match n.as_u64() {
+                                Some(u) => {
+                                    Ok(InstanceIdTypeChoice::Extension(ExtensionValue::Tag(
+                                        u,
+                                        Box::new(
+                                            ExtensionValue::try_from(map["value"].clone())
+                                                .map_err(de::Error::custom)?,
+                                        ),
+                                    )))
+                                }
+                                None => Err(de::Error::custom(format!(
+                                    "a number must be an unsinged integer, got {n:?}"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!("invalid tag {v:?}"))),
+                        }
+                    } else {
+                        Ok(InstanceIdTypeChoice::Extension(
+                            ExtensionValue::try_from(serde_json::Value::Object(map))
+                                .map_err(de::Error::custom)?,
+                        ))
+                    }
                 }
-                "pkix-base64-cert" => {
-                    let tstr: Tstr = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(InstanceIdTypeChoice::CryptoKey(
-                        CryptoKeyTypeChoice::PkixBase64Cert(PkixBase64CertType::from(tstr)),
-                    ))
-                }
-                "pkix-base64-cert-path" => {
-                    let tstr: Tstr = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(InstanceIdTypeChoice::CryptoKey(
-                        CryptoKeyTypeChoice::PkixBase64CertPath(PkixBase64CertPathType::from(tstr)),
-                    ))
-                }
-                "cose-key" => {
-                    let sok: CoseKeySetOrKey = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(InstanceIdTypeChoice::CryptoKey(
-                        CryptoKeyTypeChoice::CoseKey(CoseKeyType::from(sok)),
-                    ))
-                }
-                "thumbprint" => {
-                    let digest: Digest = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(InstanceIdTypeChoice::CryptoKey(
-                        CryptoKeyTypeChoice::Thumbprint(ThumbprintType::from(digest)),
-                    ))
-                }
-                "cert-thumbprint" => {
-                    let digest: Digest = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(InstanceIdTypeChoice::CryptoKey(
-                        CryptoKeyTypeChoice::CertThumbprint(CertThumbprintType::from(digest)),
-                    ))
-                }
-                "cert-path-thumbprint" => {
-                    let digest: Digest = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(InstanceIdTypeChoice::CryptoKey(
-                        CryptoKeyTypeChoice::CertPathThumbprint(CertPathThumbprintType::from(
-                            digest,
-                        )),
-                    ))
-                }
-                "pkix-asn1-der-cert" => {
-                    let bytes: Bytes = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(InstanceIdTypeChoice::CryptoKey(
-                        CryptoKeyTypeChoice::PkixAsn1DerCert(PkixAsn1DerCertType::from(bytes)),
-                    ))
-                }
-                "bytes" => {
-                    let bytes: Bytes = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    // TODO(setrofim): both instance-id-type-choice and crypto-key-type-choice
-                    // specify tagged-bytes as a variant. It is not possible to distinguish between
-                    // them (see https://github.com/ietf-rats-wg/draft-ietf-rats-corim/issues/428),
-                    // so we have to make a choice whether we treat tagged-bytes as an instance ID
-                    // or as a crypto key (that is an instance ID); both interpretations would be
-                    // valid according to the spec (until the above issue is fixed in some way).
-                    // Here, we're choosing to treat it as a generic ID, on the assumption that
-                    // this is more likely to be the intent.
-                    Ok(InstanceIdTypeChoice::Bytes(TaggedBytes::from(bytes)))
-                }
-                "uuid" => {
-                    let uuid: UuidType = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(InstanceIdTypeChoice::Uuid(TaggedUuidType::from(uuid)))
-                }
-                "ueid" => {
-                    let ueid: UeidType = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(InstanceIdTypeChoice::Ueid(TaggedUeidType::from(ueid)))
-                }
-                s => Err(de::Error::custom(format!(
-                    "unexpected InstanceIdTypeChoice type \"{s}\""
-                ))),
+                other => Ok(InstanceIdTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
+                )),
             }
         } else {
             match ciborium::Value::deserialize(deserializer)? {
@@ -1046,12 +1135,18 @@ impl<'de> Deserialize<'de> for InstanceIdTypeChoice<'_> {
                                 ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
                             Ok(InstanceIdTypeChoice::Ueid(TaggedUeidType::from(ueid)))
                         }
-                        n => Err(de::Error::custom(format!(
-                            "unexpected InstanceIdTypeChoice tag {n}"
+                        n => Ok(InstanceIdTypeChoice::Extension(ExtensionValue::Tag(
+                            n,
+                            Box::new(
+                                ExtensionValue::try_from(inner.deref().to_owned())
+                                    .map_err(de::Error::custom)?,
+                            ),
                         ))),
                     }
                 }
-                _ => Err(de::Error::custom("did not see a tag")),
+                other => Ok(InstanceIdTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
+                )),
             }
         }
     }
@@ -1323,7 +1418,6 @@ impl<'de> Deserialize<'de> for CryptoKeyTypeChoice<'_> {
                         let value = serde_json::to_string(&map["value"]).unwrap();
 
                         match &map["type"] {
-
                             serde_json::Value::String(typ) => match typ.as_str() {
                                 "pkix-base64-key" => {
                                     let tstr: Tstr = serde_json::from_str(value.as_str())
@@ -5603,6 +5697,46 @@ mod test {
                 ],
                 expected_json: r#"{"tag":1337,"value":true}"#,
             }
+        ];
+
+        for tc in test_cases.into_iter() {
+            tc.run();
+        }
+    }
+
+    #[test]
+    fn test_instance_id_type_choice_serde() {
+        let test_cases = vec! [
+            SerdeTestCase{
+                value: InstanceIdTypeChoice::Uuid(UuidType::from([
+                    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                    0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+                ]).into()),
+                expected_cbor: vec![
+                    0xd8, 0x25, // tag(37) [uuid]
+                      0x50, // bstr(16)
+                        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                        0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+                ],
+                expected_json: r#"{"type":"uuid","value":"01020304-0506-0708-090a-0b0c0d0e0f10"}"#,
+            },
+            SerdeTestCase {
+                value: InstanceIdTypeChoice::CryptoKey(CryptoKeyTypeChoice::PkixBase64Key("foo".into())),
+                expected_json: r#"{"type":"pkix-base64-key","value":"foo"}"#,
+                expected_cbor: vec![
+                    0xd9, 0x02, 0x2a, // tag(554)
+                      0x63, // tstr(3)
+                        0x66, 0x6f, 0x6f, // "foo"
+                ],
+            },
+            SerdeTestCase {
+                value: InstanceIdTypeChoice::Extension("bar".into()),
+                expected_json: r#""bar""#,
+                expected_cbor: vec![
+                  0x63, // tstr(3)
+                    0x62, 0x61, 0x72, // "bar"
+                ],
+            },
         ];
 
         for tc in test_cases.into_iter() {
