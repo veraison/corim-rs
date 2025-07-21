@@ -100,7 +100,7 @@ use serde::{
     ser::SerializeMap,
     Deserialize, Serialize,
 };
-use std::{borrow::Cow, fmt::Display, marker::PhantomData};
+use std::{fmt::Display, marker::PhantomData, ops::Deref};
 
 /// A tag version number represented as an unsigned integer
 pub type TagVersionType = Uint;
@@ -695,9 +695,23 @@ pub enum TagIdTypeChoice<'a> {
     Tstr(Tstr<'a>),
     /// UUID identifier
     Uuid(UuidType),
+    /// Extensions
+    Extension(ExtensionValue<'a>),
 }
 
 impl TagIdTypeChoice<'_> {
+    pub fn is_str(&self) -> bool {
+        matches!(self, Self::Tstr(_))
+    }
+
+    pub fn is_uuid(&self) -> bool {
+        matches!(self, Self::Uuid(_))
+    }
+
+    pub fn is_extension(&self) -> bool {
+        matches!(self, Self::Extension(_))
+    }
+
     /// Returns the tag identifier as a string, if it is a text value
     pub fn as_str(&self) -> Option<&str> {
         match self {
@@ -737,6 +751,20 @@ impl TagIdTypeChoice<'_> {
             _ => None,
         }
     }
+
+    pub fn as_ref_extension(&self) -> Option<&ExtensionValue> {
+        match self {
+            Self::Extension(ext) => Some(ext),
+            _ => None,
+        }
+    }
+
+    pub fn as_extension(&self) -> Option<ExtensionValue> {
+        match self {
+            Self::Extension(ext) => Some(ext.clone()),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> From<&'a str> for TagIdTypeChoice<'a> {
@@ -767,59 +795,68 @@ impl<'de> Deserialize<'de> for TagIdTypeChoice<'_> {
     where
         D: de::Deserializer<'de>,
     {
-        struct TagIdTypeChoiceVisitor<'a> {
-            marker: PhantomData<&'a str>,
-        }
+        let is_human_readable = deserializer.is_human_readable();
 
-        impl<'de, 'a> Visitor<'de> for TagIdTypeChoiceVisitor<'a> {
-            type Value = TagIdTypeChoice<'a>;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a string or 16 bytes of a UUID")
-            }
-
-            fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                self.visit_string(v.to_string())
-            }
-
-            fn visit_bytes<E>(self, v: &[u8]) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                TagIdTypeChoice::try_from(v).map_err(de::Error::custom)
-            }
-
-            fn visit_string<E>(self, v: String) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                match UuidType::try_from(v.as_str()) {
+        if is_human_readable {
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::String(text) => match UuidType::try_from(text.as_str()) {
                     Ok(uuid) => Ok(TagIdTypeChoice::Uuid(uuid)),
-                    Err(_) => Ok(TagIdTypeChoice::Tstr(Tstr::from(Cow::Owned::<str>(v)))),
+                    Err(_) => Ok(TagIdTypeChoice::Tstr(text.into())),
+                },
+                serde_json::Value::Object(map) => {
+                    if map.contains_key("tag") && map.contains_key("value") && map.len() == 2 {
+                        match &map["tag"] {
+                            serde_json::Value::Number(n) => match n.as_u64() {
+                                Some(u) => Ok(TagIdTypeChoice::Extension(ExtensionValue::Tag(
+                                    u,
+                                    Box::new(
+                                        ExtensionValue::try_from(map["value"].clone())
+                                            .map_err(de::Error::custom)?,
+                                    ),
+                                ))),
+                                None => Err(de::Error::custom(format!(
+                                    "a number must be an unsinged integer, got {n:?}"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!("invalid tag {v:?}"))),
+                        }
+                    } else {
+                        Ok(TagIdTypeChoice::Extension(
+                            ExtensionValue::try_from(serde_json::Value::Object(map))
+                                .map_err(de::Error::custom)?,
+                        ))
+                    }
                 }
+                other => Ok(TagIdTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
+                )),
             }
+        } else {
+            match ciborium::Value::deserialize(deserializer)? {
+                ciborium::Value::Text(text) => Ok(TagIdTypeChoice::Tstr(text.into())),
+                ciborium::Value::Bytes(bytes) => Ok(TagIdTypeChoice::Uuid(
+                    UuidType::try_from(bytes.as_slice()).map_err(de::Error::custom)?,
+                )),
+                ciborium::Value::Tag(tag, inner) => {
+                    // Re-serializing the inner Value so that we can deserialize it
+                    // into an appropriate type, once we figure out what that is
+                    // based on the tag.
+                    let mut buf: Vec<u8> = Vec::new();
+                    ciborium::into_writer(&inner, &mut buf).unwrap();
 
-            fn visit_borrowed_str<E>(self, v: &'de str) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                self.visit_str(v)
-            }
-
-            fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                self.visit_bytes(v)
+                    Ok(TagIdTypeChoice::Extension(ExtensionValue::Tag(
+                        tag,
+                        Box::new(
+                            ExtensionValue::try_from(inner.deref().to_owned())
+                                .map_err(de::Error::custom)?,
+                        ),
+                    )))
+                }
+                other => Ok(TagIdTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
+                )),
             }
         }
-
-        deserializer.deserialize_any(TagIdTypeChoiceVisitor {
-            marker: PhantomData,
-        })
     }
 }
 
@@ -2576,5 +2613,28 @@ mod tests {
         let expected_json = r#"{"language":"en-GB","tag-identity":{"tag-id":"foo"},"entities":[{"entity-name":"foo","role":["creator"]}],"linked-tags":[{"linked-tag-id":"bar","tag-rel":"supplements"}],"triples":{"endorsed-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]]},"1337":false}"#;
 
         assert_eq!(actual_json, expected_json);
+    }
+
+    #[test]
+    fn test_tag_id_type_choice_serde() {
+        let test_cases = vec![
+            SerdeTestCase {
+                value: TagIdTypeChoice::Tstr("foo".into()),
+                expected_json: "\"foo\"",
+                expected_cbor: vec![
+                    0x63, // tstr(3)
+                      0x66, 0x6f, 0x6f, // "foo"
+                ],
+            },
+            SerdeTestCase {
+                value: TagIdTypeChoice::Extension(true.into()),
+                expected_json: "true",
+                expected_cbor: vec![0xf5],
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            tc.run()
+        }
     }
 }
