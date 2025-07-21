@@ -1267,7 +1267,7 @@ impl<'de> Deserialize<'de> for LinkedTagMap<'_> {
 ///
 /// This enum defines how tags can be related to each other,
 /// supporting versioning and supplemental information scenarios.
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum TagRelTypeChoice {
     /// This tag supplements the linked tag by providing additional information
@@ -1281,16 +1281,16 @@ pub enum TagRelTypeChoice {
     /// Use this relationship type when creating a new version of a tag that supersedes
     /// an older version.
     Replaces,
+    /// Extension for values not specified by the spec.
+    Extension(i64),
 }
 
-impl TryFrom<i64> for TagRelTypeChoice {
-    type Error = ComidError;
-
-    fn try_from(value: i64) -> std::result::Result<Self, Self::Error> {
+impl From<i64> for TagRelTypeChoice {
+    fn from(value: i64) -> Self {
         match value {
-            0 => Ok(TagRelTypeChoice::Supplements),
-            1 => Ok(TagRelTypeChoice::Replaces),
-            n => Err(ComidError::InvalidTagRelationship(n.into())),
+            0 => TagRelTypeChoice::Supplements,
+            1 => TagRelTypeChoice::Replaces,
+            n => TagRelTypeChoice::Extension(n),
         }
     }
 }
@@ -1300,6 +1300,7 @@ impl From<&TagRelTypeChoice> for i64 {
         match value {
             TagRelTypeChoice::Supplements => 0,
             TagRelTypeChoice::Replaces => 1,
+            TagRelTypeChoice::Extension(n) => *n,
         }
     }
 }
@@ -1311,16 +1312,27 @@ impl TryFrom<&str> for TagRelTypeChoice {
         match value {
             "supplements" => Ok(TagRelTypeChoice::Supplements),
             "replaces" => Ok(TagRelTypeChoice::Replaces),
-            s => Err(ComidError::InvalidTagRelationship(s.to_string().into())),
+            s => match s.parse::<i64>() {
+                Ok(0) => Ok(TagRelTypeChoice::Supplements),
+                Ok(1) => Ok(TagRelTypeChoice::Replaces),
+                Ok(n) => Ok(TagRelTypeChoice::Extension(n)),
+                Err(_) => Err(ComidError::InvalidTagRelationship(s.to_string().into())),
+            },
         }
     }
 }
 
 impl Display for TagRelTypeChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s;
+
         f.write_str(match self {
             TagRelTypeChoice::Supplements => "supplements",
             TagRelTypeChoice::Replaces => "replaces",
+            TagRelTypeChoice::Extension(n) => {
+                s = n.to_string();
+                s.as_str()
+            }
         })
     }
 }
@@ -1349,9 +1361,7 @@ impl<'de> Deserialize<'de> for TagRelTypeChoice {
                 .try_into()
                 .map_err(de::Error::custom)
         } else {
-            i64::deserialize(deserializer)?
-                .try_into()
-                .map_err(de::Error::custom)
+            Ok(i64::deserialize(deserializer)?.into())
         }
     }
 }
@@ -2077,6 +2087,11 @@ mod tests {
                 expected_json: "\"replaces\"",
                 expected_cbor: vec![0x01],
             },
+            SerdeTestCase {
+                value: TagRelTypeChoice::Extension(2),
+                expected_json: "\"2\"",
+                expected_cbor: vec![0x02],
+            },
         ];
 
         for tc in test_cases.into_iter() {
@@ -2089,23 +2104,6 @@ mod tests {
             .to_string();
 
         assert_eq!(actual_err, "invalid tag relationship foo");
-
-        let actual_err = serde_json::from_str::<TagRelTypeChoice>("1")
-            .err()
-            .unwrap()
-            .to_string();
-
-        assert_eq!(
-            actual_err,
-            "invalid type: integer `1`, expected a string at line 1 column 1"
-        );
-
-        let actual_err = ciborium::from_reader::<TagRelTypeChoice, _>([0x03].as_slice())
-            .err()
-            .unwrap()
-            .to_string();
-
-        assert_eq!(actual_err, "Semantic(None, \"invalid tag relationship 3\")");
 
         let actual_err = ciborium::from_reader::<TagRelTypeChoice, _>([0xf4].as_slice())
             .err()
