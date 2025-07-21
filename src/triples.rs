@@ -98,10 +98,7 @@ use std::{
 };
 
 use crate::{
-    core::{
-        ExtensionValue, PkixBase64CertPathType, RawValueMaskType, RawValueTypeChoice,
-        TaggedJsonValue,
-    },
+    core::{ExtensionValue, PkixBase64CertPathType, RawValueMaskType, RawValueTypeChoice},
     empty::Empty as _,
     Bytes, CertPathThumbprintType, CertThumbprintType, ConciseSwidTagId, CoseKeySetOrKey,
     CoseKeyType, Digest, ExtensionMap, Integer, MinSvnType, ObjectIdentifier, OidType,
@@ -181,7 +178,7 @@ pub struct EnvironmentMap<'a> {
     /// Optional instance identifier
     pub instance: Option<InstanceIdTypeChoice<'a>>,
     /// Optional group identifier
-    pub group: Option<GroupIdTypeChoice>,
+    pub group: Option<GroupIdTypeChoice<'a>>,
 }
 
 impl Serialize for EnvironmentMap<'_> {
@@ -302,7 +299,7 @@ pub struct EnvironmentMapBuilder<'a> {
     /// Optional instance identifier
     pub instance: Option<InstanceIdTypeChoice<'a>>,
     /// Optional group identifier
-    pub group: Option<GroupIdTypeChoice>,
+    pub group: Option<GroupIdTypeChoice<'a>>,
 }
 
 impl<'a> EnvironmentMapBuilder<'a> {
@@ -320,7 +317,7 @@ impl<'a> EnvironmentMapBuilder<'a> {
         self
     }
 
-    pub fn group(mut self, group: GroupIdTypeChoice) -> Self {
+    pub fn group(mut self, group: GroupIdTypeChoice<'a>) -> Self {
         self.group = Some(group);
         self
     }
@@ -1604,14 +1601,28 @@ impl<'de> Deserialize<'de> for CryptoKeyTypeChoice<'_> {
 #[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
-pub enum GroupIdTypeChoice {
+pub enum GroupIdTypeChoice<'a> {
     /// UUID identifier
     Uuid(TaggedUuidType),
     /// Raw bytes
     Bytes(TaggedBytes),
+    /// Extensions
+    Extension(ExtensionValue<'a>),
 }
 
-impl GroupIdTypeChoice {
+impl GroupIdTypeChoice<'_> {
+    pub fn is_uuid(&self) -> bool {
+        matches!(self, Self::Uuid(_))
+    }
+
+    pub fn is_raw_bytes(&self) -> bool {
+        matches!(self, Self::Bytes(_))
+    }
+
+    pub fn is_extension(&self) -> bool {
+        matches!(self, Self::Extension(_))
+    }
+
     pub fn as_uuid_bytes(&self) -> Option<&[u8]> {
         match self {
             Self::Uuid(uuid) => Some(uuid.as_slice()),
@@ -1625,30 +1636,82 @@ impl GroupIdTypeChoice {
             _ => None,
         }
     }
+
+    pub fn as_ref_extension(&self) -> Option<&ExtensionValue> {
+        match self {
+            Self::Extension(ext) => Some(ext),
+            _ => None,
+        }
+    }
+
+    pub fn as_extension(&self) -> Option<ExtensionValue> {
+        match self {
+            Self::Extension(ext) => Some(ext.clone()),
+            _ => None,
+        }
+    }
 }
 
-impl<'de> Deserialize<'de> for GroupIdTypeChoice {
+impl<'de> Deserialize<'de> for GroupIdTypeChoice<'_> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        if deserializer.is_human_readable() {
-            let tagged_value = TaggedJsonValue::deserialize(deserializer)?;
+        let is_human_readable = deserializer.is_human_readable();
 
-            match tagged_value.typ {
-                "uuid" => {
-                    let uuid: UuidType = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(GroupIdTypeChoice::Uuid(TaggedUuidType::from(uuid)))
+        if is_human_readable {
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::Object(map) => {
+                    if map.contains_key("type") && map.contains_key("value") && map.len() == 2 {
+                        let value = serde_json::to_string(&map["value"]).unwrap();
+
+                        match &map["type"] {
+                            serde_json::Value::String(typ) => match typ.as_str() {
+                                "uuid" => {
+                                    let uuid: UuidType = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(GroupIdTypeChoice::Uuid(TaggedUuidType::from(uuid)))
+                                }
+                                "bytes" => {
+                                    let bytes: Bytes = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(GroupIdTypeChoice::Bytes(TaggedBytes::from(bytes)))
+                                }
+                                s => Err(de::Error::custom(format!(
+                                    "unexpected GroupIdTypeChoice type \"{s}\""
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!(
+                                "type must be as string, got {v:?}"
+                            ))),
+                        }
+                    } else if map.contains_key("tag") && map.contains_key("value") && map.len() == 2
+                    {
+                        match &map["tag"] {
+                            serde_json::Value::Number(n) => match n.as_u64() {
+                                Some(u) => Ok(GroupIdTypeChoice::Extension(ExtensionValue::Tag(
+                                    u,
+                                    Box::new(
+                                        ExtensionValue::try_from(map["value"].clone())
+                                            .map_err(de::Error::custom)?,
+                                    ),
+                                ))),
+                                None => Err(de::Error::custom(format!(
+                                    "a number must be an unsinged integer, got {n:?}"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!("invalid tag {v:?}"))),
+                        }
+                    } else {
+                        Ok(GroupIdTypeChoice::Extension(
+                            ExtensionValue::try_from(serde_json::Value::Object(map))
+                                .map_err(de::Error::custom)?,
+                        ))
+                    }
                 }
-                "bytes" => {
-                    let bytes: Bytes = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(GroupIdTypeChoice::Bytes(TaggedBytes::from(bytes)))
-                }
-                s => Err(de::Error::custom(format!(
-                    "unexpected GroupIdTypeChoice type \"{s}\""
-                ))),
+                other => Ok(GroupIdTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
+                )),
             }
         } else {
             match ciborium::Value::deserialize(deserializer)? {
@@ -1670,12 +1733,18 @@ impl<'de> Deserialize<'de> for GroupIdTypeChoice {
                                 ciborium::from_reader(buf.as_slice()).map_err(de::Error::custom)?;
                             Ok(GroupIdTypeChoice::Bytes(TaggedBytes::from(bytes)))
                         }
-                        n => Err(de::Error::custom(format!(
-                            "unexpected ClassIdTypeChoice tag {n}"
+                        n => Ok(GroupIdTypeChoice::Extension(ExtensionValue::Tag(
+                            n,
+                            Box::new(
+                                ExtensionValue::try_from(inner.deref().to_owned())
+                                    .map_err(de::Error::custom)?,
+                            ),
                         ))),
                     }
                 }
-                _ => Err(de::Error::custom("did not see a tag")),
+                other => Ok(GroupIdTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
+                )),
             }
         }
     }
@@ -4656,38 +4725,33 @@ mod test {
 
     #[test]
     fn test_group_id_serde() {
-        let uuid_bytes: [u8; 16] = [
-            0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4, 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44,
-            0x00, 0x00,
+        let test_cases = vec! [
+            SerdeTestCase{
+                value: GroupIdTypeChoice::Uuid(TaggedUuidType::from([
+                    0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4,
+                    0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00,
+                ])),
+                expected_cbor: vec! [
+                    0xd8, 0x25, // tag(37)
+                      0x50, // bstr(16)
+                        0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4,
+                        0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00,
+                ],
+                expected_json: r#"{"type":"uuid","value":"550e8400-e29b-41d4-a716-446655440000"}"#,
+            },
+            SerdeTestCase {
+                value: GroupIdTypeChoice::Extension("bar".into()),
+                expected_json: r#""bar""#,
+                expected_cbor: vec![
+                  0x63, // tstr(3)
+                    0x62, 0x61, 0x72, // "bar"
+                ],
+            },
         ];
 
-        let expected = r#"{"type":"uuid","value":"550e8400-e29b-41d4-a716-446655440000"}"#;
-
-        let group_id = GroupIdTypeChoice::Uuid(TaggedUuidType::from(uuid_bytes));
-
-        let actual = serde_json::to_string(&group_id).unwrap();
-
-        assert_eq!(&actual, expected);
-
-        let group_id_de: GroupIdTypeChoice = serde_json::from_str(expected).unwrap();
-
-        assert_eq!(group_id_de, group_id);
-
-        let expected: Vec<u8> = vec![
-            0xd8, 0x25, // tag(37)
-              0x50, // bstr(16)
-                0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4,
-                0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00,
-        ];
-
-        let mut actual: Vec<u8> = Vec::new();
-        ciborium::into_writer(&group_id, &mut actual).unwrap();
-
-        assert_eq!(actual, expected);
-
-        let group_id_de: GroupIdTypeChoice = ciborium::from_reader(expected.as_slice()).unwrap();
-
-        assert_eq!(group_id_de, group_id);
+        for tc in test_cases.into_iter() {
+            tc.run();
+        }
     }
 
     #[test]
