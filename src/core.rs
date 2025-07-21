@@ -3265,8 +3265,8 @@ impl<'de> Deserialize<'de> for MaskedRawValue {
 )]
 #[repr(C)]
 /// Container for raw values with optional masking
-pub struct RawValueType {
-    pub raw_value: RawValueTypeChoice,
+pub struct RawValueType<'a> {
+    pub raw_value: RawValueTypeChoice<'a>,
     pub raw_value_mask: Option<RawValueMaskType>,
 }
 
@@ -3275,12 +3275,13 @@ pub type RawValueMaskType = Bytes;
 
 #[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 /// Represents different types of raw values
-pub enum RawValueTypeChoice {
+pub enum RawValueTypeChoice<'a> {
     TaggedBytes(TaggedBytes),
     TaggedMaskedRawValue(TaggedMaskedRawValue),
+    Extension(ExtensionValue<'a>),
 }
 
-impl RawValueTypeChoice {
+impl RawValueTypeChoice<'_> {
     pub fn as_bytes(&self) -> Option<&[u8]> {
         match self {
             Self::TaggedBytes(tagged_bytes) => Some(tagged_bytes.as_ref().as_ref()),
@@ -3296,7 +3297,7 @@ impl RawValueTypeChoice {
     }
 }
 
-impl Serialize for RawValueTypeChoice {
+impl Serialize for RawValueTypeChoice<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -3306,33 +3307,71 @@ impl Serialize for RawValueTypeChoice {
             Self::TaggedMaskedRawValue(tagged_masked_raw_value) => {
                 tagged_masked_raw_value.serialize(serializer)
             }
+            Self::Extension(ext) => ext.serialize(serializer),
         }
     }
 }
 
-impl<'de> Deserialize<'de> for RawValueTypeChoice {
+impl<'de> Deserialize<'de> for RawValueTypeChoice<'_> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         if deserializer.is_human_readable() {
-            let tagged_value = TaggedJsonValue::deserialize(deserializer)?;
-            match tagged_value.typ {
-                "bytes" => {
-                    let bytes: Bytes = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(RawValueTypeChoice::TaggedBytes(TaggedBytes::from(bytes)))
+            match serde_json::Value::deserialize(deserializer)? {
+                serde_json::Value::Object(map) => {
+                    if map.contains_key("type") && map.contains_key("value") && map.len() == 2 {
+                        let value = serde_json::to_string(&map["value"]).unwrap();
+
+                        match &map["type"] {
+                            serde_json::Value::String(typ) => match typ.as_str() {
+                                "bytes" => {
+                                    let bytes: Bytes = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(RawValueTypeChoice::TaggedBytes(TaggedBytes::from(bytes)))
+                                }
+                                "masked-raw-value" => {
+                                    let mrv: MaskedRawValue = serde_json::from_str(value.as_str())
+                                        .map_err(de::Error::custom)?;
+                                    Ok(RawValueTypeChoice::TaggedMaskedRawValue(
+                                        TaggedMaskedRawValue::from(mrv),
+                                    ))
+                                }
+                                s => Err(de::Error::custom(format!(
+                                    "unexpected RawValueTypeChoice type \"{s}\""
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!(
+                                "type must be as string, got {v:?}"
+                            ))),
+                        }
+                    } else if map.contains_key("tag") && map.contains_key("value") && map.len() == 2
+                    {
+                        match &map["tag"] {
+                            serde_json::Value::Number(n) => match n.as_u64() {
+                                Some(u) => Ok(RawValueTypeChoice::Extension(ExtensionValue::Tag(
+                                    u,
+                                    Box::new(
+                                        ExtensionValue::try_from(map["value"].clone())
+                                            .map_err(de::Error::custom)?,
+                                    ),
+                                ))),
+                                None => Err(de::Error::custom(format!(
+                                    "a number must be an unsinged integer, got {n:?}"
+                                ))),
+                            },
+                            v => Err(de::Error::custom(format!("invalid tag {v:?}"))),
+                        }
+                    } else {
+                        Ok(RawValueTypeChoice::Extension(
+                            ExtensionValue::try_from(serde_json::Value::Object(map))
+                                .map_err(de::Error::custom)?,
+                        ))
+                    }
                 }
-                "masked-raw-value" => {
-                    let mrv: MaskedRawValue = serde_json::from_str(tagged_value.value.get())
-                        .map_err(de::Error::custom)?;
-                    Ok(RawValueTypeChoice::TaggedMaskedRawValue(
-                        TaggedMaskedRawValue::from(mrv),
-                    ))
-                }
-                s => Err(de::Error::custom(format!(
-                    "unexpected RawValueTypeChoice type \"{s}\""
-                ))),
+                other => Ok(RawValueTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
+                )),
             }
         } else {
             match ciborium::Value::deserialize(deserializer)? {
@@ -3356,25 +3395,21 @@ impl<'de> Deserialize<'de> for RawValueTypeChoice {
                                 TaggedMaskedRawValue::from(mrv),
                             ))
                         }
-                        n => Err(de::Error::custom(format!(
-                            "unexpected RawValueTypeChoice tag {n}"
+                        n => Ok(RawValueTypeChoice::Extension(ExtensionValue::Tag(
+                            n,
+                            Box::new(
+                                ExtensionValue::try_from(inner.deref().to_owned())
+                                    .map_err(de::Error::custom)?,
+                            ),
                         ))),
                     }
                 }
-                _ => Err(de::Error::custom(
-                    "did not see a tag for RawValueTypeChoice",
+                other => Ok(RawValueTypeChoice::Extension(
+                    other.try_into().map_err(de::Error::custom)?,
                 )),
             }
         }
     }
-}
-
-#[derive(Deserialize)]
-pub(crate) struct TaggedJsonValue<'a> {
-    #[serde(rename = "type")]
-    pub typ: &'a str,
-    #[serde(borrow)]
-    pub value: &'a serde_json::value::RawValue,
 }
 
 /// Version scheme enumeration as defined in the specification

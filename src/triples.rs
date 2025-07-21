@@ -2102,7 +2102,7 @@ pub struct MeasurementValuesMap<'a> {
     /// Optional status flags
     pub flags: Option<FlagsMap<'a>>,
     /// Optional raw measurement value
-    pub raw: Option<RawValueType>,
+    pub raw: Option<RawValueType<'a>>,
     /// Optional MAC address
     pub mac_addr: Option<MacAddrTypeChoice>,
     /// Optional IP address
@@ -2402,7 +2402,7 @@ pub struct MeasurementValuesMapBuilder<'a> {
     /// Optional status flags
     pub flags: Option<FlagsMap<'a>>,
     /// Optional raw measurement value
-    pub raw: Option<RawValueType>,
+    pub raw: Option<RawValueType<'a>>,
     /// Optional MAC address
     pub mac_addr: Option<MacAddrTypeChoice>,
     /// Optional IP address
@@ -2444,7 +2444,7 @@ impl<'a> MeasurementValuesMapBuilder<'a> {
         self.flags = Some(value);
         self
     }
-    pub fn raw(mut self, value: RawValueType) -> Self {
+    pub fn raw(mut self, value: RawValueType<'a>) -> Self {
         self.raw = Some(value);
         self
     }
@@ -5795,6 +5795,33 @@ mod test {
             },
             SerdeTestCase {
                 value: InstanceIdTypeChoice::Extension("bar".into()),
+                expected_json: r#""bar""#,
+                expected_cbor: vec![
+                  0x63, // tstr(3)
+                    0x62, 0x61, 0x72, // "bar"
+                ],
+            },
+        ];
+
+        for tc in test_cases.into_iter() {
+            tc.run();
+        }
+    }
+
+    #[test]
+    fn test_raw_value_type_choice_serde() {
+        let test_cases = vec! [
+            SerdeTestCase{
+                value: RawValueTypeChoice::TaggedBytes([0x01, 0x02, 0x03].as_slice().into()),
+                expected_cbor: vec![
+                    0xd9, 0x02, 0x30, // tag(560) [tagged-bytes]
+                      0x43, // bstr(3)
+                        0x01, 0x02, 0x03,
+                ],
+                expected_json: r#"{"type":"bytes","value":"AQID"}"#,
+            },
+            SerdeTestCase {
+                value: RawValueTypeChoice::Extension("bar".into()),
                 expected_json: r#""bar""#,
                 expected_cbor: vec![
                   0x63, // tstr(3)
