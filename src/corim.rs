@@ -234,6 +234,27 @@ impl<'a> ConciseRimTypeChoice<'a> {
         }
     }
 
+    pub fn as_map_ref(&self) -> &CorimMap<'a> {
+        match self {
+            ConciseRimTypeChoice::Signed(signed) => &signed.corim_map,
+            ConciseRimTypeChoice::Unsigned(unsigned) => &unsigned.0 .0,
+        }
+    }
+
+    pub fn as_map_mut(&mut self) -> &mut CorimMap<'a> {
+        match self {
+            ConciseRimTypeChoice::Signed(signed) => &mut signed.corim_map,
+            ConciseRimTypeChoice::Unsigned(unsigned) => &mut unsigned.0 .0,
+        }
+    }
+
+    pub fn into_map(self) -> CorimMap<'a> {
+        match self {
+            ConciseRimTypeChoice::Signed(signed) => signed.0 .0.corim_map,
+            ConciseRimTypeChoice::Unsigned(unsigned) => unsigned.0 .0,
+        }
+    }
+
     pub fn from_json<R: std::io::Read>(src: R) -> Result<Self, CorimError> {
         Ok(TaggedUnsignedCorim::from_json(src)?.into())
     }
@@ -357,8 +378,10 @@ impl TaggedSignedCorim<'_> {
 }
 
 impl TaggedUnsignedCorim<'_> {
-    pub fn from_json<R: std::io::Read>(src: R) -> Result<Self, CorimError> {
-        serde_json::from_reader(src).map_err(CorimError::custom)
+    pub fn from_json<R: std::io::Read>(mut src: R) -> Result<Self, CorimError> {
+        let mut buf = String::new();
+        src.read_to_string(&mut buf).map_err(CorimError::custom)?;
+        serde_json::from_str(&buf).map_err(CorimError::custom)
     }
 
     pub fn from_cbor<R: std::io::Read>(src: R) -> Result<Self, CorimError> {
@@ -367,6 +390,10 @@ impl TaggedUnsignedCorim<'_> {
 
     pub fn to_json(&self) -> Result<String, CorimError> {
         serde_json::to_string(&self).map_err(CorimError::custom)
+    }
+
+    pub fn to_json_pretty(&self) -> Result<String, CorimError> {
+        serde_json::to_string_pretty(&self).map_err(CorimError::custom)
     }
 
     pub fn to_cbor(&self) -> Result<Vec<u8>, CorimError> {
@@ -395,6 +422,22 @@ pub struct CorimMap<'a> {
     pub entities: Option<Vec<CorimEntityMap<'a>>>,
     /// Optional extensible attributes
     pub extensions: Option<ExtensionMap<'a>>,
+}
+
+impl CorimMap<'_> {
+    pub fn from_json<R: std::io::Read>(mut src: R) -> Result<Self, CorimError> {
+        let mut buf = String::new();
+        src.read_to_string(&mut buf).map_err(CorimError::custom)?;
+        serde_json::from_str(&buf).map_err(CorimError::custom)
+    }
+
+    pub fn to_json(&self) -> Result<String, CorimError> {
+        serde_json::to_string(&self).map_err(CorimError::custom)
+    }
+
+    pub fn to_json_pretty(&self) -> Result<String, CorimError> {
+        serde_json::to_string_pretty(&self).map_err(CorimError::custom)
+    }
 }
 
 impl Serialize for CorimMap<'_> {
