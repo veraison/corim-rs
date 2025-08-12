@@ -4584,7 +4584,7 @@ mod test {
 
         let actual = serde_json::to_string(&class_id_ext).unwrap();
 
-        let expected = r#"{"tag":600,"value":"AQID"}"#;
+        let expected = r#"{"tag":600,"value":"[base64]:AQID"}"#;
 
         assert_eq!(actual, expected);
 
@@ -5499,7 +5499,7 @@ mod test {
 
         let actual = serde_json::to_string(&mvm).unwrap();
 
-        let expected = r#"{"version":{"version":"1.2","version-scheme":"decimal"},"svn":1,"digests":["sha-256;AQID"],"flags":{"is-configured":true},"raw-value":{"type":"bytes","value":"BAUG"},"mac-addr":"01-02-03-04-05-06","ip-addr":"127.0.0.1","serial-number":"foo","ueid":"AQIDBAUGBw","uuid":"01020304-0506-0708-090a-0b0c0d0e0f10","name":"bar","cryptokeys":[{"type":"thumbprint","value":"sha-384;BwgJ"}],"integrity-registers":{"1":["sha-256;AQID"]},"-1":"CgsM"}"#;
+        let expected = r#"{"version":{"version":"1.2","version-scheme":"decimal"},"svn":1,"digests":["sha-256;AQID"],"flags":{"is-configured":true},"raw-value":{"type":"bytes","value":"BAUG"},"mac-addr":"01-02-03-04-05-06","ip-addr":"127.0.0.1","serial-number":"foo","ueid":"AQIDBAUGBw","uuid":"01020304-0506-0708-090a-0b0c0d0e0f10","name":"bar","cryptokeys":[{"type":"thumbprint","value":"sha-384;BwgJ"}],"integrity-registers":{"1":["sha-256;AQID"]},"-1":"[base64]:CgsM"}"#;
 
         assert_eq!(actual, expected);
 
