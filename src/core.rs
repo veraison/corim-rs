@@ -536,10 +536,16 @@ impl TryFrom<serde_json::Value> for ExtensionValue<'_> {
                     ))
                 }
             }
-            serde_json::Value::String(s) => match URL_SAFE_NO_PAD.decode(&s) {
-                Ok(bytes) => Ok(Self::Bytes(bytes.into())),
-                Err(_) => Ok(Self::Text(s.into())),
-            },
+            serde_json::Value::String(s) => {
+                if let Some(stripped) = s.strip_prefix("[base64]:") {
+                    match URL_SAFE_NO_PAD.decode(stripped) {
+                        Ok(bytes) => Ok(Self::Bytes(bytes.into())),
+                        Err(err) => Err(CoreError::Custom(err.to_string())),
+                    }
+                } else {
+                    Ok(Self::Text(s.into()))
+                }
+            }
             serde_json::Value::Array(a) => Ok(Self::Array(
                 a.into_iter()
                     .map(Self::try_from)
@@ -562,7 +568,11 @@ impl From<&ExtensionValue<'_>> for serde_json::Value {
             // the unwrap()'s below will never panic because arbitrary_precision feature is enabled
             ExtensionValue::Int(i) => Self::Number(serde_json::Number::from_i128(i.0).unwrap()),
             ExtensionValue::Uint(u) => Self::Number(serde_json::Number::from_i128(u.0).unwrap()),
-            ExtensionValue::Bytes(b) => Self::String(URL_SAFE_NO_PAD.encode(b)),
+            ExtensionValue::Bytes(b) => {
+                let mut text = "[base64]:".to_string();
+                text.push_str(URL_SAFE_NO_PAD.encode(b).as_str());
+                Self::String(text)
+            }
             ExtensionValue::Text(t) => Self::String(t.clone().into()),
             ExtensionValue::Array(a) => {
                 Self::Array(a.iter().map(serde_json::Value::from).collect())
@@ -686,10 +696,6 @@ impl<'de> Deserialize<'de> for ExtensionValue<'_> {
         if deserializer.is_human_readable() {
             let value = serde_json::Value::deserialize(deserializer)?;
             match value {
-                serde_json::Value::String(s) => match URL_SAFE_NO_PAD.decode(&s) {
-                    Ok(bytes) => Ok(Self::Bytes(bytes.into())),
-                    Err(_) => Ok(Self::Text(s.into())),
-                },
                 serde_json::Value::Object(m) => {
                     if m.contains_key("tag") && m.contains_key("value") && m.len() == 2 {
                         let tag: u64 = match m.get("tag").unwrap() {
@@ -6089,7 +6095,7 @@ mod tests {
             },
             SerdeTestCase {
                 value: ExtensionValue::Bytes(vec![0x1, 0x02, 0x03].into()),
-                expected_json: "\"AQID\"",
+                expected_json: "\"[base64]:AQID\"",
                 expected_cbor: vec![
                     0x43, // bstr(3)
                       0x01, 0x02, 0x03,
