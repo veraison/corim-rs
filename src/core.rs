@@ -1282,6 +1282,12 @@ impl From<&PkixAsn1DerCertType> for Vec<u8> {
     }
 }
 
+impl From<CoseKey> for CoseKeyType {
+    fn from(value: CoseKey) -> Self {
+        CoseKeySetOrKey::Key(value).into()
+    }
+}
+
 /// Represents a value that can be either text or bytes
 #[repr(C)]
 #[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
