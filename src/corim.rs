@@ -171,7 +171,7 @@
 //! and optional fields defined in the standard.
 
 use std::{
-    fmt,
+    fmt::{self, Display},
     marker::PhantomData,
     ops::Deref,
     time::{SystemTime, UNIX_EPOCH},
@@ -222,21 +222,21 @@ impl<'a> ConciseRimTypeChoice<'a> {
 
     pub fn as_signed(self) -> Option<SignedCorim<'a>> {
         match self {
-            ConciseRimTypeChoice::Signed(signed) => Some(signed.0.0),
+            ConciseRimTypeChoice::Signed(signed) => Some(signed.0 .0),
             ConciseRimTypeChoice::Unsigned(_) => None,
         }
     }
 
     pub fn as_signed_ref(&self) -> Option<&SignedCorim<'a>> {
         match self {
-            ConciseRimTypeChoice::Signed(signed) => Some(&signed.0.0),
+            ConciseRimTypeChoice::Signed(signed) => Some(&signed.0 .0),
             ConciseRimTypeChoice::Unsigned(_) => None,
         }
     }
 
     pub fn as_signed_mut(&mut self) -> Option<&mut SignedCorim<'a>> {
         match self {
-            ConciseRimTypeChoice::Signed(signed) => Some(&mut signed.0.0),
+            ConciseRimTypeChoice::Signed(signed) => Some(&mut signed.0 .0),
             ConciseRimTypeChoice::Unsigned(_) => None,
         }
     }
@@ -244,21 +244,21 @@ impl<'a> ConciseRimTypeChoice<'a> {
     pub fn as_unsigned(self) -> Option<CorimMap<'a>> {
         match self {
             ConciseRimTypeChoice::Signed(_) => None,
-            ConciseRimTypeChoice::Unsigned(unsigned) => Some(unsigned.0.0),
+            ConciseRimTypeChoice::Unsigned(unsigned) => Some(unsigned.0 .0),
         }
     }
 
     pub fn as_unsigned_ref(&self) -> Option<&CorimMap<'a>> {
         match self {
             ConciseRimTypeChoice::Signed(_) => None,
-            ConciseRimTypeChoice::Unsigned(unsigned) => Some(&unsigned.0.0),
+            ConciseRimTypeChoice::Unsigned(unsigned) => Some(&unsigned.0 .0),
         }
     }
 
     pub fn as_unsigned_mut(&mut self) -> Option<&mut CorimMap<'a>> {
         match self {
             ConciseRimTypeChoice::Signed(_) => None,
-            ConciseRimTypeChoice::Unsigned(unsigned) => Some(&mut unsigned.0.0),
+            ConciseRimTypeChoice::Unsigned(unsigned) => Some(&mut unsigned.0 .0),
         }
     }
 
@@ -806,6 +806,24 @@ impl CorimIdTypeChoice<'_> {
 impl<'a> From<&'a str> for CorimIdTypeChoice<'a> {
     fn from(s: &'a str) -> Self {
         CorimIdTypeChoice::Tstr(s.into())
+    }
+}
+
+impl Display for CorimIdTypeChoice<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s;
+
+        f.write_str(match self {
+            Self::Tstr(tstr) => tstr,
+            Self::Uuid(uuid) => {
+                s = uuid.to_string();
+                s.as_str()
+            }
+            Self::Extension(ext) => {
+                s = format!("{:?}", ext);
+                s.as_str()
+            }
+        })
     }
 }
 
@@ -3305,5 +3323,21 @@ mod tests {
         assert_eq!(signed_de.corim_map.id.as_str().unwrap(), "foo");
 
         signed_de.verify_signature(verifier).unwrap();
+    }
+
+    #[test]
+    fn test_display_corim_id_type_choice() {
+        let cid: CorimIdTypeChoice = "test".into();
+        assert_eq!(cid.to_string(), "test");
+
+        let cid: CorimIdTypeChoice = UuidType::from([
+            0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4, 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44,
+            0x00, 0x00,
+        ])
+        .into();
+        assert_eq!(cid.to_string(), "550e8400-e29b-41d4-a716-446655440000");
+
+        let cid: CorimIdTypeChoice = ExtensionValue::Bool(true).into();
+        assert_eq!(cid.to_string(), "Bool(true)");
     }
 }
