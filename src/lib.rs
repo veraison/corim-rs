@@ -50,6 +50,9 @@ pub mod empty;
 /// Provides the Number Traits.
 pub mod numbers;
 
+/// Provides the CoSERV data model and utility types for interacting with CoSERV services
+pub mod coserv;
+
 /// Optional signing implementation
 #[cfg(feature = "openssl")]
 pub mod openssl;
