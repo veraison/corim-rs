@@ -2,6 +2,7 @@
 
 //! CoSERV Discovery Document implementation
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
 
@@ -22,14 +23,8 @@ use serde::{
 pub struct DiscoveryDocument {
     pub version: Version,
     pub capabilities: Vec<Capability>,
-    pub api_endpoints: Vec<Endpoint>,
+    pub api_endpoints: HashMap<String, String>,
     pub result_verification_key: ResultVerificationKey,
-}
-
-#[derive(Debug, Clone)]
-pub struct Endpoint {
-    pub name: String,
-    pub path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -49,89 +44,6 @@ pub enum ResultVerificationKey {
     Undefined,
     Cose(Vec<CoseKey>),
     Jose(Vec<JsonWebKey>),
-}
-
-impl Endpoint {
-    pub fn new() -> Endpoint {
-        Endpoint {
-            name: "".to_string(),
-            path: "".to_string(),
-        }
-    }
-}
-
-impl Serialize for Endpoint {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
-
-        if is_human_readable {
-            map.serialize_entry("name", &self.name)?;
-            map.serialize_entry("path", &self.path)?;
-        } else {
-            // !is_human_readable
-            map.serialize_entry(&1, &self.name)?;
-            map.serialize_entry(&2, &self.path)?;
-        }
-
-        map.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for Endpoint {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let is_hr = deserializer.is_human_readable();
-
-        deserializer.deserialize_map(EndpointVisitor {
-            is_human_readable: is_hr,
-        })
-    }
-}
-
-struct EndpointVisitor {
-    pub is_human_readable: bool,
-}
-
-impl<'de> Visitor<'de> for EndpointVisitor {
-    type Value = Endpoint;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a CBOR map or JSON object")
-    }
-
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::MapAccess<'de>,
-    {
-        let mut endpoint = Endpoint::new();
-
-        loop {
-            if self.is_human_readable {
-                match map.next_key::<&str>()? {
-                    Some("name") => endpoint.name = map.next_value::<String>()?,
-                    Some("path") => endpoint.path = map.next_value::<String>()?,
-                    Some(name) => panic!("Invalid JSON key: {}", name),
-                    None => break,
-                }
-            } else {
-                // !is_human_readable
-                match map.next_key::<i32>()? {
-                    Some(1) => endpoint.name = map.next_value::<String>()?,
-                    Some(2) => endpoint.path = map.next_value::<String>()?,
-                    Some(k) => panic!("Invalid CBOR key: {}", k),
-                    None => break,
-                }
-            }
-        }
-
-        Ok(endpoint)
-    }
 }
 
 impl Capability {
@@ -246,7 +158,7 @@ impl DiscoveryDocument {
                 pre: Prerelease::EMPTY,
                 build: BuildMetadata::EMPTY,
             },
-            api_endpoints: Vec::new(),
+            api_endpoints: HashMap::new(),
             capabilities: Vec::new(),
             result_verification_key: ResultVerificationKey::Undefined,
         }
@@ -340,7 +252,7 @@ impl<'de> Visitor<'de> for DiscoveryDocumentVisitor {
                         discovery_document.capabilities = map.next_value::<Vec<Capability>>()?
                     }
                     Some("api-endpoints") => {
-                        discovery_document.api_endpoints = map.next_value::<Vec<Endpoint>>()?
+                        discovery_document.api_endpoints = map.next_value::<HashMap<String, String>>()?
                     }
                     Some("result-verification-key") => {
                         discovery_document.result_verification_key =
@@ -360,7 +272,7 @@ impl<'de> Visitor<'de> for DiscoveryDocumentVisitor {
                         discovery_document.capabilities = map.next_value::<Vec<Capability>>()?
                     }
                     Some(3) => {
-                        discovery_document.api_endpoints = map.next_value::<Vec<Endpoint>>()?
+                        discovery_document.api_endpoints = map.next_value::<HashMap<String, String>>()?
                     }
                     Some(4) => {
                         let cbor_vec = map.next_value::<Vec<Value>>()?;
