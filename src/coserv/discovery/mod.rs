@@ -305,7 +305,6 @@ impl<'de> Deserialize<'de> for DiscoveryDocument {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
 
     #[test]
     fn test_coserv_discovery_serde_round_trip_cbor() {
@@ -319,12 +318,12 @@ mod tests {
             0x23, 0x31, 0x2e, 0x30, 0x2e, 0x30, 0x22, 0x02, 0x82, 0x69, 0x63, 0x6f, 0x6c, 0x6c,
             0x65, 0x63, 0x74, 0x65, 0x64, 0x66, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0xff, 0x03,
             0xa1, 0x75, 0x43, 0x6f, 0x53, 0x45, 0x52, 0x56, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
-            0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x78, 0x2a, 0x65, 0x6e, 0x64,
-            0x6f, 0x72, 0x73, 0x65, 0x6d, 0x65, 0x6e, 0x74, 0x2d, 0x64, 0x69, 0x73, 0x74, 0x72,
-            0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x2f, 0x76, 0x31, 0x2f, 0x63, 0x6f, 0x73,
-            0x65, 0x72, 0x76, 0x2f, 0x7b, 0x71, 0x75, 0x65, 0x72, 0x79, 0x7d, 0x04, 0x81, 0xa6,
-            0x01, 0x02, 0x02, 0x45, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x03, 0x26, 0x20, 0x01, 0x21,
-            0x44, 0x1a, 0x2b, 0x3c, 0x4d, 0x22, 0x44, 0x5e, 0x6f, 0x7a, 0x8b, 0xff,
+            0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x78, 0x2b, 0x2f, 0x65, 0x6e,
+            0x64, 0x6f, 0x72, 0x73, 0x65, 0x6d, 0x65, 0x6e, 0x74, 0x2d, 0x64, 0x69, 0x73, 0x74,
+            0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x2f, 0x76, 0x31, 0x2f, 0x63, 0x6f,
+            0x73, 0x65, 0x72, 0x76, 0x2f, 0x7b, 0x71, 0x75, 0x65, 0x72, 0x79, 0x7d, 0x04, 0x81,
+            0xa6, 0x01, 0x02, 0x02, 0x45, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x03, 0x26, 0x20, 0x01,
+            0x21, 0x44, 0x1a, 0x2b, 0x3c, 0x4d, 0x22, 0x44, 0x5e, 0x6f, 0x7a, 0x8b, 0xff,
         ];
 
         let discovery_document: DiscoveryDocument =
@@ -357,7 +356,7 @@ mod tests {
             discovery_document
                 .api_endpoints
                 .get("CoSERVRequestResponse"),
-            Some(&"endorsement-distribution/v1/coserv/{query}".to_string())
+            Some(&"/endorsement-distribution/v1/coserv/{query}".to_string())
         );
 
         // There should be exactly one verification key (COSE)
@@ -398,7 +397,7 @@ mod tests {
                 }
               ],
               "api-endpoints": {
-                "CoSERVRequestResponse": "endorsement-distribution/v1/coserv/{query}"
+                "CoSERVRequestResponse": "/endorsement-distribution/v1/coserv/{query}"
               },
               "result-verification-key": [
                 {
@@ -442,7 +441,7 @@ mod tests {
             discovery_document
                 .api_endpoints
                 .get("CoSERVRequestResponse"),
-            Some(&"endorsement-distribution/v1/coserv/{query}".to_string())
+            Some(&"/endorsement-distribution/v1/coserv/{query}".to_string())
         );
 
         // There should be exactly one verification key (JOSE)
@@ -462,7 +461,7 @@ mod tests {
 
         // Write it back out to JSON
         let emitted_json = serde_json::to_string(&discovery_document).unwrap();
-        let expected_json = "{\"version\":\"1.2.3-beta\",\"capabilities\":[{\"media-type\":\"application/coserv+cose; profile=\\\"tag:vendor.com,2025:cc_platform#1.0.0\\\"\",\"artifact-support\":[\"collected\",\"source\"]}],\"api-endpoints\":{\"CoSERVRequestResponse\":\"endorsement-distribution/v1/coserv/{query}\"},\"result-verification-key\":[{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"usWxHK2PmfnHKwXPS54m0kTcGJ90UiglWiGahtagnv8\",\"y\":\"IBOL-C3BttVivg-lSreASjpkttcsz-1rb7btKLv8EX4\",\"kid\":\"key1\",\"alg\":\"ES256\"}]}".to_string();
+        let expected_json = "{\"version\":\"1.2.3-beta\",\"capabilities\":[{\"media-type\":\"application/coserv+cose; profile=\\\"tag:vendor.com,2025:cc_platform#1.0.0\\\"\",\"artifact-support\":[\"collected\",\"source\"]}],\"api-endpoints\":{\"CoSERVRequestResponse\":\"/endorsement-distribution/v1/coserv/{query}\"},\"result-verification-key\":[{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"usWxHK2PmfnHKwXPS54m0kTcGJ90UiglWiGahtagnv8\",\"y\":\"IBOL-C3BttVivg-lSreASjpkttcsz-1rb7btKLv8EX4\",\"kid\":\"key1\",\"alg\":\"ES256\"}]}".to_string();
         assert_eq!(emitted_json, expected_json);
     }
 }
