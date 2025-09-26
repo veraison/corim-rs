@@ -301,3 +301,168 @@ impl<'de> Deserialize<'de> for DiscoveryDocument {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    #[test]
+    fn test_coserv_discovery_serde_round_trip_cbor() {
+        let source_cbor: Vec<u8> = vec![
+            0xbf, 0x01, 0x6a, 0x31, 0x2e, 0x32, 0x2e, 0x33, 0x2d, 0x62, 0x65, 0x74, 0x61, 0x02,
+            0x81, 0xbf, 0x01, 0x78, 0x48, 0x61, 0x70, 0x70, 0x6c, 0x69, 0x63, 0x61, 0x74, 0x69,
+            0x6f, 0x6e, 0x2f, 0x63, 0x6f, 0x73, 0x65, 0x72, 0x76, 0x2b, 0x63, 0x6f, 0x73, 0x65,
+            0x3b, 0x20, 0x70, 0x72, 0x6f, 0x66, 0x69, 0x6c, 0x65, 0x3d, 0x22, 0x74, 0x61, 0x67,
+            0x3a, 0x76, 0x65, 0x6e, 0x64, 0x6f, 0x72, 0x2e, 0x63, 0x6f, 0x6d, 0x2c, 0x32, 0x30,
+            0x32, 0x35, 0x3a, 0x63, 0x63, 0x5f, 0x70, 0x6c, 0x61, 0x74, 0x66, 0x6f, 0x72, 0x6d,
+            0x23, 0x31, 0x2e, 0x30, 0x2e, 0x30, 0x22, 0x02, 0x82, 0x69, 0x63, 0x6f, 0x6c, 0x6c,
+            0x65, 0x63, 0x74, 0x65, 0x64, 0x66, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0xff, 0x03,
+            0xa1, 0x75, 0x43, 0x6f, 0x53, 0x45, 0x52, 0x56, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+            0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x78, 0x2a, 0x65, 0x6e, 0x64,
+            0x6f, 0x72, 0x73, 0x65, 0x6d, 0x65, 0x6e, 0x74, 0x2d, 0x64, 0x69, 0x73, 0x74, 0x72,
+            0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x2f, 0x76, 0x31, 0x2f, 0x63, 0x6f, 0x73,
+            0x65, 0x72, 0x76, 0x2f, 0x7b, 0x71, 0x75, 0x65, 0x72, 0x79, 0x7d, 0x04, 0x81, 0xa6,
+            0x01, 0x02, 0x02, 0x45, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x03, 0x26, 0x20, 0x01, 0x21,
+            0x44, 0x1a, 0x2b, 0x3c, 0x4d, 0x22, 0x44, 0x5e, 0x6f, 0x7a, 0x8b, 0xff,
+        ];
+
+        let discovery_document: DiscoveryDocument =
+            ciborium::from_reader(source_cbor.as_slice()).unwrap();
+
+        // Example document version field should be semver("1.2.3-beta")
+        assert_eq!(discovery_document.version.major, 1);
+        assert_eq!(discovery_document.version.minor, 2);
+        assert_eq!(discovery_document.version.patch, 3);
+        assert_eq!(discovery_document.version.pre.to_string(), "beta");
+
+        // There should be exactly 1 capability
+        assert_eq!(discovery_document.capabilities.len(), 1);
+
+        // The capability should support both source and collected artifacts for the example CoSERV profile in
+        // the I-D.
+        let capability = &discovery_document.capabilities[0];
+        assert_eq!(
+            capability.media_type.to_string(),
+            "application/coserv+cose; profile=\"tag:vendor.com,2025:cc_platform#1.0.0\""
+        );
+        assert_eq!(
+            capability.artifact_support,
+            HashSet::from([ArtifactType::Source, ArtifactType::Collected])
+        );
+
+        // There should be exactly one API endpoint for CoSERVRequestResponse
+        assert_eq!(discovery_document.api_endpoints.len(), 1);
+        assert_eq!(
+            discovery_document
+                .api_endpoints
+                .get("CoSERVRequestResponse"),
+            Some(&"endorsement-distribution/v1/coserv/{query}".to_string())
+        );
+
+        // There should be exactly one verification key (COSE)
+        if let ResultVerificationKey::Cose(keyset) =
+            discovery_document.clone().result_verification_key
+        {
+            assert_eq!(keyset.len(), 1);
+            let key = &keyset[0];
+
+            // Just some light testing that we have the right key ID (kid), because CoseKey serde functionality is not
+            // implemented in this crate. If the kid is right, then all the fields should be right.
+            assert_eq!(key.key_id, vec![0xAB, 0xCD, 0xEF, 0x12, 0x34]);
+        } else {
+            // Unexpected key type if we get here.
+            assert!(false);
+        }
+
+        // Write back out to CBOR
+        let mut emitted_cbor: Vec<u8> = vec![];
+        ciborium::into_writer(&discovery_document, &mut emitted_cbor).unwrap();
+
+        // We should end up with the same as the source bytes
+        assert_eq!(emitted_cbor, source_cbor);
+    }
+
+    #[test]
+    fn test_coserv_discovery_serde_round_trip_json() {
+        let source_json = r#"
+            {
+              "version": "1.2.3-beta",
+              "capabilities": [
+                {
+                  "media-type": "application/coserv+cose; profile=\"tag:vendor.com,2025:cc_platform#1.0.0\"",
+                  "artifact-support": [
+                    "source",
+                    "collected"
+                  ]
+                }
+              ],
+              "api-endpoints": {
+                "CoSERVRequestResponse": "endorsement-distribution/v1/coserv/{query}"
+              },
+              "result-verification-key": [
+                {
+                  "alg": "ES256",
+                  "crv": "P-256",
+                  "kty": "EC",
+                  "x": "usWxHK2PmfnHKwXPS54m0kTcGJ90UiglWiGahtagnv8",
+                  "y": "IBOL-C3BttVivg-lSreASjpkttcsz-1rb7btKLv8EX4",
+                  "kid": "key1"
+                }
+              ]
+            }
+        "#;
+
+        let discovery_document: DiscoveryDocument = serde_json::from_str(source_json).unwrap();
+
+        // Example document version field should be semver("1.2.3-beta")
+        assert_eq!(discovery_document.version.major, 1);
+        assert_eq!(discovery_document.version.minor, 2);
+        assert_eq!(discovery_document.version.patch, 3);
+        assert_eq!(discovery_document.version.pre.to_string(), "beta");
+
+        // There should be exactly 1 capability
+        assert_eq!(discovery_document.capabilities.len(), 1);
+
+        // The capability should support both source and collected artifacts for the example CoSERV profile in
+        // the I-D.
+        let capability = &discovery_document.capabilities[0];
+        assert_eq!(
+            capability.media_type.to_string(),
+            "application/coserv+cose; profile=\"tag:vendor.com,2025:cc_platform#1.0.0\""
+        );
+        assert_eq!(
+            capability.artifact_support,
+            HashSet::from([ArtifactType::Source, ArtifactType::Collected])
+        );
+
+        // There should be exactly one API endpoint for CoSERVRequestResponse
+        assert_eq!(discovery_document.api_endpoints.len(), 1);
+        assert_eq!(
+            discovery_document
+                .api_endpoints
+                .get("CoSERVRequestResponse"),
+            Some(&"endorsement-distribution/v1/coserv/{query}".to_string())
+        );
+
+        // There should be exactly one verification key (JOSE)
+        if let ResultVerificationKey::Jose(keyset) =
+            discovery_document.clone().result_verification_key
+        {
+            assert_eq!(keyset.len(), 1);
+            let key = &keyset[0];
+
+            // Just some light testing that we have the right key ID (kid), because JsonWebKey serde functionality is not
+            // implemented in this crate. If the kid is right, then all the fields should be right.
+            assert_eq!(key.key_id, Some("key1".to_string()));
+        } else {
+            // Unexpected key type if we get here.
+            assert!(false);
+        }
+
+        // Write it back out to JSON
+        let emitted_json = serde_json::to_string(&discovery_document).unwrap();
+        let expected_json = "{\"version\":\"1.2.3-beta\",\"capabilities\":[{\"media-type\":\"application/coserv+cose; profile=\\\"tag:vendor.com,2025:cc_platform#1.0.0\\\"\",\"artifact-support\":[\"collected\",\"source\"]}],\"api-endpoints\":{\"CoSERVRequestResponse\":\"endorsement-distribution/v1/coserv/{query}\"},\"result-verification-key\":[{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"usWxHK2PmfnHKwXPS54m0kTcGJ90UiglWiGahtagnv8\",\"y\":\"IBOL-C3BttVivg-lSreASjpkttcsz-1rb7btKLv8EX4\",\"kid\":\"key1\",\"alg\":\"ES256\"}]}".to_string();
+        assert_eq!(emitted_json, expected_json);
+    }
+}
