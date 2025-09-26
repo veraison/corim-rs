@@ -89,62 +89,64 @@ impl<'de> Deserialize<'de> for Capability {
     where
         D: serde::Deserializer<'de>,
     {
+        struct CapabilityVisitor {
+            pub is_human_readable: bool,
+        }
+
+        impl<'de> Visitor<'de> for CapabilityVisitor {
+            type Value = Capability;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a CBOR map or JSON object")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut capability = Capability::new();
+                let mut arsup = Vec::new();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("media-type") => {
+                                capability.media_type = map.next_value::<String>()?.parse().unwrap()
+                            }
+                            Some("artifact-support") => arsup = map.next_value::<Vec<String>>()?,
+                            Some(name) => panic!("Invalid JSON key: {}", name),
+                            None => break,
+                        }
+                    } else {
+                        // !is_human_readable
+                        match map.next_key::<i32>()? {
+                            Some(1) => {
+                                capability.media_type = map.next_value::<String>()?.parse().unwrap()
+                            }
+                            Some(2) => arsup = map.next_value::<Vec<String>>()?,
+                            Some(k) => panic!("Invalid CBOR key: {}", k),
+                            None => break,
+                        }
+                    }
+                }
+
+                if arsup.contains(&"source".to_string()) {
+                    capability.artifact_support.insert(ArtifactType::Source);
+                }
+
+                if arsup.contains(&"collected".to_string()) {
+                    capability.artifact_support.insert(ArtifactType::Collected);
+                }
+
+                Ok(capability)
+            }
+        }
+
         let is_hr = deserializer.is_human_readable();
 
         deserializer.deserialize_map(CapabilityVisitor {
             is_human_readable: is_hr,
         })
-    }
-}
-
-struct CapabilityVisitor {
-    pub is_human_readable: bool,
-}
-
-impl<'de> Visitor<'de> for CapabilityVisitor {
-    type Value = Capability;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a CBOR map or JSON object")
-    }
-
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::MapAccess<'de>,
-    {
-        let mut capability = Capability::new();
-        let mut arsup = Vec::new();
-
-        loop {
-            if self.is_human_readable {
-                match map.next_key::<&str>()? {
-                    Some("media-type") => {
-                        capability.media_type = map.next_value::<String>()?.parse().unwrap()
-                    }
-                    Some("artifact-support") => arsup = map.next_value::<Vec<String>>()?,
-                    Some(name) => panic!("Invalid JSON key: {}", name),
-                    None => break,
-                }
-            } else {
-                // !is_human_readable
-                match map.next_key::<i32>()? {
-                    Some(1) => capability.media_type = map.next_value::<String>()?.parse().unwrap(),
-                    Some(2) => arsup = map.next_value::<Vec<String>>()?,
-                    Some(k) => panic!("Invalid CBOR key: {}", k),
-                    None => break,
-                }
-            }
-        }
-
-        if arsup.contains(&"source".to_string()) {
-            capability.artifact_support.insert(ArtifactType::Source);
-        }
-
-        if arsup.contains(&"collected".to_string()) {
-            capability.artifact_support.insert(ArtifactType::Collected);
-        }
-
-        Ok(capability)
     }
 }
 
@@ -216,79 +218,86 @@ impl<'de> Deserialize<'de> for DiscoveryDocument {
     where
         D: serde::Deserializer<'de>,
     {
+        struct DiscoveryDocumentVisitor {
+            pub is_human_readable: bool,
+        }
+
+        impl<'de> Visitor<'de> for DiscoveryDocumentVisitor {
+            type Value = DiscoveryDocument;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a CBOR map or JSON object")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut discovery_document = DiscoveryDocument::new();
+
+                loop {
+                    if self.is_human_readable {
+                        match map.next_key::<&str>()? {
+                            Some("version") => {
+                                discovery_document.version =
+                                    Version::parse(&map.next_value::<String>()?).unwrap()
+                            }
+                            Some("capabilities") => {
+                                discovery_document.capabilities =
+                                    map.next_value::<Vec<Capability>>()?
+                            }
+                            Some("api-endpoints") => {
+                                discovery_document.api_endpoints =
+                                    map.next_value::<HashMap<String, String>>()?
+                            }
+                            Some("result-verification-key") => {
+                                discovery_document.result_verification_key =
+                                    ResultVerificationKey::Jose(
+                                        map.next_value::<Vec<JsonWebKey>>()?,
+                                    )
+                            }
+                            Some(name) => panic!("Invalid JSON key: {}", name),
+                            None => break,
+                        }
+                    } else {
+                        // !is_human_readable
+                        match map.next_key::<i32>()? {
+                            Some(1) => {
+                                discovery_document.version =
+                                    Version::parse(&map.next_value::<String>()?).unwrap()
+                            }
+                            Some(2) => {
+                                discovery_document.capabilities =
+                                    map.next_value::<Vec<Capability>>()?
+                            }
+                            Some(3) => {
+                                discovery_document.api_endpoints =
+                                    map.next_value::<HashMap<String, String>>()?
+                            }
+                            Some(4) => {
+                                let cbor_vec = map.next_value::<Vec<Value>>()?;
+                                let mut cose_keys: Vec<CoseKey> = Vec::new();
+                                for k in cbor_vec.iter() {
+                                    let cose_key = CoseKey::from_cbor_value(k.clone()).unwrap();
+                                    cose_keys.push(cose_key);
+                                }
+                                discovery_document.result_verification_key =
+                                    ResultVerificationKey::Cose(cose_keys);
+                            }
+                            Some(k) => panic!("Invalid CBOR key: {}", k),
+                            None => break,
+                        }
+                    }
+                }
+
+                Ok(discovery_document)
+            }
+        }
+
         let is_hr = deserializer.is_human_readable();
 
         deserializer.deserialize_map(DiscoveryDocumentVisitor {
             is_human_readable: is_hr,
         })
-    }
-}
-
-struct DiscoveryDocumentVisitor {
-    pub is_human_readable: bool,
-}
-
-impl<'de> Visitor<'de> for DiscoveryDocumentVisitor {
-    type Value = DiscoveryDocument;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a CBOR map or JSON object")
-    }
-
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::MapAccess<'de>,
-    {
-        let mut discovery_document = DiscoveryDocument::new();
-
-        loop {
-            if self.is_human_readable {
-                match map.next_key::<&str>()? {
-                    Some("version") => {
-                        discovery_document.version =
-                            Version::parse(&map.next_value::<String>()?).unwrap()
-                    }
-                    Some("capabilities") => {
-                        discovery_document.capabilities = map.next_value::<Vec<Capability>>()?
-                    }
-                    Some("api-endpoints") => {
-                        discovery_document.api_endpoints = map.next_value::<HashMap<String, String>>()?
-                    }
-                    Some("result-verification-key") => {
-                        discovery_document.result_verification_key =
-                            ResultVerificationKey::Jose(map.next_value::<Vec<JsonWebKey>>()?)
-                    }
-                    Some(name) => panic!("Invalid JSON key: {}", name),
-                    None => break,
-                }
-            } else {
-                // !is_human_readable
-                match map.next_key::<i32>()? {
-                    Some(1) => {
-                        discovery_document.version =
-                            Version::parse(&map.next_value::<String>()?).unwrap()
-                    }
-                    Some(2) => {
-                        discovery_document.capabilities = map.next_value::<Vec<Capability>>()?
-                    }
-                    Some(3) => {
-                        discovery_document.api_endpoints = map.next_value::<HashMap<String, String>>()?
-                    }
-                    Some(4) => {
-                        let cbor_vec = map.next_value::<Vec<Value>>()?;
-                        let mut cose_keys: Vec<CoseKey> = Vec::new();
-                        for k in cbor_vec.iter() {
-                            let cose_key = CoseKey::from_cbor_value(k.clone()).unwrap();
-                            cose_keys.push(cose_key);
-                        }
-                        discovery_document.result_verification_key = ResultVerificationKey::Cose(cose_keys);
-                    }
-                    Some(k) => panic!("Invalid CBOR key: {}", k),
-                    None => break,
-                }
-            }
-        }
-
-        Ok(discovery_document)
     }
 }
