@@ -77,6 +77,16 @@ use serde::{
 use crate::error::CoservError;
 use crate::error::Error;
 
+/// The media type that describes the CoSERV discovery document in JSON format.
+/// 
+/// See: https://www.ietf.org/archive/id/draft-ietf-rats-coserv-01.html#name-application-coserv-discovery
+pub const DISCOVERY_DOCUMENT_JSON: &'static str = "application/coserv-discovery+json";
+
+/// The media type that describes the CoSERV discovery document in CBOR format.
+/// 
+/// See: https://www.ietf.org/archive/id/draft-ietf-rats-coserv-01.html#name-application-coserv-discover
+pub const DISCOVERY_DOCUMENT_CBOR: &'static str = "application/coserv-discovery+cbor";
+
 /// A single, complete CoSERV discovery document.
 ///
 /// This structure models the CoSERV discovery document contents as described in Section 6.1.1.1
