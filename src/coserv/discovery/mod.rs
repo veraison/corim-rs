@@ -19,6 +19,9 @@ use serde::{
     ser::{Error as _, Serialize, SerializeMap},
 };
 
+use crate::error::CoservError;
+use crate::error::Error;
+
 #[derive(Debug, Clone)]
 pub struct DiscoveryDocument {
     pub version: Version,
@@ -111,20 +114,34 @@ impl<'de> Deserialize<'de> for Capability {
                     if self.is_human_readable {
                         match map.next_key::<&str>()? {
                             Some("media-type") => {
-                                capability.media_type = map.next_value::<String>()?.parse().unwrap()
+                                capability.media_type = map
+                                    .next_value::<String>()?
+                                    .parse()
+                                    .map_err(de::Error::custom)?
                             }
                             Some("artifact-support") => arsup = map.next_value::<Vec<String>>()?,
-                            Some(name) => panic!("Invalid JSON key: {}", name),
+                            Some(name) => {
+                                return Err(de::Error::custom(Error::Coserv(
+                                    CoservError::InvalidName(name.to_string()),
+                                )))
+                            }
                             None => break,
                         }
                     } else {
                         // !is_human_readable
                         match map.next_key::<i32>()? {
                             Some(1) => {
-                                capability.media_type = map.next_value::<String>()?.parse().unwrap()
+                                capability.media_type = map
+                                    .next_value::<String>()?
+                                    .parse()
+                                    .map_err(de::Error::custom)?
                             }
                             Some(2) => arsup = map.next_value::<Vec<String>>()?,
-                            Some(k) => panic!("Invalid CBOR key: {}", k),
+                            Some(k) => {
+                                return Err(de::Error::custom(Error::Coserv(
+                                    CoservError::InvalidKey(k),
+                                )))
+                            }
                             None => break,
                         }
                     }
@@ -180,9 +197,15 @@ impl Serialize for DiscoveryDocument {
             map.serialize_entry("capabilities", &self.capabilities)?;
             map.serialize_entry("api-endpoints", &self.api_endpoints)?;
             match &self.result_verification_key {
-                ResultVerificationKey::Undefined => panic!("There is no key set to serialize"),
+                ResultVerificationKey::Undefined => {
+                    return Err(S::Error::custom(Error::Coserv(
+                        CoservError::VerificationKeyUndefined,
+                    )))
+                }
                 ResultVerificationKey::Cose(_) => {
-                    panic!("Trying to serialize a COSE key set as JSON")
+                    return Err(S::Error::custom(Error::Coserv(
+                        CoservError::WrongVerificationKeyType,
+                    )))
                 }
                 ResultVerificationKey::Jose(keyset) => {
                     map.serialize_entry("result-verification-key", keyset)?
@@ -194,14 +217,20 @@ impl Serialize for DiscoveryDocument {
             map.serialize_entry(&2, &self.capabilities)?;
             map.serialize_entry(&3, &self.api_endpoints)?;
             match &self.result_verification_key {
-                ResultVerificationKey::Undefined => panic!("There is no key set to serialize"),
+                ResultVerificationKey::Undefined => {
+                    return Err(S::Error::custom(Error::Coserv(
+                        CoservError::VerificationKeyUndefined,
+                    )))
+                }
                 ResultVerificationKey::Jose(_) => {
-                    panic!("Trying to serialize a JSON key set as CBOR")
+                    return Err(S::Error::custom(Error::Coserv(
+                        CoservError::WrongVerificationKeyType,
+                    )))
                 }
                 ResultVerificationKey::Cose(keyset) => {
                     let mut cbor_vec = Vec::new();
                     for k in keyset.iter() {
-                        let v = k.clone().to_cbor_value().unwrap();
+                        let v = k.clone().to_cbor_value().map_err(S::Error::custom)?;
                         cbor_vec.push(v);
                     }
                     map.serialize_entry(&4, &cbor_vec)?;
@@ -240,7 +269,8 @@ impl<'de> Deserialize<'de> for DiscoveryDocument {
                         match map.next_key::<&str>()? {
                             Some("version") => {
                                 discovery_document.version =
-                                    Version::parse(&map.next_value::<String>()?).unwrap()
+                                    Version::parse(&map.next_value::<String>()?)
+                                        .map_err(de::Error::custom)?
                             }
                             Some("capabilities") => {
                                 discovery_document.capabilities =
@@ -256,7 +286,11 @@ impl<'de> Deserialize<'de> for DiscoveryDocument {
                                         map.next_value::<Vec<JsonWebKey>>()?,
                                     )
                             }
-                            Some(name) => panic!("Invalid JSON key: {}", name),
+                            Some(name) => {
+                                return Err(de::Error::custom(Error::Coserv(
+                                    CoservError::InvalidName(name.to_string()),
+                                )))
+                            }
                             None => break,
                         }
                     } else {
@@ -264,7 +298,8 @@ impl<'de> Deserialize<'de> for DiscoveryDocument {
                         match map.next_key::<i32>()? {
                             Some(1) => {
                                 discovery_document.version =
-                                    Version::parse(&map.next_value::<String>()?).unwrap()
+                                    Version::parse(&map.next_value::<String>()?)
+                                        .map_err(de::Error::custom)?
                             }
                             Some(2) => {
                                 discovery_document.capabilities =
@@ -278,13 +313,18 @@ impl<'de> Deserialize<'de> for DiscoveryDocument {
                                 let cbor_vec = map.next_value::<Vec<Value>>()?;
                                 let mut cose_keys: Vec<CoseKey> = Vec::new();
                                 for k in cbor_vec.iter() {
-                                    let cose_key = CoseKey::from_cbor_value(k.clone()).unwrap();
+                                    let cose_key = CoseKey::from_cbor_value(k.clone())
+                                        .map_err(de::Error::custom)?;
                                     cose_keys.push(cose_key);
                                 }
                                 discovery_document.result_verification_key =
                                     ResultVerificationKey::Cose(cose_keys);
                             }
-                            Some(k) => panic!("Invalid CBOR key: {}", k),
+                            Some(k) => {
+                                return Err(de::Error::custom(Error::Coserv(
+                                    CoservError::InvalidKey(k),
+                                )))
+                            }
                             None => break,
                         }
                     }

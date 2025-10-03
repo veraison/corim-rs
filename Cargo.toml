@@ -41,3 +41,4 @@ openssl = { version = "0.10", features = ["vendored"], optional=true}
 jsonwebkey = "0.3.5"
 semver = "1.0.27"
 mime = "0.3.17"
+thiserror = "2.0.17"

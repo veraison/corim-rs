@@ -3,6 +3,7 @@
 mod comid;
 mod core;
 mod corim;
+mod coserv;
 mod coswid;
 mod cotl;
 mod numbers;
@@ -11,6 +12,7 @@ mod triples;
 pub use comid::*;
 pub use core::*;
 pub use corim::*;
+pub use coserv::*;
 pub use coswid::*;
 pub use cotl::*;
 use derive_more::From;
@@ -22,6 +24,7 @@ pub enum Error {
     Comid(ComidError),
     Core(CoreError),
     Corim(CorimError),
+    Coserv(CoservError),
     Coswid(CoswidError),
     Cotl(CotlError),
     Triples(TriplesError),
@@ -38,6 +41,7 @@ impl std::fmt::Display for Error {
             Self::Comid(err) => write!(f, "{err}"),
             Self::Core(err) => write!(f, "{err}"),
             Self::Corim(err) => write!(f, "{err}"),
+            Self::Coserv(err) => write!(f, "{err}"),
             Self::Coswid(err) => write!(f, "{err}"),
             Self::Cotl(err) => write!(f, "{err}"),
             Self::Triples(err) => write!(f, "{err}"),
