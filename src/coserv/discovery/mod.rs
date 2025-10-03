@@ -1,6 +1,61 @@
 // SPDX-License-Identifier: MIT
 
 //! CoSERV Discovery Document implementation
+//!
+//! This module implements the CoSERV discovery document as defined in Section 6.1.1.1
+//! of the CoSERV Internet Draft: https://www.ietf.org/archive/id/draft-ietf-rats-coserv-01.html#section-6.1.1.1
+//!
+//! The purpose of the discovery document is to bootstrap the interaction with a CoSERV-enabled
+//! endorsement service or reference value provider service. Such services make the discovery
+//! document available from the `/.well-known/coserv-configuration` URL path, relative to the base
+//! URL of the service.
+//!
+//! The discovery document is an entirely separate data model from the rest of CoSERV. It is never
+//! a component of a CoSERV query or result set. Its purpose is to provide a description of the
+//! service and its capabilities.
+//!
+//! This module provides the data types to model the discovery document contents, along with
+//! the serialization and deserialization functionality for both JSON and CBOR formats. You can
+//! use this module in a client-side context to parse and inspect a discovery document that has
+//! been received from the well-known URL of a server. You can also use it in a server-side context
+//! to create a discovery document from scratch and then serialize it for a consumer.
+//!
+//! The top-level type is [`DiscoveryDocument`], which models the root of the document.
+//!
+//! # Examples
+//!
+//! Deserialize a discovery document from CBOR and write it back out again:
+//!
+//! ```rust
+//! use corim_rs::coserv::discovery::DiscoveryDocument;
+//!
+//! // Example CBOR bytes for a valid discovery document
+//! let source_cbor: Vec<u8> = vec![
+//!         0xbf, 0x01, 0x6a, 0x31, 0x2e, 0x32, 0x2e, 0x33, 0x2d, 0x62, 0x65, 0x74, 0x61, 0x02,
+//!         0x81, 0xbf, 0x01, 0x78, 0x48, 0x61, 0x70, 0x70, 0x6c, 0x69, 0x63, 0x61, 0x74, 0x69,
+//!         0x6f, 0x6e, 0x2f, 0x63, 0x6f, 0x73, 0x65, 0x72, 0x76, 0x2b, 0x63, 0x6f, 0x73, 0x65,
+//!         0x3b, 0x20, 0x70, 0x72, 0x6f, 0x66, 0x69, 0x6c, 0x65, 0x3d, 0x22, 0x74, 0x61, 0x67,
+//!         0x3a, 0x76, 0x65, 0x6e, 0x64, 0x6f, 0x72, 0x2e, 0x63, 0x6f, 0x6d, 0x2c, 0x32, 0x30,
+//!         0x32, 0x35, 0x3a, 0x63, 0x63, 0x5f, 0x70, 0x6c, 0x61, 0x74, 0x66, 0x6f, 0x72, 0x6d,
+//!         0x23, 0x31, 0x2e, 0x30, 0x2e, 0x30, 0x22, 0x02, 0x82, 0x69, 0x63, 0x6f, 0x6c, 0x6c,
+//!         0x65, 0x63, 0x74, 0x65, 0x64, 0x66, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0xff, 0x03,
+//!         0xa1, 0x75, 0x43, 0x6f, 0x53, 0x45, 0x52, 0x56, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+//!         0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x78, 0x2b, 0x2f, 0x65, 0x6e,
+//!         0x64, 0x6f, 0x72, 0x73, 0x65, 0x6d, 0x65, 0x6e, 0x74, 0x2d, 0x64, 0x69, 0x73, 0x74,
+//!         0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x2f, 0x76, 0x31, 0x2f, 0x63, 0x6f,
+//!         0x73, 0x65, 0x72, 0x76, 0x2f, 0x7b, 0x71, 0x75, 0x65, 0x72, 0x79, 0x7d, 0x04, 0x81,
+//!         0xa6, 0x01, 0x02, 0x02, 0x45, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x03, 0x26, 0x20, 0x01,
+//!         0x21, 0x44, 0x1a, 0x2b, 0x3c, 0x4d, 0x22, 0x44, 0x5e, 0x6f, 0x7a, 0x8b, 0xff,
+//!     ];
+//!
+//! // Read from CBOR
+//! let discovery_document: DiscoveryDocument =
+//!     ciborium::from_reader(source_cbor.as_slice()).unwrap();
+//!
+//! // Write back out to CBOR
+//! let mut emitted_cbor: Vec<u8> = vec![];
+//! ciborium::into_writer(&discovery_document, &mut emitted_cbor).unwrap();
+//! ```
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -22,30 +77,103 @@ use serde::{
 use crate::error::CoservError;
 use crate::error::Error;
 
+/// A single, complete CoSERV discovery document.
+///
+/// This structure models the CoSERV discovery document contents as described in Section 6.1.1.1
+/// of the CoSERV Internet Draft: https://www.ietf.org/archive/id/draft-ietf-rats-coserv-01.html#section-6.1.1.1
+///
+/// Discovery documents can be serialized to either JSON or CBOR. They can also be deserialized
+/// from either JSON or CBOR. But please note that it is **not** possible to deserialize a
+/// document from JSON and then serialize the same document instance to CBOR, or vice versa.
+/// This is because the verification keys are modelled using JSON-specific or CBOR-specific data
+/// types in each case. In cases where you need to switch between formats, you will need to
+/// manually create a fresh `DiscoveryDocument` instance, and perform the required conversions
+/// between the COSE and JOSE key types.
 #[derive(Debug, Clone)]
 pub struct DiscoveryDocument {
+    /// Implementation-specific version of the service as a semver structure.
+    ///
+    /// See section 6.1.1.1.1 of the CoSERV draft for further details:
+    /// https://www.ietf.org/archive/id/draft-ietf-rats-coserv-01.html#name-version
     pub version: Version,
+
+    /// Capabilities of the service.
+    ///
+    /// A valid discovery document must contain at least one capability.
+    ///
+    /// Each capability describes a profiled variant of the `application/coserv+cbor`
+    /// or `application/coserv+cose` media type, along with the categories of artifact
+    /// (either source or collected) for that media type.
+    ///
+    /// See section 6.1.1.1.2 of the CoSERV draft for further details:
+    /// https://www.ietf.org/archive/id/draft-ietf-rats-coserv-01.html#name-capabilities
     pub capabilities: Vec<Capability>,
+
+    /// The individual API endpoints provided by the service.
+    ///
+    /// A discovery document must contain at least one API endpoint.
+    ///
+    /// The keys in the map are the symbolic names of the endpoints, and the values are the URL
+    /// paths relative to the base URL of the service. An example key might be
+    /// `CoSERVRequestResponse`, and its corresponding value might be
+    /// `/endorsement-distribution/v1/coserv`. Assuming that the base URL of the service
+    /// is `https://coserv.example`, this would mean that the service provides a CoSERV
+    /// request-response API at `https://coserv.example/endorsement-distribution/v1/coserv`.
+    ///
+    /// See Section 6.1.1.1.3 of the CoSERV draft for further details:
+    /// https://www.ietf.org/archive/id/draft-ietf-rats-coserv-01.html#name-api-endpoints
     pub api_endpoints: HashMap<String, String>,
+
+    /// The public keys that the client can use to cryptographically verify the CoSERV
+    /// result sets.
+    ///
+    /// See section 6.1.1.1.4 of the CoSERV draft for further details:
+    /// https://www.ietf.org/archive/id/draft-ietf-rats-coserv-01.html#name-result-verification-key
     pub result_verification_key: ResultVerificationKey,
 }
 
+/// This type represents the two categories of artifact that are defined in the CoSERV draft:
+/// source artifacts and collected artifacts.
+///
+/// See section 3.2 of the CoSERV draft for further details:
+/// https://www.ietf.org/archive/id/draft-ietf-rats-coserv-01.html#name-artifacts
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ArtifactType {
+    /// Source artifacts are those obtained from primary supply chain sources.
     Source,
+
+    /// Collected artifacts are those obtained from secondary supply chain sources, such
+    /// as aggregators.
     Collected,
 }
 
+/// This struct defines the categories of artifact that the service can provide for a given
+/// CoSERV media type.
 #[derive(Debug, Clone)]
 pub struct Capability {
+    /// A profiled CoSERV media type, e.g. `"application/coserv+cose; profile=\"tag:vendor.com,2025:cc_platform#1.0.0\""`.
     pub media_type: Mime,
+
+    /// Non-empty set containing either one or both artifact categories.
     pub artifact_support: HashSet<ArtifactType>,
 }
 
+/// The public verification keys that can be used to verify the signatures of CoSERV result sets.
+///
+/// A CoSERV service must include one or more verification keys.
+///
+/// Verification keys are of type [`coset::CoseKey`] in CBOR-formatted documents, and
+/// [`jsonwebkey::JsonWebKey`] in JSON-formatted documents.
 #[derive(Debug, Clone)]
 pub enum ResultVerificationKey {
+    /// An undefined stub value, used when initializing the structure. It is an error to attempt
+    /// to serialize a discovery document with the verification key in this state.
     Undefined,
+
+    /// COSE keys for use with CBOR-formatted discovery documents.
     Cose(Vec<CoseKey>),
+
+    /// JOSE keys for use with JSON-formatted discovery documents.
     Jose(Vec<JsonWebKey>),
 }
 
