@@ -56,6 +56,80 @@
 //! let mut emitted_cbor: Vec<u8> = vec![];
 //! ciborium::into_writer(&discovery_document, &mut emitted_cbor).unwrap();
 //! ```
+//!
+//! Deserialize a discovery document from JSON and write it back out again:
+//! 
+//! ```rust
+//! use corim_rs::coserv::discovery::DiscoveryDocument;
+//! 
+//! let source_json = r#"
+//!        {
+//!          "version": "1.2.3-beta",
+//!          "capabilities": [
+//!            {
+//!              "media-type": "application/coserv+cose; profile=\"tag:vendor.com,2025:cc_platform#1.0.0\"",
+//!              "artifact-support": [
+//!                "source",
+//!                "collected"
+//!              ]
+//!            }
+//!          ],
+//!          "api-endpoints": {
+//!            "CoSERVRequestResponse": "/endorsement-distribution/v1/coserv/{query}"
+//!          },
+//!          "result-verification-key": [
+//!            {
+//!               "alg": "ES256",
+//!              "crv": "P-256",
+//!              "kty": "EC",
+//!              "x": "usWxHK2PmfnHKwXPS54m0kTcGJ90UiglWiGahtagnv8",
+//!              "y": "IBOL-C3BttVivg-lSreASjpkttcsz-1rb7btKLv8EX4",
+//!              "kid": "key1"
+//!            }
+//!          ]
+//!        }
+//!    "#;
+//! 
+//!  // Read from JSON
+//!  let discovery_document: DiscoveryDocument = serde_json::from_str(source_json).unwrap();
+//! 
+//!  // Write back out again
+//!  // Write it back out to JSON
+//!  let emitted_json = serde_json::to_string(&discovery_document).unwrap();
+//! ```
+//! 
+//! To create a discovery document from scratch, use the struct members directly as follows. Note that the
+//! verification key is left undefined in the following example, meaning that the result cannot be
+//! serialized to either JSON or CBOR. Use the documentation for [`coset::CoseKey`] or
+//! [`jsonwebkey::JsonWebKey`] as applicable for instructions to create keys for the target output
+//! format.
+//! 
+//! ```rust
+//! use std::collections::{HashMap, HashSet};
+//!
+//! use corim_rs::coserv::discovery::{
+//!    ArtifactType, Capability, DiscoveryDocument, ResultVerificationKey,
+//! };
+//!
+//! use semver::Version;
+//! 
+//! let doc = DiscoveryDocument {
+//!    version: Version::parse("1.2.3-beta").unwrap(),
+//!    capabilities: vec![Capability {
+//!        media_type:
+//!            "application/coserv+cose; profile=\"tag:vendor.com,2025:cc_platform#1.0.0\""
+//!                .to_string()
+//!                .parse()
+//!                .unwrap(),
+//!        artifact_support: HashSet::from([ArtifactType::Source, ArtifactType::Collected]),
+//!    }],
+//!    api_endpoints: HashMap::from([(
+//!        "CoSERVRequestResponse".to_string(),
+//!        "/endorsement-distribution/v1/coserv/{query}".to_string(),
+//!    )]),
+//!    result_verification_key: ResultVerificationKey::Undefined,
+//! };
+//! ```
 
 use std::collections::HashMap;
 use std::collections::HashSet;
