@@ -58,10 +58,10 @@
 //! ```
 //!
 //! Deserialize a discovery document from JSON and write it back out again:
-//! 
+//!
 //! ```rust
 //! use corim_rs::coserv::discovery::DiscoveryDocument;
-//! 
+//!
 //! let source_json = r#"
 //!        {
 //!          "version": "1.2.3-beta",
@@ -89,21 +89,21 @@
 //!          ]
 //!        }
 //!    "#;
-//! 
+//!
 //!  // Read from JSON
 //!  let discovery_document: DiscoveryDocument = serde_json::from_str(source_json).unwrap();
-//! 
+//!
 //!  // Write back out again
 //!  // Write it back out to JSON
 //!  let emitted_json = serde_json::to_string(&discovery_document).unwrap();
 //! ```
-//! 
+//!
 //! To create a discovery document from scratch, use the struct members directly as follows. Note that the
 //! verification key is left undefined in the following example, meaning that the result cannot be
 //! serialized to either JSON or CBOR. Use the documentation for [`coset::CoseKey`] or
 //! [`jsonwebkey::JsonWebKey`] as applicable for instructions to create keys for the target output
 //! format.
-//! 
+//!
 //! ```rust
 //! use std::collections::{HashMap, HashSet};
 //!
@@ -112,7 +112,7 @@
 //! };
 //!
 //! use semver::Version;
-//! 
+//!
 //! let doc = DiscoveryDocument {
 //!    version: Version::parse("1.2.3-beta").unwrap(),
 //!    capabilities: vec![Capability {
@@ -152,14 +152,14 @@ use crate::error::CoservError;
 use crate::error::Error;
 
 /// The media type that describes the CoSERV discovery document in JSON format.
-/// 
+///
 /// See: https://www.ietf.org/archive/id/draft-ietf-rats-coserv-01.html#name-application-coserv-discovery
-pub const DISCOVERY_DOCUMENT_JSON: &'static str = "application/coserv-discovery+json";
+pub const DISCOVERY_DOCUMENT_JSON: &str = "application/coserv-discovery+json";
 
 /// The media type that describes the CoSERV discovery document in CBOR format.
-/// 
+///
 /// See: https://www.ietf.org/archive/id/draft-ietf-rats-coserv-01.html#name-application-coserv-discover
-pub const DISCOVERY_DOCUMENT_CBOR: &'static str = "application/coserv-discovery+cbor";
+pub const DISCOVERY_DOCUMENT_CBOR: &str = "application/coserv-discovery+cbor";
 
 /// A single, complete CoSERV discovery document.
 ///
@@ -267,6 +267,12 @@ impl Capability {
             media_type: mime::TEXT_PLAIN,
             artifact_support: HashSet::new(),
         }
+    }
+}
+
+impl Default for Capability {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -393,6 +399,12 @@ impl DiscoveryDocument {
             capabilities: Vec::new(),
             result_verification_key: ResultVerificationKey::Undefined,
         }
+    }
+}
+
+impl Default for DiscoveryDocument {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -623,7 +635,7 @@ mod tests {
             assert_eq!(key.key_id, vec![0xAB, 0xCD, 0xEF, 0x12, 0x34]);
         } else {
             // Unexpected key type if we get here.
-            assert!(false);
+            panic!("Expected a COSE key.");
         }
 
         // Write back out to CBOR
@@ -708,7 +720,7 @@ mod tests {
             assert_eq!(key.key_id, Some("key1".to_string()));
         } else {
             // Unexpected key type if we get here.
-            assert!(false);
+            panic!("Expected a JOSE key.");
         }
 
         // Write it back out to JSON
