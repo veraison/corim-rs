@@ -12,4 +12,6 @@ pub enum CoservError {
     WrongVerificationKeyType,
     #[error("Trying to serialize an undefined verification key")]
     VerificationKeyUndefined,
+    #[error("Validation error: {0}")]
+    ValidationError(String),
 }

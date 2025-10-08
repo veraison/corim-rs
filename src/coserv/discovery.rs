@@ -400,6 +400,50 @@ impl DiscoveryDocument {
             result_verification_key: ResultVerificationKey::Undefined,
         }
     }
+
+    /// Checks whether the discovery document is well-populated.
+    ///
+    /// A well-populated discovery document must have at least one API endpoint and at least
+    /// one capability. Also, if any of the capabilities describe signed results (COSE), then
+    /// the verification key must be present.
+    pub fn validate(&self) -> Result<(), CoservError> {
+        if self.api_endpoints.is_empty() {
+            return Err(CoservError::ValidationError(
+                "No API endpoints defined".to_string(),
+            ));
+        }
+
+        if self.capabilities.is_empty() {
+            return Err(CoservError::ValidationError("No capabilities".to_string()));
+        }
+
+        if self
+            .capabilities
+            .iter()
+            .any(|c| c.artifact_support.is_empty())
+        {
+            return Err(CoservError::ValidationError(
+                "Capability without any artifact types".to_string(),
+            ));
+        }
+
+        if self
+            .capabilities
+            .iter()
+            .any(|cap| cap.media_type.essence_str() == "application/coserv+cose")
+        {
+            match self.result_verification_key {
+                ResultVerificationKey::Undefined => {
+                    return Err(CoservError::ValidationError(
+                        "Signed CoSERV requires a verification key".to_string(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for DiscoveryDocument {
@@ -413,6 +457,8 @@ impl Serialize for DiscoveryDocument {
     where
         S: serde::Serializer,
     {
+        self.validate().map_err(S::Error::custom)?;
+
         let is_human_readable = serializer.is_human_readable();
         let mut map = serializer.serialize_map(None)?;
 
@@ -549,6 +595,8 @@ impl<'de> Deserialize<'de> for DiscoveryDocument {
                         }
                     }
                 }
+
+                discovery_document.validate().map_err(de::Error::custom)?;
 
                 Ok(discovery_document)
             }
@@ -792,5 +840,127 @@ mod tests {
         let emitted_json = serde_json::to_string(&discovery_document).unwrap();
         let expected_json = "{\"version\":\"1.2.3-beta\",\"capabilities\":[{\"media-type\":\"application/coserv+cbor; profile=\\\"tag:vendor.com,2025:cc_platform#1.0.0\\\"\",\"artifact-support\":[\"collected\",\"source\"]}],\"api-endpoints\":{\"CoSERVRequestResponse\":\"/endorsement-distribution/v1/coserv/{query}\"}}".to_string();
         assert_eq!(emitted_json, expected_json);
+    }
+
+    #[test]
+    fn test_validate_ok() {
+        let key_source = r#"{
+                "alg": "ES256",
+                "crv": "P-256",
+                "kty": "EC",
+                "x": "usWxHK2PmfnHKwXPS54m0kTcGJ90UiglWiGahtagnv8",
+                "y": "IBOL-C3BttVivg-lSreASjpkttcsz-1rb7btKLv8EX4",
+                "kid": "key1"
+            }"#;
+        ResultVerificationKey::Jose(vec![key_source.parse().unwrap()]);
+
+        let doc = DiscoveryDocument {
+            version: Version::parse("1.2.3-beta").unwrap(),
+            capabilities: vec![Capability {
+                media_type:
+                    "application/coserv+cose; profile=\"tag:vendor.com,2025:cc_platform#1.0.0\""
+                        .to_string()
+                        .parse()
+                        .unwrap(),
+                artifact_support: HashSet::from([ArtifactType::Source, ArtifactType::Collected]),
+            }],
+            api_endpoints: HashMap::from([(
+                "CoSERVRequestResponse".to_string(),
+                "/endorsement-distribution/v1/coserv/{query}".to_string(),
+            )]),
+            result_verification_key: ResultVerificationKey::Jose(vec![key_source.parse().unwrap()]),
+        };
+
+        assert!(doc.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_no_endpoints() {
+        let doc = DiscoveryDocument {
+            version: Version::parse("1.2.3-beta").unwrap(),
+            capabilities: vec![Capability {
+                media_type:
+                    "application/coserv+bor; profile=\"tag:vendor.com,2025:cc_platform#1.0.0\""
+                        .to_string()
+                        .parse()
+                        .unwrap(),
+                artifact_support: HashSet::from([ArtifactType::Source, ArtifactType::Collected]),
+            }],
+            api_endpoints: HashMap::new(),
+            result_verification_key: ResultVerificationKey::Undefined,
+        };
+
+        assert_eq!(
+            doc.validate().err().unwrap().to_string(),
+            "Validation error: No API endpoints defined"
+        );
+    }
+
+    #[test]
+    fn test_validate_no_capabilities() {
+        let doc = DiscoveryDocument {
+            version: Version::parse("1.2.3-beta").unwrap(),
+            capabilities: Vec::new(),
+            api_endpoints: HashMap::from([(
+                "CoSERVRequestResponse".to_string(),
+                "/endorsement-distribution/v1/coserv/{query}".to_string(),
+            )]),
+            result_verification_key: ResultVerificationKey::Undefined,
+        };
+
+        assert_eq!(
+            doc.validate().err().unwrap().to_string(),
+            "Validation error: No capabilities"
+        );
+    }
+
+    #[test]
+    fn test_validate_no_verification_key() {
+        let doc = DiscoveryDocument {
+            version: Version::parse("1.2.3-beta").unwrap(),
+            capabilities: vec![Capability {
+                media_type:
+                    "application/coserv+cose; profile=\"tag:vendor.com,2025:cc_platform#1.0.0\""
+                        .to_string()
+                        .parse()
+                        .unwrap(),
+                artifact_support: HashSet::from([ArtifactType::Source, ArtifactType::Collected]),
+            }],
+            api_endpoints: HashMap::from([(
+                "CoSERVRequestResponse".to_string(),
+                "/endorsement-distribution/v1/coserv/{query}".to_string(),
+            )]),
+            result_verification_key: ResultVerificationKey::Undefined,
+        };
+
+        assert_eq!(
+            doc.validate().err().unwrap().to_string(),
+            "Validation error: Signed CoSERV requires a verification key"
+        );
+    }
+
+    #[test]
+    fn test_validate_capability_without_artifacts() {
+        let doc = DiscoveryDocument {
+            version: Version::parse("1.2.3-beta").unwrap(),
+            capabilities: vec![Capability {
+                media_type:
+                    "application/coserv+bor; profile=\"tag:vendor.com,2025:cc_platform#1.0.0\""
+                        .to_string()
+                        .parse()
+                        .unwrap(),
+                artifact_support: HashSet::new(),
+            }],
+            api_endpoints: HashMap::from([(
+                "CoSERVRequestResponse".to_string(),
+                "/endorsement-distribution/v1/coserv/{query}".to_string(),
+            )]),
+            result_verification_key: ResultVerificationKey::Undefined,
+        };
+
+        assert_eq!(
+            doc.validate().err().unwrap().to_string(),
+            "Validation error: Capability without any artifact types"
+        );
     }
 }
