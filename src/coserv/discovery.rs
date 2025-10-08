@@ -422,9 +422,7 @@ impl Serialize for DiscoveryDocument {
             map.serialize_entry("api-endpoints", &self.api_endpoints)?;
             match &self.result_verification_key {
                 ResultVerificationKey::Undefined => {
-                    return Err(S::Error::custom(Error::Coserv(
-                        CoservError::VerificationKeyUndefined,
-                    )))
+                    // Skip optional field
                 }
                 ResultVerificationKey::Cose(_) => {
                     return Err(S::Error::custom(Error::Coserv(
@@ -442,9 +440,7 @@ impl Serialize for DiscoveryDocument {
             map.serialize_entry(&3, &self.api_endpoints)?;
             match &self.result_verification_key {
                 ResultVerificationKey::Undefined => {
-                    return Err(S::Error::custom(Error::Coserv(
-                        CoservError::VerificationKeyUndefined,
-                    )))
+                    // Skip optional field
                 }
                 ResultVerificationKey::Jose(_) => {
                     return Err(S::Error::custom(Error::Coserv(
@@ -726,6 +722,75 @@ mod tests {
         // Write it back out to JSON
         let emitted_json = serde_json::to_string(&discovery_document).unwrap();
         let expected_json = "{\"version\":\"1.2.3-beta\",\"capabilities\":[{\"media-type\":\"application/coserv+cose; profile=\\\"tag:vendor.com,2025:cc_platform#1.0.0\\\"\",\"artifact-support\":[\"collected\",\"source\"]}],\"api-endpoints\":{\"CoSERVRequestResponse\":\"/endorsement-distribution/v1/coserv/{query}\"},\"result-verification-key\":[{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"usWxHK2PmfnHKwXPS54m0kTcGJ90UiglWiGahtagnv8\",\"y\":\"IBOL-C3BttVivg-lSreASjpkttcsz-1rb7btKLv8EX4\",\"kid\":\"key1\",\"alg\":\"ES256\"}]}".to_string();
+        assert_eq!(emitted_json, expected_json);
+    }
+
+    #[test]
+    fn test_coserv_discovery_serde_round_trip_cbor_unsigned() {
+        let source_cbor: Vec<u8> = vec![
+            0xbf, 0x01, 0x6a, 0x31, 0x2e, 0x32, 0x2e, 0x33, 0x2d, 0x62, 0x65, 0x74, 0x61, 0x02,
+            0x81, 0xbf, 0x01, 0x78, 0x48, 0x61, 0x70, 0x70, 0x6c, 0x69, 0x63, 0x61, 0x74, 0x69,
+            0x6f, 0x6e, 0x2f, 0x63, 0x6f, 0x73, 0x65, 0x72, 0x76, 0x2b, 0x63, 0x62, 0x6f, 0x72,
+            0x3b, 0x20, 0x70, 0x72, 0x6f, 0x66, 0x69, 0x6c, 0x65, 0x3d, 0x22, 0x74, 0x61, 0x67,
+            0x3a, 0x76, 0x65, 0x6e, 0x64, 0x6f, 0x72, 0x2e, 0x63, 0x6f, 0x6d, 0x2c, 0x32, 0x30,
+            0x32, 0x35, 0x3a, 0x63, 0x63, 0x5f, 0x70, 0x6c, 0x61, 0x74, 0x66, 0x6f, 0x72, 0x6d,
+            0x23, 0x31, 0x2e, 0x30, 0x2e, 0x30, 0x22, 0x02, 0x81, 0x69, 0x63, 0x6f, 0x6c, 0x6c,
+            0x65, 0x63, 0x74, 0x65, 0x64, 0xff, 0x03, 0xa1, 0x75, 0x43, 0x6f, 0x53, 0x45, 0x52,
+            0x56, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
+            0x73, 0x65, 0x78, 0x2b, 0x2f, 0x65, 0x6e, 0x64, 0x6f, 0x72, 0x73, 0x65, 0x6d, 0x65,
+            0x6e, 0x74, 0x2d, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f,
+            0x6e, 0x2f, 0x76, 0x31, 0x2f, 0x63, 0x6f, 0x73, 0x65, 0x72, 0x76, 0x2f, 0x7b, 0x71,
+            0x75, 0x65, 0x72, 0x79, 0x7d, 0xff,
+        ];
+
+        let discovery_document: DiscoveryDocument =
+            ciborium::from_reader(source_cbor.as_slice()).unwrap();
+
+        // We won't duplicate all the deserialization tests here. Just check that we have an undefined key, which is expected.
+        match discovery_document.result_verification_key {
+            ResultVerificationKey::Undefined => {}
+            _ => panic!("The key should be undefined in this case"),
+        };
+
+        // Write back out to CBOR
+        let mut emitted_cbor: Vec<u8> = vec![];
+        ciborium::into_writer(&discovery_document, &mut emitted_cbor).unwrap();
+
+        // We should end up with the same as the source bytes
+        assert_eq!(emitted_cbor, source_cbor);
+    }
+
+    #[test]
+    fn test_coserv_discovery_serde_round_trip_json_unsigned() {
+        let source_json = r#"
+            {
+              "version": "1.2.3-beta",
+              "capabilities": [
+                {
+                  "media-type": "application/coserv+cbor; profile=\"tag:vendor.com,2025:cc_platform#1.0.0\"",
+                  "artifact-support": [
+                    "source",
+                    "collected"
+                  ]
+                }
+              ],
+              "api-endpoints": {
+                "CoSERVRequestResponse": "/endorsement-distribution/v1/coserv/{query}"
+              }
+            }
+        "#;
+
+        let discovery_document: DiscoveryDocument = serde_json::from_str(source_json).unwrap();
+
+        // We won't duplicate all the deserialization tests here. Just check that we have an undefined key, which is expected.
+        match discovery_document.result_verification_key {
+            ResultVerificationKey::Undefined => {}
+            _ => panic!("The key should be undefined in this case"),
+        };
+
+        // Write it back out to JSON
+        let emitted_json = serde_json::to_string(&discovery_document).unwrap();
+        let expected_json = "{\"version\":\"1.2.3-beta\",\"capabilities\":[{\"media-type\":\"application/coserv+cbor; profile=\\\"tag:vendor.com,2025:cc_platform#1.0.0\\\"\",\"artifact-support\":[\"collected\",\"source\"]}],\"api-endpoints\":{\"CoSERVRequestResponse\":\"/endorsement-distribution/v1/coserv/{query}\"}}".to_string();
         assert_eq!(emitted_json, expected_json);
     }
 }
