@@ -244,14 +244,17 @@ pub struct Capability {
 
 /// The public verification keys that can be used to verify the signatures of CoSERV result sets.
 ///
-/// A CoSERV service must include one or more verification keys.
+/// A CoSERV service must include one or more verification keys if it supports signing
+/// of results. (If the service does not support signing, the key may be absent.)
 ///
 /// Verification keys are of type [`coset::CoseKey`] in CBOR-formatted documents, and
 /// [`jsonwebkey::JsonWebKey`] in JSON-formatted documents.
 #[derive(Debug, Clone)]
 pub enum ResultVerificationKey {
-    /// An undefined stub value, used when initializing the structure. It is an error to attempt
-    /// to serialize a discovery document with the verification key in this state.
+    /// No verification key defined.
+    ///
+    /// This state is only valid for newly-initialized documents that have not yet
+    /// been populated, or when the server does not support signed CoSERV results.
     Undefined,
 
     /// COSE keys for use with CBOR-formatted discovery documents.
