@@ -1151,6 +1151,12 @@ impl<'a> From<&'a str> for Uri<'a> {
     }
 }
 
+impl From<String> for Uri<'_> {
+    fn from(value: String) -> Self {
+        Text::from(value).into()
+    }
+}
+
 impl From<[u8; 16]> for TaggedUuidType {
     fn from(value: [u8; 16]) -> Self {
         UuidType::from(value).into()
@@ -1691,6 +1697,12 @@ impl From<u64> for Ulabel<'_> {
 
 impl<'a> From<&'a str> for Ulabel<'a> {
     fn from(value: &'a str) -> Self {
+        Tstr::from(value).into()
+    }
+}
+
+impl From<String> for Ulabel<'_> {
+    fn from(value: String) -> Self {
         Tstr::from(value).into()
     }
 }
