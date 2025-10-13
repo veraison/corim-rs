@@ -78,6 +78,20 @@ pub struct Bytes {
     bytes: Vec<u8>,
 }
 
+impl Bytes {
+    pub fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.bytes.as_slice()
+    }
+}
+
 impl From<&[u8]> for Bytes {
     fn from(value: &[u8]) -> Self {
         Self {
@@ -1254,6 +1268,20 @@ impl TryFrom<&str> for CertThumbprintType {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(Digest::try_from(value)?.into())
+    }
+}
+
+impl TaggedBytes {
+    pub fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.as_slice().is_empty()
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.0 .0.as_slice()
     }
 }
 
