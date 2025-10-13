@@ -2640,6 +2640,16 @@ impl<'a> MeasurementValuesMapBuilder<'a> {
         self.extensions = Some(value);
         self
     }
+    pub fn add_extension(mut self, key: i128, value: ExtensionValue<'a>) -> Self {
+        if let Some(ref mut extensions) = self.extensions {
+            extensions.insert(Integer(key), value);
+        } else {
+            let mut extensions = ExtensionMap::default();
+            extensions.insert(Integer(key), value);
+            self.extensions = Some(extensions);
+        }
+        self
+    }
 
     pub fn build(self) -> Result<MeasurementValuesMap<'a>> {
         if self.version.is_none()
