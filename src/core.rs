@@ -261,6 +261,19 @@ impl<'de> Deserialize<'de> for Bytes {
 #[derive(Debug, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, Clone, Default)]
 pub struct ExtensionMap<'a>(pub BTreeMap<Integer, ExtensionValue<'a>>);
 
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> ExtensionMap<'a> {
+    pub fn to_fully_owned(&self) -> ExtensionMap<'b> {
+        let mut res = ExtensionMap::new();
+
+        for (k, v) in &self.0 {
+            res.insert(*k, v.to_fully_owned());
+        }
+
+        res
+    }
+}
+
 impl<'a> ExtensionMap<'a> {
     pub fn new() -> Self {
         Self::default()
@@ -309,6 +322,32 @@ pub enum ExtensionValue<'a> {
     Map(BTreeMap<Label<'a>, ExtensionValue<'a>>),
     /// A value behind a CBOR tag
     Tag(u64, Box<ExtensionValue<'a>>),
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> ExtensionValue<'a> {
+    /// create a deep copy of the value, converting all Cow::Borrowed into Cow::Owned
+    pub fn to_fully_owned(&self) -> ExtensionValue<'b> {
+        match self {
+            ExtensionValue::Null => ExtensionValue::Null,
+            ExtensionValue::Bool(b) => ExtensionValue::Bool(*b),
+            ExtensionValue::Bytes(b) => ExtensionValue::Bytes(b.clone()),
+            ExtensionValue::Int(i) => ExtensionValue::Int(*i),
+            ExtensionValue::Text(t) => ExtensionValue::Text(t.to_string().into()),
+            ExtensionValue::Uint(i) => ExtensionValue::Uint(*i),
+            ExtensionValue::Array(a) => {
+                ExtensionValue::Array(a.iter().map(|v| v.to_fully_owned()).collect())
+            }
+            ExtensionValue::Map(m) => {
+                let mut map: BTreeMap<Label<'b>, ExtensionValue<'b>> = BTreeMap::new();
+                for (k, v) in m {
+                    map.insert(k.to_fully_owned(), v.to_fully_owned());
+                }
+                ExtensionValue::Map(map)
+            }
+            ExtensionValue::Tag(n, v) => ExtensionValue::Tag(*n, Box::new(v.to_fully_owned())),
+        }
+    }
 }
 
 impl Empty for ExtensionValue<'_> {
@@ -1461,6 +1500,16 @@ pub enum Label<'a> {
     Int(Int),
 }
 
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> Label<'a> {
+    pub fn to_fully_owned(&self) -> Label<'b> {
+        match self {
+            Label::Text(t) => Label::Text(t.to_string().into()),
+            Label::Int(i) => Label::Int(*i),
+        }
+    }
+}
+
 impl Label<'_> {
     /// Parse the provided string into a Label. If the string can be parsed
     /// into an integer, then a Label::Int is returned, otherwise a Label::Text.
@@ -1560,6 +1609,16 @@ pub enum Ulabel<'a> {
     Text(Text<'a>),
     /// Unsigned integer label
     Uint(Uint),
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> Ulabel<'a> {
+    pub fn to_fully_owned(&self) -> Ulabel<'b> {
+        match self {
+            Ulabel::Text(t) => Ulabel::Text(t.to_string().into()),
+            Ulabel::Uint(i) => Ulabel::Uint(*i),
+        }
+    }
 }
 
 impl Ulabel<'_> {
@@ -3282,6 +3341,16 @@ pub struct RawValueType<'a> {
     pub raw_value_mask: Option<RawValueMaskType>,
 }
 
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> RawValueType<'a> {
+    pub fn to_fully_owned(&self) -> RawValueType<'b> {
+        RawValueType {
+            raw_value: self.raw_value.to_fully_owned(),
+            raw_value_mask: self.raw_value_mask.clone(),
+        }
+    }
+}
+
 /// Type alias for raw value masks
 pub type RawValueMaskType = Bytes;
 
@@ -3291,6 +3360,23 @@ pub enum RawValueTypeChoice<'a> {
     TaggedBytes(TaggedBytes),
     TaggedMaskedRawValue(TaggedMaskedRawValue),
     Extension(ExtensionValue<'a>),
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> RawValueTypeChoice<'a> {
+    pub fn to_fully_owned(&self) -> RawValueTypeChoice<'b> {
+        match self {
+            RawValueTypeChoice::TaggedBytes(bytes) => {
+                RawValueTypeChoice::TaggedBytes(bytes.clone())
+            }
+            RawValueTypeChoice::TaggedMaskedRawValue(val) => {
+                RawValueTypeChoice::TaggedMaskedRawValue(val.clone())
+            }
+            RawValueTypeChoice::Extension(ext) => {
+                RawValueTypeChoice::Extension(ext.to_fully_owned())
+            }
+        }
+    }
 }
 
 impl RawValueTypeChoice<'_> {
@@ -3441,6 +3527,20 @@ pub enum VersionScheme<'a> {
     /// Unregisted schemes for Private Use. Must be either a string or an in in the range
     /// [-256, -1].
     PrivateUse(Label<'a>),
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> VersionScheme<'a> {
+    pub fn to_fully_owned(&self) -> VersionScheme<'b> {
+        match self {
+            VersionScheme::Multipartnumeric => VersionScheme::Multipartnumeric,
+            VersionScheme::MultipartnumericSuffix => VersionScheme::MultipartnumericSuffix,
+            VersionScheme::Alphanumeric => VersionScheme::Alphanumeric,
+            VersionScheme::Decimal => VersionScheme::Decimal,
+            VersionScheme::Semver => VersionScheme::Semver,
+            VersionScheme::PrivateUse(text) => VersionScheme::PrivateUse(text.to_string().into()),
+        }
+    }
 }
 
 impl TryFrom<i64> for VersionScheme<'_> {

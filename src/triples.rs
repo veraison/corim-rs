@@ -90,6 +90,7 @@
 //! - [`ConditionalSeriesRecord`]: For defining measurement changes
 
 use std::{
+    borrow::Cow,
     collections::{btree_map::Iter, BTreeMap},
     fmt::Display,
     marker::PhantomData,
@@ -179,6 +180,17 @@ pub struct EnvironmentMap<'a> {
     pub instance: Option<InstanceIdTypeChoice<'a>>,
     /// Optional group identifier
     pub group: Option<GroupIdTypeChoice<'a>>,
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> EnvironmentMap<'a> {
+    pub fn to_fully_owned(&self) -> EnvironmentMap<'b> {
+        EnvironmentMap {
+            class: self.class.as_ref().map(|c| c.to_fully_owned()),
+            instance: self.instance.as_ref().map(|i| i.to_fully_owned()),
+            group: self.group.as_ref().map(|g| g.to_fully_owned()),
+        }
+    }
 }
 
 impl Serialize for EnvironmentMap<'_> {
@@ -348,6 +360,19 @@ pub struct ClassMap<'a> {
     pub layer: Option<Uint>,
     /// Optional index number
     pub index: Option<Uint>,
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> ClassMap<'a> {
+    pub fn to_fully_owned(&self) -> ClassMap<'b> {
+        ClassMap {
+            class_id: self.class_id.as_ref().map(|i| i.to_fully_owned()),
+            vendor: self.vendor.as_ref().map(|v| v.to_string().into()),
+            model: self.model.as_ref().map(|m| m.to_string().into()),
+            layer: self.layer,
+            index: self.index,
+        }
+    }
 }
 
 impl Serialize for ClassMap<'_> {
@@ -558,6 +583,18 @@ pub enum ClassIdTypeChoice<'a> {
     Bytes(TaggedBytes),
     /// Extensions
     Extension(ExtensionValue<'a>),
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> ClassIdTypeChoice<'a> {
+    pub fn to_fully_owned(&self) -> ClassIdTypeChoice<'b> {
+        match self {
+            ClassIdTypeChoice::Oid(o) => ClassIdTypeChoice::Oid(o.clone()),
+            ClassIdTypeChoice::Uuid(u) => ClassIdTypeChoice::Uuid(u.clone()),
+            ClassIdTypeChoice::Bytes(b) => ClassIdTypeChoice::Bytes(b.clone()),
+            ClassIdTypeChoice::Extension(e) => ClassIdTypeChoice::Extension(e.to_fully_owned()),
+        }
+    }
 }
 
 impl ClassIdTypeChoice<'_> {
@@ -807,6 +844,23 @@ pub enum InstanceIdTypeChoice<'a> {
     Bytes(TaggedBytes),
     /// Extensions
     Extension(ExtensionValue<'a>),
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> InstanceIdTypeChoice<'a> {
+    pub fn to_fully_owned(&self) -> InstanceIdTypeChoice<'b> {
+        match self {
+            InstanceIdTypeChoice::Ueid(u) => InstanceIdTypeChoice::Ueid(u.clone()),
+            InstanceIdTypeChoice::Uuid(u) => InstanceIdTypeChoice::Uuid(u.clone()),
+            InstanceIdTypeChoice::CryptoKey(k) => {
+                InstanceIdTypeChoice::CryptoKey(k.to_fully_owned())
+            }
+            InstanceIdTypeChoice::Bytes(b) => InstanceIdTypeChoice::Bytes(b.clone()),
+            InstanceIdTypeChoice::Extension(e) => {
+                InstanceIdTypeChoice::Extension(e.to_fully_owned())
+            }
+        }
+    }
 }
 
 impl InstanceIdTypeChoice<'_> {
@@ -1237,6 +1291,38 @@ pub enum CryptoKeyTypeChoice<'a> {
     Extension(ExtensionValue<'a>),
 }
 
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> CryptoKeyTypeChoice<'a> {
+    pub fn to_fully_owned(&self) -> CryptoKeyTypeChoice<'b> {
+        match self {
+            CryptoKeyTypeChoice::PkixBase64Key(val) => {
+                CryptoKeyTypeChoice::PkixBase64Key(Cow::<str>::Owned(val.to_string()).into())
+            }
+            CryptoKeyTypeChoice::PkixBase64Cert(val) => {
+                CryptoKeyTypeChoice::PkixBase64Cert(Cow::<str>::Owned(val.to_string()).into())
+            }
+            CryptoKeyTypeChoice::PkixBase64CertPath(val) => {
+                CryptoKeyTypeChoice::PkixBase64CertPath(Cow::<str>::Owned(val.to_string()).into())
+            }
+            CryptoKeyTypeChoice::CoseKey(val) => CryptoKeyTypeChoice::CoseKey(val.clone()),
+            CryptoKeyTypeChoice::Thumbprint(val) => CryptoKeyTypeChoice::Thumbprint(val.clone()),
+            CryptoKeyTypeChoice::CertThumbprint(val) => {
+                CryptoKeyTypeChoice::CertThumbprint(val.clone())
+            }
+            CryptoKeyTypeChoice::CertPathThumbprint(val) => {
+                CryptoKeyTypeChoice::CertPathThumbprint(val.clone())
+            }
+            CryptoKeyTypeChoice::PkixAsn1DerCert(val) => {
+                CryptoKeyTypeChoice::PkixAsn1DerCert(val.clone())
+            }
+            CryptoKeyTypeChoice::Bytes(val) => CryptoKeyTypeChoice::Bytes(val.clone()),
+            CryptoKeyTypeChoice::Extension(val) => {
+                CryptoKeyTypeChoice::Extension(val.to_fully_owned())
+            }
+        }
+    }
+}
+
 impl CryptoKeyTypeChoice<'_> {
     pub fn is_pkix_key(&self) -> bool {
         matches!(self, Self::PkixBase64Key(_))
@@ -1610,6 +1696,17 @@ pub enum GroupIdTypeChoice<'a> {
     Extension(ExtensionValue<'a>),
 }
 
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> GroupIdTypeChoice<'a> {
+    pub fn to_fully_owned(&self) -> GroupIdTypeChoice<'b> {
+        match self {
+            GroupIdTypeChoice::Uuid(u) => GroupIdTypeChoice::Uuid(u.clone()),
+            GroupIdTypeChoice::Bytes(b) => GroupIdTypeChoice::Bytes(b.clone()),
+            GroupIdTypeChoice::Extension(e) => GroupIdTypeChoice::Extension(e.to_fully_owned()),
+        }
+    }
+}
+
 impl GroupIdTypeChoice<'_> {
     pub fn is_uuid(&self) -> bool {
         matches!(self, Self::Uuid(_))
@@ -1762,6 +1859,20 @@ pub struct MeasurementMap<'a> {
     pub authorized_by: Option<Vec<CryptoKeyTypeChoice<'a>>>,
 }
 
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> MeasurementMap<'a> {
+    pub fn to_fully_owned(&self) -> MeasurementMap<'b> {
+        MeasurementMap {
+            mkey: self.mkey.as_ref().map(|k| k.to_fully_owned()),
+            mval: self.mval.to_fully_owned(),
+            authorized_by: self
+                .authorized_by
+                .as_ref()
+                .map(|a| a.iter().map(|c| c.to_fully_owned()).collect()),
+        }
+    }
+}
+
 impl Serialize for MeasurementMap<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -1898,6 +2009,23 @@ pub enum MeasuredElementTypeChoice<'a> {
     Tstr(Tstr<'a>),
     /// Extension
     Extension(ExtensionValue<'a>),
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> MeasuredElementTypeChoice<'a> {
+    pub fn to_fully_owned(&self) -> MeasuredElementTypeChoice<'b> {
+        match self {
+            MeasuredElementTypeChoice::Oid(val) => MeasuredElementTypeChoice::Oid(val.clone()),
+            MeasuredElementTypeChoice::Uuid(val) => MeasuredElementTypeChoice::Uuid(val.clone()),
+            MeasuredElementTypeChoice::UInt(val) => MeasuredElementTypeChoice::UInt(*val),
+            MeasuredElementTypeChoice::Tstr(val) => {
+                MeasuredElementTypeChoice::Tstr(val.to_string().into())
+            }
+            MeasuredElementTypeChoice::Extension(val) => {
+                MeasuredElementTypeChoice::Extension(val.to_fully_owned())
+            }
+        }
+    }
 }
 
 impl MeasuredElementTypeChoice<'_> {
@@ -2121,6 +2249,34 @@ pub struct MeasurementValuesMap<'a> {
     pub integrity_registers: Option<IntegrityRegisters<'a>>,
     /// Optional extensible attributes
     pub extensions: Option<ExtensionMap<'a>>,
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> MeasurementValuesMap<'a> {
+    pub fn to_fully_owned(&self) -> MeasurementValuesMap<'b> {
+        MeasurementValuesMap {
+            version: self.version.as_ref().map(|v| v.to_fully_owned()),
+            svn: self.svn.clone(),
+            digests: self.digests.clone(),
+            flags: self.flags.as_ref().map(|f| f.to_fully_owned()),
+            raw: self.raw.as_ref().map(|r| r.to_fully_owned()),
+            mac_addr: self.mac_addr.clone(),
+            ip_addr: self.ip_addr.clone(),
+            serial_number: self.serial_number.as_ref().map(|s| s.to_string().into()),
+            ueid: self.ueid.clone(),
+            uuid: self.uuid.clone(),
+            name: self.name.as_ref().map(|n| n.to_string().into()),
+            cryptokeys: self
+                .cryptokeys
+                .as_ref()
+                .map(|ks| ks.iter().map(|k| k.to_fully_owned()).collect()),
+            integrity_registers: self
+                .integrity_registers
+                .as_ref()
+                .map(|i| i.to_fully_owned()),
+            extensions: self.extensions.as_ref().map(|e| e.to_fully_owned()),
+        }
+    }
 }
 
 impl Serialize for MeasurementValuesMap<'_> {
@@ -2532,6 +2688,16 @@ pub struct VersionMap<'a> {
     pub version_scheme: Option<VersionScheme<'a>>,
 }
 
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> VersionMap<'a> {
+    pub fn to_fully_owned(&self) -> VersionMap<'b> {
+        VersionMap {
+            version: self.version.to_string().into(),
+            version_scheme: self.version_scheme.as_ref().map(|v| v.to_fully_owned()),
+        }
+    }
+}
+
 impl Serialize for VersionMap<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -2801,6 +2967,25 @@ pub struct FlagsMap<'a> {
     pub is_confidentiality_protected: Option<bool>,
     /// Optional extensible attributes
     pub extensions: Option<ExtensionMap<'a>>,
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> FlagsMap<'a> {
+    pub fn to_fully_owned(&self) -> FlagsMap<'b> {
+        FlagsMap {
+            is_configured: self.is_configured,
+            is_secure: self.is_secure,
+            is_recovery: self.is_recovery,
+            is_debug: self.is_debug,
+            is_replay_protected: self.is_replay_protected,
+            is_integrity_protected: self.is_integrity_protected,
+            is_runtime_meas: self.is_runtime_meas,
+            is_immutable: self.is_immutable,
+            is_tcb: self.is_tcb,
+            is_confidentiality_protected: self.is_confidentiality_protected,
+            extensions: self.extensions.as_ref().map(|e| e.to_fully_owned()),
+        }
+    }
 }
 
 impl Serialize for FlagsMap<'_> {
@@ -3396,6 +3581,19 @@ pub type Ipv6AddrType = [u8; 16];
 #[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
 #[repr(C)]
 pub struct IntegrityRegisters<'a>(pub BTreeMap<Ulabel<'a>, Vec<Digest>>);
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> IntegrityRegisters<'a> {
+    pub fn to_fully_owned(&self) -> IntegrityRegisters<'b> {
+        let mut res = BTreeMap::new();
+
+        for (k, v) in &self.0 {
+            res.insert(k.to_fully_owned(), v.clone());
+        }
+
+        res.into()
+    }
+}
 
 impl IntegrityRegisters<'_> {
     /// Returns whether the IntegrityRegisters is empty.
@@ -4336,6 +4534,20 @@ pub struct StatefulEnvironmentRecord<'a> {
     pub environment: EnvironmentMap<'a>,
     /// List of measurement claims about the environment
     pub claims_list: Vec<MeasurementMap<'a>>,
+}
+
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> StatefulEnvironmentRecord<'a> {
+    pub fn to_fully_owned(&self) -> StatefulEnvironmentRecord<'b> {
+        StatefulEnvironmentRecord {
+            environment: self.environment.to_fully_owned(),
+            claims_list: self
+                .claims_list
+                .iter()
+                .map(|m| m.to_fully_owned())
+                .collect(),
+        }
+    }
 }
 
 impl Serialize for StatefulEnvironmentRecord<'_> {
