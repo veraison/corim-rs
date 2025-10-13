@@ -101,6 +101,7 @@ use std::{
 use crate::{
     core::{ExtensionValue, PkixBase64CertPathType, RawValueMaskType, RawValueTypeChoice},
     empty::Empty as _,
+    numbers::IntegerType,
     Bytes, CertPathThumbprintType, CertThumbprintType, ConciseSwidTagId, CoseKeySetOrKey,
     CoseKeyType, Digest, ExtensionMap, Integer, MinSvnType, ObjectIdentifier, OidType,
     PkixAsn1DerCertType, PkixBase64CertType, PkixBase64KeyType, RawValueType, Result, SvnType,
@@ -2826,6 +2827,14 @@ pub enum SvnTypeChoice {
 }
 
 impl SvnTypeChoice {
+    pub fn as_i128(&self) -> i128 {
+        match self {
+            SvnTypeChoice::Svn(val) => val.as_i128(),
+            SvnTypeChoice::TaggedSvn(val) => val.as_i128(),
+            SvnTypeChoice::TaggedMinSvn(val) => val.as_i128(),
+        }
+    }
+
     pub fn as_svn(&self) -> Option<Integer> {
         match self {
             Self::Svn(svn) => Some(*svn),
