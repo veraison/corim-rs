@@ -297,6 +297,10 @@ impl<'a> ExtensionMap<'a> {
         self.0.insert(key, value);
     }
 
+    pub fn get(&self, key: Integer) -> Option<&ExtensionValue<'a>> {
+        self.0.get(&key)
+    }
+
     pub fn serialize_map<M, O, E>(&self, map: &mut M, _is_human_readable: bool) -> Result<(), E>
     where
         M: ser::SerializeMap<Ok = O, Error = E>,
