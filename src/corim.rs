@@ -1262,6 +1262,17 @@ pub enum ProfileTypeChoice<'a> {
     Extension(ExtensionValue<'a>),
 }
 
+#[allow(clippy::needless_lifetimes)]
+impl<'a, 'b> ProfileTypeChoice<'a> {
+    pub fn to_fully_owned(&self) -> ProfileTypeChoice<'b> {
+        match self {
+            ProfileTypeChoice::Uri(uri) => ProfileTypeChoice::Uri(uri.to_string().into()),
+            ProfileTypeChoice::Oid(oid) => ProfileTypeChoice::Oid(oid.clone()),
+            ProfileTypeChoice::Extension(ext) => ProfileTypeChoice::Extension(ext.to_fully_owned()),
+        }
+    }
+}
+
 impl<'a> ProfileTypeChoice<'a> {
     pub fn is_uri(&self) -> bool {
         matches!(self, Self::Uri(_))
