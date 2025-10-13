@@ -194,6 +194,46 @@ impl<'a, 'b> EnvironmentMap<'a> {
     }
 }
 
+impl EnvironmentMap<'_> {
+    /// Returns `true` if this environment matches the one specified by `other`. In order to match,
+    /// every field that is set in this environment must also be set in the `other`, and their
+    /// values must be equal. (It is OK for the other to have fields set that not set in `self`, and
+    /// their values are irrelevant to the match.)
+    pub fn matches(&self, other: &EnvironmentMap) -> bool {
+        if let Some(self_class) = &self.class {
+            if let Some(other_class) = &other.class {
+                if self_class != other_class {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_instance) = &self.instance {
+            if let Some(other_instance) = &other.instance {
+                if self_instance != other_instance {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_group) = &self.group {
+            if let Some(other_group) = &other.group {
+                if self_group != other_group {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
 impl Serialize for EnvironmentMap<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -2280,6 +2320,168 @@ impl<'a, 'b> MeasurementValuesMap<'a> {
     }
 }
 
+impl MeasurementValuesMap<'_> {
+    pub fn matches(&self, other: &MeasurementValuesMap) -> bool {
+        if let Some(self_version) = &self.version {
+            if let Some(other_version) = &other.version {
+                if !self_version.matches(other_version) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_svn) = &self.svn {
+            if let Some(other_svn) = &other.svn {
+                if !self_svn.matches(other_svn) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_digests) = &self.digests {
+            if let Some(other_digests) = &other.digests {
+                let mut matched = false;
+
+                for self_digest in self_digests {
+                    for other_digest in other_digests {
+                        if self_digest.alg == other_digest.alg {
+                            if self_digest.val == other_digest.val {
+                                matched = true;
+                            } else {
+                                return false;
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                if !matched {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_flags) = &self.flags {
+            if let Some(other_flags) = &other.flags {
+                if !self_flags.matches(other_flags) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_raw) = &self.raw {
+            if let Some(other_raw) = &other.raw {
+                if !self_raw.matches(other_raw) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_mac_addr) = &self.mac_addr {
+            if let Some(other_mac_addr) = &other.mac_addr {
+                if !self_mac_addr.matches(other_mac_addr) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_ip_addr) = &self.ip_addr {
+            if let Some(other_ip_addr) = &other.ip_addr {
+                if !self_ip_addr.matches(other_ip_addr) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_serial_number) = &self.serial_number {
+            if let Some(other_serial_number) = &other.serial_number {
+                if self_serial_number != other_serial_number {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_ueid) = &self.ueid {
+            if let Some(other_ueid) = &other.ueid {
+                if self_ueid != other_ueid {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_uuid) = &self.uuid {
+            if let Some(other_uuid) = &other.uuid {
+                if self_uuid != other_uuid {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_name) = &self.name {
+            if let Some(other_name) = &other.name {
+                if self_name != other_name {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_cryptokeys) = &self.cryptokeys {
+            if let Some(other_cryptokeys) = &other.cryptokeys {
+                if self_cryptokeys != other_cryptokeys {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_integrity_registers) = &self.integrity_registers {
+            if let Some(other_integrity_registers) = &other.integrity_registers {
+                if !self_integrity_registers.matches(other_integrity_registers) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_extensions) = &self.extensions {
+            if let Some(other_extensions) = &other.extensions {
+                if self_extensions != other_extensions {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
 impl Serialize for MeasurementValuesMap<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -2709,6 +2911,12 @@ impl<'a, 'b> VersionMap<'a> {
     }
 }
 
+impl VersionMap<'_> {
+    pub fn matches(&self, other: &VersionMap) -> bool {
+        self == other
+    }
+}
+
 impl Serialize for VersionMap<'_> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -2853,6 +3061,20 @@ impl SvnTypeChoice {
         match self {
             Self::TaggedMinSvn(svn) => Some(svn.clone()),
             _ => None,
+        }
+    }
+
+    pub fn matches(&self, other: &SvnTypeChoice) -> bool {
+        if matches!(other, Self::TaggedMinSvn(_)) {
+            // The other must be a concrete value rather than a range.
+            return false;
+        }
+
+        match self {
+            val @ SvnTypeChoice::Svn(_) | val @ SvnTypeChoice::TaggedSvn(_) => {
+                val.as_i128() == other.as_i128()
+            }
+            bound @ SvnTypeChoice::TaggedMinSvn(_) => bound.as_i128() <= other.as_i128(),
         }
     }
 }
@@ -3004,6 +3226,122 @@ impl<'a, 'b> FlagsMap<'a> {
             is_confidentiality_protected: self.is_confidentiality_protected,
             extensions: self.extensions.as_ref().map(|e| e.to_fully_owned()),
         }
+    }
+}
+
+impl FlagsMap<'_> {
+    pub fn matches(&self, other: &FlagsMap) -> bool {
+        if let Some(self_is_configured) = &self.is_configured {
+            if let Some(other_is_configured) = &other.is_configured {
+                if self_is_configured != other_is_configured {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_is_secure) = &self.is_secure {
+            if let Some(other_is_secure) = &other.is_secure {
+                if self_is_secure != other_is_secure {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_is_recovery) = &self.is_recovery {
+            if let Some(other_is_recovery) = &other.is_recovery {
+                if self_is_recovery != other_is_recovery {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_is_debug) = &self.is_debug {
+            if let Some(other_is_debug) = &other.is_debug {
+                if self_is_debug != other_is_debug {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_is_replay_protected) = &self.is_replay_protected {
+            if let Some(other_is_replay_protected) = &other.is_replay_protected {
+                if self_is_replay_protected != other_is_replay_protected {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_is_integrity_protected) = &self.is_integrity_protected {
+            if let Some(other_is_integrity_protected) = &other.is_integrity_protected {
+                if self_is_integrity_protected != other_is_integrity_protected {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_is_runtime_meas) = &self.is_runtime_meas {
+            if let Some(other_is_runtime_meas) = &other.is_runtime_meas {
+                if self_is_runtime_meas != other_is_runtime_meas {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_is_immutable) = &self.is_immutable {
+            if let Some(other_is_immutable) = &other.is_immutable {
+                if self_is_immutable != other_is_immutable {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_is_tcb) = &self.is_tcb {
+            if let Some(other_is_tcb) = &other.is_tcb {
+                if self_is_tcb != other_is_tcb {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_is_confidentiality_protected) = &self.is_confidentiality_protected {
+            if let Some(other_is_confidentiality_protected) = &other.is_confidentiality_protected {
+                if self_is_confidentiality_protected != other_is_confidentiality_protected {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some(self_extensions) = &self.extensions {
+            if let Some(other_extensions) = &other.extensions {
+                if self_extensions != other_extensions {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        true
     }
 }
 
@@ -3258,6 +3596,10 @@ impl MacAddrTypeChoice {
             _ => None,
         }
     }
+
+    pub fn matches(&self, other: &MacAddrTypeChoice) -> bool {
+        self == other
+    }
 }
 
 impl From<Eui48AddrType> for MacAddrTypeChoice {
@@ -3441,6 +3783,10 @@ impl IpAddrTypeChoice {
             Self::Ipv6(addr) => Some(Ipv6Addr::from(*addr)),
             _ => None,
         }
+    }
+
+    pub fn matches(&self, other: &IpAddrTypeChoice) -> bool {
+        self == other
     }
 }
 
@@ -3628,6 +3974,39 @@ impl IntegrityRegisters<'_> {
     /// Iterate over (Ulabel, Vec<Digest>) tuples contained in the IntegrityRegisters.
     pub fn iter(&self) -> Iter<'_, Ulabel, Vec<Digest>> {
         self.0.iter()
+    }
+
+    /// Returns true if the registers match the `other` registers. In order to match,
+    /// for every label in `self`, the `other` must have a corresponding label and their
+    /// digests must match.
+    pub fn matches(&self, other: &IntegrityRegisters) -> bool {
+        for (label, self_digests) in &self.0 {
+            if let Some(other_digests) = other.0.get(label) {
+                let mut matched = false;
+
+                for self_digest in self_digests {
+                    for other_digest in other_digests {
+                        if self_digest.alg == other_digest.alg {
+                            if self_digest.val == other_digest.val {
+                                matched = true;
+                            } else {
+                                return false;
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                if !matched {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        true
     }
 }
 

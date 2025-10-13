@@ -3395,6 +3395,83 @@ impl<'a, 'b> RawValueType<'a> {
     }
 }
 
+impl RawValueType<'_> {
+    pub fn matches(&self, other: &RawValueType) -> bool {
+        // other cannot specify a mask
+        if other.raw_value_mask.is_some() {
+            return false;
+        }
+        if let RawValueTypeChoice::TaggedMaskedRawValue(_) = other.raw_value {
+            return false;
+        }
+
+        match &self.raw_value {
+            RawValueTypeChoice::TaggedBytes(self_bytes) => {
+                if let RawValueTypeChoice::TaggedBytes(other_bytes) = &other.raw_value {
+                    if let Some(mask) = &self.raw_value_mask {
+                        if self_bytes.len() != mask.len() || other_bytes.len() != mask.len() {
+                            return false;
+                        }
+
+                        let self_masked: Vec<u8> = self_bytes
+                            .as_slice()
+                            .iter()
+                            .zip(mask.as_slice().iter())
+                            .map(|(v, m)| v & m)
+                            .collect();
+                        let other_masked: Vec<u8> = other_bytes
+                            .as_slice()
+                            .iter()
+                            .zip(mask.as_slice().iter())
+                            .map(|(v, m)| v & m)
+                            .collect();
+
+                        self_masked == other_masked
+                    } else {
+                        self_bytes == other_bytes
+                    }
+                } else {
+                    false
+                }
+            }
+            RawValueTypeChoice::TaggedMaskedRawValue(self_tagged_masked) => {
+                if let RawValueTypeChoice::TaggedBytes(other_bytes) = &other.raw_value {
+                    if self_tagged_masked.value.len() != self_tagged_masked.mask.len()
+                        || other_bytes.len() != self_tagged_masked.mask.len()
+                    {
+                        return false;
+                    }
+
+                    let self_masked: Vec<u8> = self_tagged_masked
+                        .value
+                        .as_slice()
+                        .iter()
+                        .zip(self_tagged_masked.mask.as_slice().iter())
+                        .map(|(v, m)| v & m)
+                        .collect();
+                    let other_masked: Vec<u8> = other_bytes
+                        .as_slice()
+                        .iter()
+                        .zip(self_tagged_masked.mask.as_slice().iter())
+                        .map(|(v, m)| v & m)
+                        .collect();
+
+                    self_masked == other_masked
+                } else {
+                    false
+                }
+            }
+            RawValueTypeChoice::Extension(self_ext) => {
+                if let RawValueTypeChoice::Extension(other_ext) = &other.raw_value {
+                    self_ext == other_ext
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
 /// Type alias for raw value masks
 pub type RawValueMaskType = Bytes;
 
