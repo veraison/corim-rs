@@ -68,7 +68,7 @@ pub type Time = Integer;
 pub type Uint = Integer;
 /// Int represents a signed 32-bit integer
 pub type Int = Integer;
-/// Boolean represenation.
+/// Boolean representation.
 pub type Bool = bool;
 /// Floating Point variables.
 pub type Float = f32;
@@ -1967,7 +1967,7 @@ impl<T: Display> Display for OneOrMore<T> {
 
 // note(setrofim): we cannot rely on the derived implementation as it cannot handle CBOR tags
 // inside enum variants. Since we cannot rely on EnumAccess, I cannot think of a better way of
-// handling this other than deserializing as Value, checking if it is a sequence (and therfore the
+// handling this other than deserializing as Value, checking if it is a sequence (and therefore the
 // More variant), re-serializing, and then deserializing as an appropriate type.
 impl<'de, T: Clone + DeserializeOwned> Deserialize<'de> for OneOrMore<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -3645,7 +3645,7 @@ pub enum VersionScheme<'a> {
     Decimal = 4,
     /// Semantic versioning (e.g., 1.2.3-beta+build.123)
     Semver = 16384,
-    /// Unregisted schemes for Private Use. Must be either a string or an in in the range
+    /// Unregistered schemes for Private Use. Must be either a string or an in in the range
     /// [-256, -1].
     PrivateUse(Label<'a>),
 }
@@ -3850,9 +3850,9 @@ impl<'de> Deserialize<'de> for VersionScheme<'_> {
 }
 
 /// Hashing algorithms listed in the [IANA Named Information Hash Algorithm
-/// Registry][1]. These can be reprsented either via their numeric ID or Hash
+/// Registry][1]. These can be represented either via their numeric ID or Hash
 /// Name String. (Note: some algorithms, those in BLAKE and KangarooTwelve
-/// families, do not have an ID an can only be reprsented via their string
+/// families, do not have an ID an can only be represented via their string
 /// names.)
 ///
 /// [1]: https://www.iana.org/assignments/named-information/named-information.xhtml

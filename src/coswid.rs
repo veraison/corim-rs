@@ -2855,7 +2855,7 @@ impl<'a> PayloadEntryBuilder<'a> {
 #[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct ResourceCollection<'a> {
-    /// Group of filesystem path elements
+    /// Group of file system path elements
     pub path_elements_group: PathElementsGroup<'a>,
     /// Optional list of processes
     pub process: Option<OneOrMore<ProcessEntry<'a>>>,
@@ -3119,7 +3119,7 @@ impl<'a> ResourceCollectionBuilder<'a> {
     }
 }
 
-/// Group of filesystem path elements in a resource collection
+/// Group of file system path elements in a resource collection
 #[derive(Default, Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub struct PathElementsGroup<'a> {
