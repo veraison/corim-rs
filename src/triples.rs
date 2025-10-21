@@ -1261,7 +1261,7 @@ impl<'de> Deserialize<'de> for InstanceIdTypeChoice<'_> {
 /// * `CoseKey` - COSE key structure (RFC 8152)
 /// * `Thumbprint` - Generic cryptographic thumbprint
 /// * `CertThumbprint` - Certificate thumbprint
-/// * `CertPathThumbprint` - Certificate path thumbprint  
+/// * `CertPathThumbprint` - Certificate path thumbprint
 /// * `PkixAsn1DerCert` - ASN.1 DER encoded PKIX certificate
 /// * `Bytes` - Raw bytes
 ///

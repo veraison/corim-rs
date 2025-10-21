@@ -151,7 +151,7 @@
 //!
 //! let output = signed.to_cbor().unwrap();
 //!
-//! // Siganture verfication
+//! // Signature verification
 //!
 //! let verifier = FakeSigner {};
 //! let corim = Corim::from_cbor(output.as_slice()).unwrap();
@@ -1871,7 +1871,7 @@ pub trait CoseSigner: CoseKeyOwner {
 }
 
 pub trait CoseVerifier: CoseKeyOwner {
-    /// Verify porivided signature against provided data using owned key material.
+    /// Verify provided signature against provided data using owned key material.
     fn verify_signature(
         &self,
         alg: CoseAlgorithm,
@@ -1880,7 +1880,7 @@ pub trait CoseVerifier: CoseKeyOwner {
     ) -> Result<(), CorimError>;
 
     /// Verify that the values in the signed CoRIM's COSE header are valid and compatible with the
-    /// key owned by this verifier, and that the key iself is suitable for
+    /// key owned by this verifier, and that the key itself is suitable for
     fn verify_header_and_key(&self, signed: &SignedCorim) -> Result<(), CorimError> {
         if let Some(validity) = &signed.meta.signature_validity {
             let current_ts = SystemTime::now()

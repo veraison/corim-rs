@@ -12,7 +12,7 @@ use openssl::{
     sign::{Signer, Verifier},
 };
 
-/// A limitted implementation of a COSE signer using openssl crate that support EC2 keys, and
+/// A limited implementation of a COSE signer using openssl crate that support EC2 keys, and
 /// enforces the recommendations in the COSE spec, i.e. ES256 w/ prime256v1, ES384 w/ secp384r1,
 /// and ES512 w/ secp521r1.
 pub struct OpensslSigner {
