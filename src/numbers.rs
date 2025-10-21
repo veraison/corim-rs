@@ -355,7 +355,7 @@ impl Integer {
     /// # Returns
     /// * `Some(u32)` - The logarithm if it can be computed
     /// * `None` - If the base or integer is invalid
-    pub const fn check_ilog(&self, base: i128) -> Option<u32> {
+    pub const fn checked_ilog(&self, base: i128) -> Option<u32> {
         if self.0 <= 0 || base <= 1 {
             return None;
         }
