@@ -236,3 +236,24 @@ macro_rules! _compare {
         println!();
     };
 }
+
+/// Calcuclate the  "map length" of a struct to be used for CBOR encoding.
+/// The first argument is the struct, followed by the fixed part of the
+/// length (number of mandotory fields and extensions), followed by a list
+/// of optional fields that need to be evaluated.
+///
+///  For example, for [CorimSignerMap] that has one mandatory field,
+///  extensions, and, one optional signer_uri, field, this would be:
+///
+/// ```ignore
+///  let len = map_len!(
+///     self,
+///     1+self.extensions.as_ref().map_or(0, |e| e.len()),
+///     signer_uri,
+///  );
+/// ```
+macro_rules! map_len {
+    ($s:expr, $mandatory_count:expr, $($opt_field:ident),* $(,)?) => {
+        $mandatory_count $(+ ($s.$opt_field.is_some() as usize))*
+    };
+}
