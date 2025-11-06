@@ -270,11 +270,10 @@ mod test {
                           0x62, 0x61, 0x72, // "bar"
                       0xff, // break
                     0x02, // key: 2 [tl-validity]
-                    0xbf, // value: map(indef) [validity-map]
+                    0xa1, // value: map(1) [validity-map]
                       0x01, // key: 1 [not-after]
                       0xc1, // value: tag(1) [time]
                         0x01,  // 1
-                    0xff, // break
                   0xff, // break
                 ],
                 expected_json: r#"{"tag-identity":{"tag-id":"foo","tag-version":1},"tags-list":[{"tag-id":"bar"}],"tl-validity":{"not-after":{"type":"time","value":1}}}"#,

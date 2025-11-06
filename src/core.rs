@@ -293,6 +293,10 @@ impl<'a> ExtensionMap<'a> {
         Self::default()
     }
 
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
     pub fn insert(&mut self, key: Integer, value: ExtensionValue<'a>) {
         self.0.insert(key, value);
     }

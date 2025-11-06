@@ -1447,7 +1447,14 @@ impl Serialize for TriplesMap<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            0 + self.extensions.as_ref().map_or(0, |e| e.len()),
+            reference_triples, endorsed_triples, identity_triples, attest_key_triples,
+            dependency_triples, membership_triples, coswid_triples,
+            conditional_endorsement_triples, conditional_endorsement_series_triples,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             if let Some(reference_triples) = &self.reference_triples {
@@ -2286,7 +2293,7 @@ mod tests {
         ciborium::into_writer(&triples_map, &mut actual_cbor).unwrap();
 
         let expected_cbor: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xaa, // map(10)
               0x00, // key: 0 [reference-triples]
               0x81, // value: array(1)
                 0x82, // [0]array(2) [reference-triples-record]
@@ -2478,7 +2485,6 @@ mod tests {
                         0xff, // break
               0x19, 0x05, 0x39, // key: 1337 [extension(1337)]
               0xf5, // value: true
-            0xff, // break
         ];
 
         assert_eq!(actual_cbor, expected_cbor);
@@ -2582,7 +2588,7 @@ mod tests {
                   0x00, // value: 0 [supplements]
                 0xff, // break
               0x04, // key: 4 [triples]
-              0xbf, // value: map(indef) [triples-map]
+              0xa1, // value: map(1) [triples-map]
                 0x01, //  key: 1 [endorsed-triples]
                 0x81, // value: array(1)
                   0x82, // [0]array(2) [endorsed-triple-record]
@@ -2600,7 +2606,6 @@ mod tests {
                           0x01, // value: 1
                         0xff, // break
                       0xff, // break
-              0xff, //break
               0x19, 0x05, 0x39, // key: 1337 [extension(1337)]
               0xf4, // value: false
             0xff, // break

@@ -14,6 +14,10 @@
 //!
 //! Anywhere a `Vec<T>` is used in this implementation of the CoRIM Specification should never be empty.
 
+/// Macros for easier implementation definitions.
+#[macro_use]
+pub(crate) mod macros;
+
 /// Module containing CoMID tag types and structures
 pub mod comid;
 
@@ -34,9 +38,6 @@ pub mod triples;
 
 /// Fixed Bytes Arrays
 pub mod fixed_bytes;
-
-/// Macros for easier implementation definitions.
-pub(crate) mod macros;
 
 /// Errors for easily handling problems.
 pub mod error;

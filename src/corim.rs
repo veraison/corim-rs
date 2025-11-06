@@ -474,7 +474,12 @@ impl Serialize for CorimMap<'_> {
         S: Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            2 + self.extensions.as_ref().map_or(0, |e| e.len()),
+            dependent_rims, profile, rim_validity, entities,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("id", &self.id)?;
@@ -1154,7 +1159,8 @@ impl Serialize for CorimLocatorMap<'_> {
         S: Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None).unwrap();
+        let len = map_len!(self, 1, thumbprint);
+        let mut map = serializer.serialize_map(Some(len)).unwrap();
 
         if is_human_readable {
             map.serialize_entry("href", &self.href)?;
@@ -1450,7 +1456,8 @@ impl Serialize for ValidityMap {
         S: Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(self, 1, not_before);
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             if let Some(not_before) = &self.not_before {
@@ -1567,7 +1574,12 @@ impl Serialize for CorimEntityMap<'_> {
         S: Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            2 + self.extensions.as_ref().map_or(0, |e| e.len()),
+            reg_id,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("entity-name", &self.entity_name)?;
@@ -2256,7 +2268,12 @@ impl Serialize for CorimMetaMap<'_> {
         S: Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            1 + self.extensions.as_ref().map_or(0, |e| e.len()),
+            signature_validity,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("signer", &self.signer)?;
@@ -2485,7 +2502,12 @@ impl Serialize for CorimSignerMap<'_> {
         S: Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            1 + self.extensions.as_ref().map_or(0, |e| e.len()),
+            signer_uri,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("signer-name", &self.signer_name)?;
@@ -2785,7 +2807,7 @@ mod tests {
         ciborium::into_writer(&entity_map, &mut actual_cbor).unwrap();
 
         let expected_cbor: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xa4, // map(4)
               0x00, // key: 0 [entity-name]
               0x63, // value: tstr(3)
                 0x66, 0x6f, 0x6f, // "foo"
@@ -2802,7 +2824,6 @@ mod tests {
               0x6a, // value: tstr(10)
                 0x74, 0x65, 0x73, 0x74, 0x20, 0x76, 0x61, 0x6c, // "test val"
                 0x75, 0x65,                                     // "ue"
-            0xff, // break
         ];
 
         assert_eq!(actual_cbor, expected_cbor);
@@ -2833,14 +2854,13 @@ mod tests {
         ciborium::into_writer(&validity_map, &mut actual_cbor).unwrap();
 
         let expected_cbor = vec![
-            0xbf, // map(indef)
+            0xa2, // map(indef)
               0x00, // key: 0 [not-before]
               0xc1, // value: tag(1)
                 0x01, // 1
               0x01, // key: 1 [not-after]
               0xc1, // value: tag(1)
                 0x02,// 2
-            0xff, // break
         ];
 
         assert_eq!(actual_cbor, expected_cbor);
@@ -2873,7 +2893,7 @@ mod tests {
                     }),
                 },
                 expected_cbor: vec![
-                    0xbf, // map(indef)
+                    0xa2, // map(2)
                       0x00, // key: 0 [href]
                       0xd8, 0x20, // value: tag(32) [uri]
                         0x63, // tstr(3)
@@ -2883,7 +2903,6 @@ mod tests {
                         0x01, // [0: alg]1 [sha256]
                         0x43,//  [1: val] bstr(3)
                           0x01, 0x02, 0x03,
-                    0xff, // break
                 ],
                 expected_json: r#"{"href":{"type":"uri","value":"foo"},"thumbprint":"sha-256;AQID"}"#,
             },
@@ -2957,14 +2976,14 @@ mod tests {
                     .build()
                     .unwrap(),
                 expected_cbor: vec![
-                    0xbf, // map(indef) [corim-map]
+                    0xa7, // map(7) [corim-map]
                       0x00, // key: 0 [id]
                       0x63, // value: tstr(3)
                         0x66, 0x6f, 0x6f, // "foo"
                       0x01, // key: 1 [tags]
                         0x81, // value: array(1)
                           0xd9, 0x01, 0xfa, // [0]tag(506) [tagged-concise-mid-tag]
-                            0x58, 0x22, // bstr(34)
+                            0x58, 0x21, // bstr(33)
                               0xbf, // map(indef) [concise-mid-tag]
                                 0x01, // key: 1 [tag-identity]
                                 0xbf, // map(indef) [tag-identity-map]
@@ -2973,7 +2992,7 @@ mod tests {
                                     0x62, 0x61, 0x72, // "bar"
                                 0xff, // break
                                 0x04, // key: 4 [triples]
-                                0xbf, // value: map(indef) [triples-map]
+                                0xa1, // value: map(1) [triples-map]
                                   0x01, // key: 1 [endorsed-triples]
                                   0x81, // value: array(1)
                                     0x82, // [0]value: array(2) [endorsed-triple-record]
@@ -2991,39 +3010,34 @@ mod tests {
                                             0x01, // value: 1
                                           0xff, // break
                                         0xff, // break
-                                0xff, // break
                               0xff, // break
                       0x02, // key: 2 [dependent-rims]
                         0x81,// value: array(1)
-                          0xbf, // [0]map(indef) [corim-locator-map]
+                          0xa1, // [0]map(indef) [corim-locator-map]
                             0x00, // key: 0 [href]
                             0xd8, 0x20, // value: tag(32) [uri]
                               0x64, // tstr(4)
                                 0x62, 0x75, 0x7a, 0x7a, // "buzz"
-                          0xff, // break
                       0x03, // key: 3 [profile]
                       0xd8, 0x20, // value: tag(32) [uri]
                         0x63, // tstr(3)
                           0x71, 0x75, 0x78, // "qux"
                       0x04, // key: 4 [rim-validity]
-                      0xbf, // value: map(indef) [validity-map]
+                      0xa1, // value: map(1) [validity-map]
                         0x01, // key: 1 [not-after]
                         0xc1, // value: tag(1)
                           0x01, // 1
-                      0xff, // break
                       0x05, // key: 5 [entities]
                       0x81, // value: array(1)
-                        0xbf, // [0]map(indef) [corim-entity-map]
+                        0xa2, // [0]map(2) [corim-entity-map]
                           0x00, // key: 0 [entity-name]
                           0x63, // value: tstr(3)
                             0x7a, 0x6f, 0x74, // "zot"
                           0x02, // key: 2 [role]
                           0x81, // value: array(1)
                             0x01, // [0]1 [manifest-creator]
-                        0xff, // break
                       0x20, // key: -1 [extension(-1)]
                       0xf4, //  value: false
-                    0xff, //break
                 ],
                 expected_json: r#"{"id":"foo","tags":[{"type":"comid","value":{"tag-identity":{"tag-id":"bar"},"triples":{"endorsed-triples":[[{"instance":{"type":"bytes","value":"AQID"}},[{"mval":{"svn":1}}]]]}}}],"dependent-rims":[{"href":{"type":"uri","value":"buzz"}}],"profile":{"type":"uri","value":"qux"},"rim-validity":{"not-after":{"type":"time","value":1}},"entities":[{"entity-name":"zot","role":["manifest-creator"]}],"-1":false}"#,
             },
@@ -3081,9 +3095,9 @@ mod tests {
                 },
                 expected_json: r#"{"signer":{"signer-name":"foo","signer-uri":{"type":"uri","value":"bar"},"-1":true},"signature-validity":{"not-after":{"type":"time","value":1}},"-1":true}"#,
                 expected_cbor: vec![
-                    0xbf, // map(indef) [corim-meta-map]
+                    0xa3, // map(3) [corim-meta-map]
                       0x00, // key: 0 [signer]
-                      0xbf, // value: map(indef) [corim-signer-map]
+                      0xa3, // value: map(2) [corim-signer-map]
                         0x00, // key: 0 [signer-name]
                         0x63, // value: tstr(3)
                           0x66, 0x6f, 0x6f, // "foo"
@@ -3093,16 +3107,13 @@ mod tests {
                             0x62, 0x61, 0x72, // "bar"
                         0x20, // key: -1 [extension(-1)]
                         0xf5, // value: true
-                      0xff, // break
                       0x01, // key: 1 [signature-validity]
-                      0xbf, // value: map(indef) [validity-map]
+                      0xa1, // value: map(1) [validity-map]
                         0x01, // key: 1 [not-after]
                         0xc1, // value: tag(1)
                           0x01, // 1
-                      0xff, // break
                       0x20, // key: -1 [extension(-1)]
                       0xf5, // value: bool
-                    0xff, // break
                 ],
             },
         ];
@@ -3233,7 +3244,7 @@ mod tests {
         let expected: Vec<u8> = vec![
             0xd2, // tag(18) [COSE_Sign1_message]
               0x84, // array(4) [COSE_Sign1]
-                0x58, 0x4f, // [0]bstr(79) [protected-header]
+                0x58, 0x4c, // [0]bstr(76) [protected-header]
                   0xa4, // map(4)
                     0x01, // key: 1 [alg]
                     0x26, // value: -7 [ES256]
@@ -3246,10 +3257,10 @@ mod tests {
                     0x43, // bstr(3)
                       0x01, 0x02, 0x03,
                     0x08, // key: 8 [corim-meta]
-                    0x58, 0x2e, // value: bstr(46)
-                      0xbf, // map(indef) [corim-meta-map]
+                    0x58, 0x2b, // value: bstr(43)
+                      0xa2, // map(2) [corim-meta-map]
                         0x00, // key: 0 [signer]
-                        0xbf, // value: map(indef) [corim-signer-map]
+                        0xa2, // value: map(2) [corim-signer-map]
                           0x00, // key: 0 [signer-name]
                           0x6b, // value: tstr(10)
                             0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x20, 0x6e, // "signer n"
@@ -3259,26 +3270,23 @@ mod tests {
                             0x6a, // tstr(10)
                               0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x5f, 0x75, // "signer u"
                               0x72, 0x69,                                     // "ri"
-                        0xff, // break
                         0x01, // key: 1 [signature-validity]
-                        0xbf, // value: map(indef) [validity-map]
+                        0xa1, // value: map(1) [validity-map]
                           0x01, // key: 1 [not-after]
                           0xc1, // value: tag(1) [time]
                             0x1b,  // int(8)
                               0x00, 0x00, 0x00, 0x17, 0x48, 0x76, 0xe7, 0xff, // 99999999999
-                        0xff, // break
-                      0xff, // break
                 0xa0, // [1]map(0) [unprotected-header]
-                0x58, 0x3f, // [2]bstr(63) [payload]
+                0x58, 0x3c, // [2]bstr(60) [payload]
                   0xd9, 0x01, 0xf5, // tag(501) [unsigned-corim]
-                    0xbf, // map(indef) [corim-map]
+                    0xa3, // map(3) [corim-map]
                       0x00, // key: 0 [id]
                       0x63, // value: tstr(3)
                         0x66, 0x6f, 0x6f, // "foo"
                       0x01, // key: 1 [tags]
                         0x81, // value: array(1)
                           0xd9, 0x01, 0xfa, // [0]tag(506) [tagged-concise-mid-tag]
-                      0x58, 0x22, // bstr(34)
+                      0x58, 0x21, // bstr(33)
                         0xbf, // map(indef) [concise-mid-tag]
                           0x01, // key: 1 [tag-identity]
                           0xbf, // value: map(indef) [tag-identity-map]
@@ -3287,7 +3295,7 @@ mod tests {
                               0x62, 0x61, 0x72, // "bar"
                           0xff, // break
                           0x04, // key: 4 [triples]
-                          0xbf, // value: map(indef) [triples-map]
+                          0xa1, // value: map(1) [triples-map]
                             0x01, // key: 1 [endorsed-triples]
                             0x81, // value: array(1)
                               0x82, // [0]value: array(2) [endorsed-triple-record]
@@ -3305,19 +3313,16 @@ mod tests {
                                       0x01, // value: 1
                                     0xff, // break
                                   0xff, // break
-                          0xff, // break
                         0xff, // break
                         0x05, // key: 5 [entities]
                         0x81, // value: array(1)
-                          0xbf, // [0]map(indef) [corim-entity-map]
+                          0xa2, // [0]map(2) [corim-entity-map]
                             0x00, // key: 0 [entity-name]
                             0x63, // value: tstr(3)
                               0x7a, 0x6f, 0x74, // "zot"
                             0x02, // key: 2 [role]
                             0x81, // value: array(1)
                               0x01, // [0]1 [manifest-creator]
-                          0xff, // break
-                    0xff, // break
                 0x44, // [3]bstr(4) [signature]
                   0xde, 0xad, 0xbe, 0xef
         ];
