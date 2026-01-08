@@ -477,7 +477,10 @@ impl Serialize for CorimMap<'_> {
         let len = map_len!(
             self,
             2 + self.extensions.as_ref().map_or(0, |e| e.len()),
-            dependent_rims, profile, rim_validity, entities,
+            dependent_rims,
+            profile,
+            rim_validity,
+            entities,
         );
         let mut map = serializer.serialize_map(Some(len))?;
 
@@ -2854,7 +2857,7 @@ mod tests {
         ciborium::into_writer(&validity_map, &mut actual_cbor).unwrap();
 
         let expected_cbor = vec![
-            0xa2, // map(indef)
+            0xa2, // map(2)
               0x00, // key: 0 [not-before]
               0xc1, // value: tag(1)
                 0x01, // 1
@@ -2983,37 +2986,32 @@ mod tests {
                       0x01, // key: 1 [tags]
                         0x81, // value: array(1)
                           0xd9, 0x01, 0xfa, // [0]tag(506) [tagged-concise-mid-tag]
-                            0x58, 0x21, // bstr(33)
-                              0xbf, // map(indef) [concise-mid-tag]
+                            0x58, 0x1c, // bstr(28)
+                              0xa2, // map(indef) [concise-mid-tag]
                                 0x01, // key: 1 [tag-identity]
-                                0xbf, // map(indef) [tag-identity-map]
+                                0xa1, // map(1) [tag-identity-map]
                                   0x00, // key: 0 [tag-id]
                                   0x63, // value: tstr(3)
                                     0x62, 0x61, 0x72, // "bar"
-                                0xff, // break
                                 0x04, // key: 4 [triples]
                                 0xa1, // value: map(1) [triples-map]
                                   0x01, // key: 1 [endorsed-triples]
                                   0x81, // value: array(1)
                                     0x82, // [0]value: array(2) [endorsed-triple-record]
-                                      0xbf, // [0]value: map(indef) [condition: environment-map]
+                                      0xa1, // [0]value: map(1) [condition: environment-map]
                                         0x01, // key: 1 [instance]
                                         0xd9, 0x02, 0x30,  // value: tag(560) [tagged-bytes]
                                           0x43, // bstr(3)
                                             0x01, 0x02, 0x03,
-                                      0xff, // break
                                       0x81, // [1]array(1) [endorsement]
-                                        0xbf, // [0]map(indef) [measurement-map]
+                                        0xa1, // [0]map(1) [measurement-map]
                                           0x01, // key: 1 [mval]
-                                          0xbf, // value: map(indef) [measurement-values-map]
+                                          0xa1, // value: map(1) [measurement-values-map]
                                             0x01, // key: 1 [svn]
                                             0x01, // value: 1
-                                          0xff, // break
-                                        0xff, // break
-                              0xff, // break
                       0x02, // key: 2 [dependent-rims]
                         0x81,// value: array(1)
-                          0xa1, // [0]map(indef) [corim-locator-map]
+                          0xa1, // [0]map(1) [corim-locator-map]
                             0x00, // key: 0 [href]
                             0xd8, 0x20, // value: tag(32) [uri]
                               0x64, // tstr(4)
@@ -3277,7 +3275,7 @@ mod tests {
                             0x1b,  // int(8)
                               0x00, 0x00, 0x00, 0x17, 0x48, 0x76, 0xe7, 0xff, // 99999999999
                 0xa0, // [1]map(0) [unprotected-header]
-                0x58, 0x3c, // [2]bstr(60) [payload]
+                0x58, 0x37, // [2]bstr(60) [payload]
                   0xd9, 0x01, 0xf5, // tag(501) [unsigned-corim]
                     0xa3, // map(3) [corim-map]
                       0x00, // key: 0 [id]
@@ -3286,34 +3284,29 @@ mod tests {
                       0x01, // key: 1 [tags]
                         0x81, // value: array(1)
                           0xd9, 0x01, 0xfa, // [0]tag(506) [tagged-concise-mid-tag]
-                      0x58, 0x21, // bstr(33)
-                        0xbf, // map(indef) [concise-mid-tag]
+                      0x58, 0x1c, // bstr(33)
+                        0xa2, // map(2) [concise-mid-tag]
                           0x01, // key: 1 [tag-identity]
-                          0xbf, // value: map(indef) [tag-identity-map]
+                          0xa1, // value: map(indef) [tag-identity-map]
                             0x00, // key: 0 [tag-id]
                             0x63, // value: tstr(3)
                               0x62, 0x61, 0x72, // "bar"
-                          0xff, // break
                           0x04, // key: 4 [triples]
                           0xa1, // value: map(1) [triples-map]
                             0x01, // key: 1 [endorsed-triples]
                             0x81, // value: array(1)
                               0x82, // [0]value: array(2) [endorsed-triple-record]
-                                0xbf, // [0]value: map(indef) [condition: environment-map]
+                                0xa1, // [0]value: map(indef) [condition: environment-map]
                                   0x01, // key: 1 [instance]
                                   0xd9, 0x02, 0x30,  // value: tag(560) [tagged-bytes]
                                     0x43, // bstr(3)
                                       0x01, 0x02, 0x03,
-                                0xff, // break
                                 0x81, // [1]array(1) [endorsement]
-                                  0xbf, // [0]map(indef) [measurement-map]
+                                  0xa1, // [0]map(indef) [measurement-map]
                                     0x01, // key: 1 [mval]
-                                    0xbf, // value: map(indef) [measurement-values-map]
+                                    0xa1, // value: map(indef) [measurement-values-map]
                                       0x01, // key: 1 [svn]
                                       0x01, // value: 1
-                                    0xff, // break
-                                  0xff, // break
-                        0xff, // break
                         0x05, // key: 5 [entities]
                         0x81, // value: array(1)
                           0xa2, // [0]map(2) [corim-entity-map]

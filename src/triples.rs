@@ -240,7 +240,8 @@ impl Serialize for EnvironmentMap<'_> {
         S: Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(self, 0, class, instance, group,);
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             if let Some(class) = &self.class {
@@ -422,7 +423,8 @@ impl Serialize for ClassMap<'_> {
         S: Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(self, 0, class_id, vendor, model, layer, index,);
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             if let Some(class_id) = &self.class_id {
@@ -1921,7 +1923,13 @@ impl Serialize for MeasurementMap<'_> {
     {
         let is_human_readable = serializer.is_human_readable();
 
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            1, // mval
+            mkey,
+            authorized_by,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             if let Some(mkey) = &self.mkey {
@@ -2488,7 +2496,27 @@ impl Serialize for MeasurementValuesMap<'_> {
         S: Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            self.extensions.as_ref().map_or(0, |e| e.len())
+                + self
+                    .raw
+                    .as_ref()
+                    .map_or(0, |x| x.raw_value_mask.is_some() as usize + 1),
+            version,
+            svn,
+            digests,
+            flags,
+            mac_addr,
+            ip_addr,
+            serial_number,
+            ueid,
+            uuid,
+            name,
+            cryptokeys,
+            integrity_registers, // raw was counted in fixed part
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             if let Some(version) = &self.version {
@@ -2923,7 +2951,12 @@ impl Serialize for VersionMap<'_> {
         S: Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            1, // version
+            version_scheme,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("version", self.version.as_ref())?;
@@ -3352,7 +3385,21 @@ impl Serialize for FlagsMap<'_> {
     {
         let is_human_readable = serializer.is_human_readable();
 
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            0 + self.extensions.as_ref().map_or(0, |e| e.len()),
+            is_configured,
+            is_secure,
+            is_recovery,
+            is_debug,
+            is_replay_protected,
+            is_integrity_protected,
+            is_runtime_meas,
+            is_immutable,
+            is_tcb,
+            is_confidentiality_protected,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             if let Some(is_configured) = self.is_configured {
@@ -4272,7 +4319,8 @@ impl Serialize for TriplesRecordCondition<'_> {
         S: Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(self, 0, mkey, authorized_by,);
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             if let Some(mkey) = &self.mkey {
@@ -5263,7 +5311,7 @@ mod test {
         ciborium::into_writer(&class_map, &mut actual).unwrap();
 
         let expected: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xa5, // map(5)
               0x00, // key: 0
               0xd8, 0x6f, // value: tag 111
                 0x43, // bstr(3)
@@ -5278,7 +5326,6 @@ mod test {
               0x01, // value: 1
               0x04, // key: 4
               0x00, // value: 0
-            0xff, // break
         ];
 
         assert_eq!(actual, expected);
@@ -5308,13 +5355,12 @@ mod test {
         ciborium::into_writer(&class_map, &mut actual).unwrap();
 
         let expected: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xa2, // map(2)
               0x01, // key: 1
               0x63, // value: tstr(3)
                 0x66, 0x6f, 0x6f, // "foo"
               0x03, // key: 3
               0x01, // value: 1
-            0xff, // break
         ];
 
         assert_eq!(actual, expected);
@@ -5436,14 +5482,13 @@ mod test {
             .unwrap();
 
         let expected: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xa3, // map(3)
               0x00, // key: 0 [class]
-              0xbf, // value: map(indef)
+              0xa1, // value: map(1)
                 0x00, // key: 0 [class_id]
                 0xd8, 0x6f, // value: tag 111
                   0x43, // bstr(3)
                     0x2a, 0x03, 0x04, // OID bytes
-              0xff, // break
               0x01, // key: 1 [instance]
               0xd9, 0x02, 0x2d, // value: tag(557)
                 0x82, // array(2)
@@ -5455,7 +5500,6 @@ mod test {
                 0x50, // bstr(16)
                   0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4,
                   0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00,
-            0xff, // break
         ];
 
         let mut buffer: Vec<u8> = vec![];
@@ -5483,14 +5527,13 @@ mod test {
             .unwrap();
 
         let expected: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xa1, // map(1)
               0x01, // key: 1 [instance]
               0xd9, 0x02, 0x2d, // value: tag(557)
                 0x82, // array(2)
                   0x07, // 7 [SHA-384]
                   0x48, // bstr(8)
                     0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80,
-            0xff, // break
         ];
 
         let mut buffer: Vec<u8> = vec![];
@@ -5770,7 +5813,7 @@ mod test {
         ciborium::into_writer(&fm, &mut actual).unwrap();
 
         let expected = vec![
-            0xbf, // map(indef)
+            0xaa, // map(10)
               0x00, // key: 0
               0xf5, // value: true
               0x01, // key: 1
@@ -5791,7 +5834,6 @@ mod test {
               0xf5, // value: true
               0x09, // key: 9
               0xf4, // value: false
-            0xff, // break
         ];
 
         assert_eq!(actual, expected);
@@ -5831,12 +5873,11 @@ mod test {
         ciborium::into_writer(&fm, &mut actual).unwrap();
 
         let expected = vec![
-            0xbf, // map(indef)
+            0xa2, // map(2)
               0x00, // key: 0
               0xf5, // value: true
               0x20, // key: -1
               0xf5, // value: true
-            0xff, // break
         ];
 
         assert_eq!(actual, expected);
@@ -5945,13 +5986,12 @@ mod test {
         ciborium::into_writer(&vm, &mut actual).unwrap();
 
         let expected: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xa2, // map(2)
               0x00, // key: 0 [version]
               0x66, // value: tstr(6)
                 0x31, 0x2e, 0x32, 0x2e, 0x33, 0x61, // "1.2.3a"
               0x01, // key: 1 [version-scheme]
               0x02, // value: 2 [multipartnumeric+suffix]
-            0xff, // break
         ];
 
         assert_eq!(actual, expected);
@@ -6035,15 +6075,14 @@ mod test {
         ciborium::into_writer(&mvm, &mut actual).unwrap();
 
         let expected: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xae, // map(14)
               0x00, // key: 0 [version]
-              0xbf, // value: map(indef)
+              0xa2, // value: map(2)
                 0x00,  // key: 0 [version]
                 0x63,  // value: tstr(3)
                   0x31, 0x2e, 0x32, // "1.2"
                 0x01, // key: 1 [version-scheme]
                 0x04, // value: 4 [decimal]
-              0xff, // break
               0x01, // key: 1 [svn]
               0x01, // value: 1
               0x02, // key: 2 [digests]
@@ -6053,10 +6092,9 @@ mod test {
                   0x43, // bstr(3)
                     0x01, 0x02, 0x03,
               0x03, // key: 3 [flags]
-              0xbf, // value: map(indef)
+              0xa1, // value: map(1)
                 0x00, // key: 0 [is-configured]
                 0xf5, // value: true
-              0xff, // break
               0x04, // key: 4 [raw-value]
               0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                 0x43, // bstr(3)
@@ -6098,7 +6136,6 @@ mod test {
               0x20, // key: -1 
               0x43, // value: bstr(3),
                 0x0a, 0x0b, 0x0c,
-            0xff, // break
         ];
 
         assert_eq!(actual, expected);
@@ -6291,21 +6328,19 @@ mod test {
         ciborium::into_writer(&mm, &mut actual).unwrap();
 
         let expected: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xa3, // map(3)
               0x00, // key: 0 [mkey]
               0x01, // value: 1
               0x01, // key: 1 [mval]
-              0xbf, // value: map(indef)
+              0xa1, // value: map(1)
                 0x0b, // key: 11 [name]
                 0x63, // value: tstr(3)
                  0x66, 0x6f, 0x6f, // "foo"
-              0xff, // break
               0x02, // key: 2 [authorized-by]
               0x81, // value: array(1)
                 0xd9, 0x02, 0x30, // tag(560) [tagged-bytes]
                   0x43, // bstr(3)
                     0x01, 0x02, 0x03,
-            0xff, // break
         ];
 
         assert_eq!(actual, expected);

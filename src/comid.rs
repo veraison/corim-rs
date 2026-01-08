@@ -335,7 +335,15 @@ impl Serialize for ConciseMidTag<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            2 + // tag-identity, triples
+            self.extensions.as_ref().map_or(0, |e| e.len()),
+            language,
+            entities,
+            linked_tags,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             if let Some(language) = &self.language {
@@ -586,7 +594,8 @@ impl Serialize for TagIdentityMap<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(self, 1, tag_version);
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("tag-id", &self.tag_id)?;
@@ -880,7 +889,13 @@ impl Serialize for ComidEntityMap<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            2 + // entity-name, role
+            self.extensions.as_ref().map_or(0, |e| e.len()),
+            reg_id,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("entity-name", &self.entity_name)?;
@@ -1203,7 +1218,7 @@ impl Serialize for LinkedTagMap<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let mut map = serializer.serialize_map(Some(2))?;
 
         if is_human_readable {
             map.serialize_entry("linked-tag-id", &self.linked_tag_id)?;
@@ -1450,9 +1465,15 @@ impl Serialize for TriplesMap<'_> {
         let len = map_len!(
             self,
             0 + self.extensions.as_ref().map_or(0, |e| e.len()),
-            reference_triples, endorsed_triples, identity_triples, attest_key_triples,
-            dependency_triples, membership_triples, coswid_triples,
-            conditional_endorsement_triples, conditional_endorsement_series_triples,
+            reference_triples,
+            endorsed_triples,
+            identity_triples,
+            attest_key_triples,
+            dependency_triples,
+            membership_triples,
+            coswid_triples,
+            conditional_endorsement_triples,
+            conditional_endorsement_series_triples,
         );
         let mut map = serializer.serialize_map(Some(len))?;
 
@@ -2043,7 +2064,7 @@ mod tests {
         ciborium::into_writer(&entity_map, &mut actual_cbor).unwrap();
 
         let expected_cbor: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xa4, // map(4)
               0x00, // key: 0 [entity-name]
               0x63, // value: tstr(3)
                 0x66, 0x6f, 0x6f, // "foo"
@@ -2060,7 +2081,6 @@ mod tests {
               0x6a, // value: tstr(10)
                 0x74, 0x65, 0x73, 0x74, 0x20, 0x76, 0x61, 0x6c, // "test val"
                 0x75, 0x65,                                     // "ue"
-            0xff, // break
         ];
 
         assert_eq!(actual_cbor, expected_cbor);
@@ -2091,13 +2111,12 @@ mod tests {
         ciborium::into_writer(&tag_identity, &mut actual_cbor).unwrap();
 
         let expected_cbor: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xa2, // map(2)
               0x00, // key: 0 [tag-id]
               0x63, // value: tstr(3)
                 0x66, 0x6f, 0x6f, // "foo"
               0x01, // key: 1 [tag-version]
               0x01, // value: 1
-            0xff,
         ];
 
         assert_eq!(actual_cbor, expected_cbor);
@@ -2173,14 +2192,13 @@ mod tests {
         ciborium::into_writer(&linked_tag_map, &mut actual_cbor).unwrap();
 
         let expected_cbor: Vec<u8> = vec![
-            0xbf, // map(indef)
+            0xa2, // map(2)
               0x00, // key: 0 [linked-tag-id]
               0x50, // value: bstr(16)
                 0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4,
                 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00,
               0x01, // key: 1 [tag-rel]
               0x01, // value: 1 [replaces]
-            0xff, // break
         ];
 
         assert_eq!(actual_cbor, expected_cbor);
@@ -2297,51 +2315,44 @@ mod tests {
               0x00, // key: 0 [reference-triples]
               0x81, // value: array(1)
                 0x82, // [0]array(2) [reference-triples-record]
-                  0xbf, // [0]map(indef) [ref-env]
+                  0xa1, // [0]map(1) [ref-env]
                     0x01, // key: 1 [instance]
                     0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                       0x43, // bstr(3)
                         0x01, 0x02, 0x03,
-                  0xff, // break
                   0x81, // [1]array(1) [rev-claims]
-                    0xbf, // [0]map(indef) [measurement-values-map]
+                    0xa1, // [0]map(1) [measurement-values-map]
                       0x01, // key: 1 [mval]
-                      0xbf, // value: map(indef)
+                      0xa1, // value: map(1)
                         0x01, // key: 1 [svn]
                         0x01, // value: 1
-                      0xff, // break
-                    0xff, // break
               0x01, // key: 1 [endorsement-triples]
               0x81, // value: array(1)
                 0x82, // [0]array(2)  [endorsed-triples-record]
-                  0xbf, // [0]map(indef) [condition]
+                  0xa1, // [0]map(1) [condition]
                     0x01, // key: 1 [instance]
                     0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                       0x43, // bstr(3)
                         0x01, 0x02, 0x03,
-                  0xff, // break
                   0x81, // [1]array(1) [endorsement]
-                    0xbf, // [0]map(indef) [measurement-values-map]
+                    0xa1, // [0]map(1) [measurement-values-map]
                       0x01, // key: 1 [mval]
-                      0xbf, // value: map(indef)
+                      0xa1, // value: map(1)
                         0x01, // key: 1 [svn]
                         0x01, // value: 1
-                      0xff, // break
-                    0xff, // break
               0x02, // key: 2 [identity-triples]
               0x81, // value: array(1)
                 0x83, // [0]array(3) [identity-triple-record]
-                  0xbf, // [0]map(indef) [environment]
+                  0xa1, // [0]map(1) [environment]
                     0x01, // key: 1 [instance]
                     0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                       0x43, // bstr(3)
                         0x01, 0x02, 0x03,
-                  0xff, // break
                   0x81, // [1]array(1) [key_list]
                     0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                       0x43, // bstr(3)
                         0x04, 0x05, 0x06,
-                  0xbf, // [2]map(indef) [conditions]
+                  0xa2, // [2]map(2) [conditions]
                     0x00, // key: 0 [mkey]
                     0x63, // value: tstr(3)
                       0x66, 0x6f, 0x6f, // "foo"
@@ -2350,21 +2361,19 @@ mod tests {
                       0xd9, 0x02, 0x30, // [0]tag(560) [tagged-bytes]
                         0x43, // bstr(3)
                           0x04, 0x05, 0x06,
-                  0xff, // break
               0x03, // key: 3 [attest-key-triples]
               0x81, // value: array(1)
                 0x83, // [0]array(3) [attest-key-triple-record]
-                  0xbf, // [0]map(indef) [environment]
+                  0xa1, // [0]map(1) [environment]
                     0x01, // key: 1 [instance]
                     0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                       0x43, // bstr(3)
                         0x01, 0x02, 0x03,
-                  0xff, // break
                   0x81, // [1]array(1) [key_list]
                     0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                       0x43, // bstr(3)
                         0x04, 0x05, 0x06,
-                  0xbf, // [2]map(indef) [conditions]
+                  0xa2, // [2]map(2) [conditions]
                     0x00, // key: 0 [mkey]
                     0x63, // value: tstr(3)
                       0x66, 0x6f, 0x6f, // "foo"
@@ -2373,7 +2382,6 @@ mod tests {
                       0xd9, 0x02, 0x30, // [0]tag(560) [tagged-bytes]
                         0x43, // bstr(3)
                           0x04, 0x05, 0x06,
-                  0xff, // break
               0x04, // key: 4 [dependency-triples]
               0x81, // value: array(1)
                 0x82, // [0]array(2) [domain-dependency-triple-record]
@@ -2381,12 +2389,11 @@ mod tests {
                     0x43, // bstr(3)
                       0x2a, 0x03, 0x04,
                   0x81, // [1]array(1)
-                    0xbf, // [1]map(indef) [environment-map]
+                    0xa1, // [1]map(1) [environment-map]
                       0x01, // key: 1 [instance]
                       0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                         0x43, // bstr(3)
                           0x01, 0x02, 0x03,
-                    0xff, // break
               0x05, // key: 5 [membership-triples]
               0x81, // value: array(1)
                 0x82, // [0]array(2) [domain-membership-triple-record]
@@ -2394,21 +2401,19 @@ mod tests {
                     0x43, // bstr(3)
                       0x2a, 0x03, 0x04,
                   0x81, // [1]array(1)
-                    0xbf, // [0]map(indef) [environment-map]
+                    0xa1, // [0]map(1) [environment-map]
                       0x01, // key: 1 [instance]
                       0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                         0x43, // bstr(3)
                           0x01, 0x02, 0x03,
-                    0xff, // break
               0x06, // key: 6 [coswid-triples]
               0x81, // value: array(1)
                 0x82, // [0]array(2) [coswid-triple-record]
-                  0xbf, // [0]map(indef) [environment-map]
+                  0xa1, // [0]map(1) [environment-map]
                     0x01, // key: 1 [instance]
                     0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                       0x43, // bstr(3)
                         0x01, 0x02, 0x03,
-                  0xff, // break
                   0x81, // [1]array(1)
                     0x63, // [0]tstr(3)
                      0x62, 0x61, 0x72, // "bar"
@@ -2416,73 +2421,60 @@ mod tests {
               0x81, // value: array(1)
                 0x82, // [0]array(2) [conditional-endorsement-series-triple-record]
                   0x82,  // [0]array(2) [stateful-environment-record]
-                    0xbf, // [0]map(indef) [environment]
+                    0xa1, // [0]map(1) [environment]
                       0x01, // key: 1 [instance]
                       0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                         0x43, // bstr(3)
                           0x01, 0x02, 0x03,
-                    0xff, // break
                     0x81, // [1]array(1) [claims_list]
-                      0xbf, // [0]map(indef) [measurement-map]
+                      0xa1, // [0]map(1) [measurement-map]
                         0x01, // key: 1 [mval]
-                        0xbf, // value: map(indef) [measurement-values-map]
+                        0xa1, // value: map(1) [measurement-values-map]
                           0x01,  // key: 1 [svn]
                           0x01,  // value: 1
-                        0xff, // break
-                      0xff, // break
                   0x81, // [1]array(1) [series]
                     0x82, // [0]array(2) [conditional-series-record]
                       0x81, // [0]array(1) [selection]
-                        0xbf, // [0]map(indef) [measurement-map]
+                        0xa1, // [0]map(1) [measurement-map]
                           0x01, // key: 1 [mval]
-                          0xbf, // value: map(indef) [measurement-values-map]
+                          0xa1, // value: map(1) [measurement-values-map]
                             0x01, // key: 1 [svn]
                             0x01, // value: 1
-                          0xff, // break
-                        0xff, // break
                       0x81, // [1]array(1) [addition]
-                        0xbf, // [0]map(indef) [measurement-map]
+                        0xa1, // [0]map(1) [measurement-map]
                           0x01, // key: 1 [mval]
-                          0xbf, // value: map(indef) [measurement-values-map]
+                          0xa1, // value: map(1) [measurement-values-map]
                             0x01, // key: 1 [svn]
                             0x01, // value: 1
-                          0xff, // break
-                       0xff, // break
               0x0a, // key: 10 [conditional-endorsement-triples]
               0x81, // value: array(1)
                 0x82, // [0]array(2) [conditional-endorsement-triple-record]
                   0x81, // [0]array(1) [conditions]
                     0x82, // [0]array(2) [stateful-environment-record]
-                      0xbf, // [0]map(indef) [environment]
+                      0xa1, // [0]map(1) [environment]
                         0x01, // key: 1 [instance]
                         0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                           0x43, // bstr(3)
                             0x01, 0x02, 0x03,
-                      0xff, // break
                       0x81, // [1]array(1) [claims-list]
-                        0xbf, // [0]map(indef) [measurement-map]
+                        0xa1, // [0]map(1) [measurement-map]
                           0x01, // key: 1 [mval]
-                          0xbf, // value: map(indef) [measurement-values-map]
+                          0xa1, // value: map(1) [measurement-values-map]
                             0x01, // key: 1 [svn]
                             0x01, // value: 1
-                          0xff, // break
-                        0xff, // break
                   0x81, // [1]array(1) [endorsements]
                     0x82, // [0]array(2) [endorsed-triple-record]
-                      0xbf, // [0]map(indef) [condition]
+                      0xa1, // [0]map(1) [condition]
                         0x01, // key: 1 [instance]
                         0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes]
                           0x43, // bstr(3)
                             0x01, 0x02, 0x03,
-                      0xff, // break
                       0x81, // [1]array(1) [endorsement]
-                        0xbf, // [0]map(indef) [measurement-map]
+                        0xa1, // [0]map(1) [measurement-map]
                           0x01, // key: 1 [mval]
-                          0xbf, // value: map(indef) [measurement-values-map]
+                          0xa1, // value: map(1) [measurement-values-map]
                             0x01, // key: 1 [svn]
                             0x01, // value: 1
-                          0xff, // break
-                        0xff, // break
               0x19, 0x05, 0x39, // key: 1337 [extension(1337)]
               0xf5, // value: true
         ];
@@ -2558,57 +2550,50 @@ mod tests {
         ciborium::into_writer(&comid, &mut actual_cbor).unwrap();
 
         let expected_cbor: Vec<u8> = vec![
-            0xbf, // map(indef) [concise-mid-tag]
+            0xa6, // map(6) [concise-mid-tag]
               0x00, // key: 0 [language]
               0x65, // value: tstr(5)
                 0x65, 0x6e, 0x2d, 0x47, 0x42, // "en-GB"
               0x01, // key: 1 [tag-identity]
-              0xbf, // value: map(indef) [tag-identity-map]
+              0xa1, // value: map(1) [tag-identity-map]
                 0x00, // key: 0 [tag-id]
                 0x63, // value: tstr(3)
                   0x66, 0x6f, 0x6f, // "foo"
-              0xff, // break
               0x02, // key: 2 [entities]
               0x81, // value: array(1)
-                0xbf, // [0]map(indef) [comid-entity-map]
+                0xa2, // [0]map(2) [comid-entity-map]
                   0x00, // key: 0 [entity-name]
                   0x63, // value: tstr(3)
                     0x66, 0x6f, 0x6f, // "foo"
                   0x02, // key: 2 [role]
                   0x81, // value: array(1)
                     0x01, // [0]1 [creator]
-                0xff, // break
               0x03, // key: 3 [linked-tags]
               0x81, // value: array(0)
-                0xbf, // [0]map(indef) [linked-tag-map]
+                0xa2, // [0]map(2) [linked-tag-map]
                   0x00, // key: 0 [linked-tag-id]
                   0x63, // value: tstr(3)
                     0x62, 0x61, 0x72, // "bar"
                   0x01, // key: 1 [tag-rel]
                   0x00, // value: 0 [supplements]
-                0xff, // break
               0x04, // key: 4 [triples]
               0xa1, // value: map(1) [triples-map]
                 0x01, //  key: 1 [endorsed-triples]
                 0x81, // value: array(1)
                   0x82, // [0]array(2) [endorsed-triple-record]
-                    0xbf, // [0]map(indef) [environment-map]
+                    0xa1, // [0]map(1) [environment-map]
                       0x01, // key: 1 [instance]
                       0xd9, 0x02, 0x30, // value: tag(560) [tagged-bytes[
                         0x43, // bstr(3)
                           0x01, 0x02, 0x03,
-                    0xff, // break
                     0x81, // [1]array(1)
-                      0xbf, // [0]map(indef) [measurement-map]
+                      0xa1, // [0]map(1) [measurement-map]
                         0x01, // key: 1 [mval]
-                        0xbf, // value: map(indef) [measurement-values-map]
+                        0xa1, // value: map(1) [measurement-values-map]
                           0x01, // key: 1 [svn]
                           0x01, // value: 1
-                        0xff, // break
-                      0xff, // break
               0x19, 0x05, 0x39, // key: 1337 [extension(1337)]
               0xf4, // value: false
-            0xff, // break
         ];
 
         assert_eq!(actual_cbor, expected_cbor);

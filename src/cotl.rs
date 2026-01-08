@@ -45,7 +45,7 @@ impl Serialize for ConciseTlTag<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let mut map = serializer.serialize_map(Some(3))?;
 
         if is_human_readable {
             map.serialize_entry("tag-identity", &self.tag_identity)?;
@@ -253,28 +253,25 @@ mod test {
                     .build()
                     .unwrap(),
                 expected_cbor: vec! [
-                  0xbf, // map(indef) [concise-tl-tag]
+                  0xa3, // map(3) [concise-tl-tag]
                     0x00, // key: 0 [tag-identity]
-                    0xbf, // value: map(indef) [tag-identity-map]
+                    0xa2, // value: map(2) [tag-identity-map]
                       0x00, // key: 0 [tag-id]
                       0x63, // value: tstr(3)
                         0x66, 0x6f, 0x6f, // "foo"
                       0x01, // key: 1 [tag-version]
                       0x01, // value: 1
-                    0xff, // break
                     0x01, // key: 1 [tags-list]
                     0x81, // value: array(1)
-                      0xbf, // map(indef) [tag-identity-map]
+                      0xa1, // map(1) [tag-identity-map]
                         0x00, // key: 0 [tag-id]
                         0x63, // value: tstr(3)
                           0x62, 0x61, 0x72, // "bar"
-                      0xff, // break
                     0x02, // key: 2 [tl-validity]
                     0xa1, // value: map(1) [validity-map]
                       0x01, // key: 1 [not-after]
                       0xc1, // value: tag(1) [time]
                         0x01,  // 1
-                  0xff, // break
                 ],
                 expected_json: r#"{"tag-identity":{"tag-id":"foo","tag-version":1},"tags-list":[{"tag-id":"bar"}],"tl-validity":{"not-after":{"type":"time","value":1}}}"#,
             },

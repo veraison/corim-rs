@@ -3038,7 +3038,11 @@ impl Serialize for CoseKey {
         }
 
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self, 1, // kty
+            kid, alg, key_ops, base_iv, crv, x, y, d, k,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("kty", &self.kty)?;
@@ -5856,7 +5860,7 @@ mod tests {
 
             let expected_bytes = vec![
                 0xd9, 0x02, 0x2e, // tag(558)
-                  0xbf,  // map(indef)
+                  0xa9,  // map(9)
                     0x01, // key: 1 [kty]
                     0x02, // value: 2 [CoseKty::Ec2]
                     0x02, // key: 2 [kid]
@@ -5881,7 +5885,6 @@ mod tests {
                     0x23, // key: -4 [d]
                     0x43, // value: bstr(3)
                       0x0d, 0x0e, 0x0f,
-                  0xff // break
             ];
 
             let mut buffer = vec![];
