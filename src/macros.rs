@@ -237,7 +237,7 @@ macro_rules! _compare {
     };
 }
 
-/// Calcuclate the  "map length" of a struct to be used for CBOR encoding.
+/// Calculate the "map length" of a struct to be used for CBOR encoding.
 /// The first argument is the struct, followed by the fixed part of the
 /// length (number of mandotory fields and extensions), followed by a list
 /// of optional fields that need to be evaluated.
