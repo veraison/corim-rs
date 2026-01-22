@@ -200,7 +200,7 @@ impl<'a> ConciseMidTag<'a> {
     {
         let mut raw_bytes = vec![];
         ciborium::into_writer(value, &mut raw_bytes)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         let raw_value = TaggedBytes::new(raw_bytes.into());
 
         let measurement = MeasurementMap {
@@ -289,7 +289,7 @@ impl<'a> ConciseMidTag<'a> {
     {
         let mut raw_bytes = vec![];
         ciborium::into_writer(value, &mut raw_bytes)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         let raw_value = TaggedBytes::new(raw_bytes.into());
 
         let measurement = MeasurementMap {
@@ -1464,7 +1464,7 @@ impl Serialize for TriplesMap<'_> {
         let is_human_readable = serializer.is_human_readable();
         let len = map_len!(
             self,
-            0 + self.extensions.as_ref().map_or(0, |e| e.len()),
+            self.extensions.as_ref().map_or(0, |e| e.len()),
             reference_triples,
             endorsed_triples,
             identity_triples,

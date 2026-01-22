@@ -867,6 +867,7 @@ impl<'de> Deserialize<'de> for CorimIdTypeChoice<'_> {
 }
 
 /// Types of tags that can be included in a CoRIM
+#[allow(clippy::large_enum_variant)]
 #[repr(C)]
 #[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ConciseTagTypeChoice<'a> {

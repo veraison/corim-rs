@@ -873,6 +873,7 @@ impl<'de> Deserialize<'de> for ClassIdTypeChoice<'_> {
 }
 
 /// Possible types for instance identifiers
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Serialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
@@ -3387,7 +3388,7 @@ impl Serialize for FlagsMap<'_> {
 
         let len = map_len!(
             self,
-            0 + self.extensions.as_ref().map_or(0, |e| e.len()),
+            self.extensions.as_ref().map_or(0, |e| e.len()),
             is_configured,
             is_secure,
             is_recovery,
