@@ -941,14 +941,14 @@ impl InstanceIdTypeChoice<'_> {
         }
     }
 
-    pub fn as_crypto_key(&self) -> Option<CryptoKeyTypeChoice> {
+    pub fn as_crypto_key(&self) -> Option<CryptoKeyTypeChoice<'_>> {
         match self {
             Self::CryptoKey(key) => Some(key.clone()),
             _ => None,
         }
     }
 
-    pub fn as_ref_crypto_key(&self) -> Option<&CryptoKeyTypeChoice> {
+    pub fn as_ref_crypto_key(&self) -> Option<&CryptoKeyTypeChoice<'_>> {
         match self {
             Self::CryptoKey(key) => Some(key),
             _ => None,
@@ -962,14 +962,14 @@ impl InstanceIdTypeChoice<'_> {
         }
     }
 
-    pub fn as_ref_extension(&self) -> Option<&ExtensionValue> {
+    pub fn as_ref_extension(&self) -> Option<&ExtensionValue<'_>> {
         match self {
             Self::Extension(ext) => Some(ext),
             _ => None,
         }
     }
 
-    pub fn as_extension(&self) -> Option<ExtensionValue> {
+    pub fn as_extension(&self) -> Option<ExtensionValue<'_>> {
         match self {
             Self::Extension(ext) => Some(ext.clone()),
             _ => None,
@@ -1403,42 +1403,42 @@ impl CryptoKeyTypeChoice<'_> {
         matches!(self, Self::Extension(_))
     }
 
-    pub fn as_pkix_key(&self) -> Option<PkixBase64KeyType> {
+    pub fn as_pkix_key(&self) -> Option<PkixBase64KeyType<'_>> {
         match self {
             Self::PkixBase64Key(key) => Some(key.clone()),
             _ => None,
         }
     }
 
-    pub fn as_ref_pkix_key(&self) -> Option<&PkixBase64KeyType> {
+    pub fn as_ref_pkix_key(&self) -> Option<&PkixBase64KeyType<'_>> {
         match self {
             Self::PkixBase64Key(key) => Some(key),
             _ => None,
         }
     }
 
-    pub fn as_pkix_cert(&self) -> Option<PkixBase64CertType> {
+    pub fn as_pkix_cert(&self) -> Option<PkixBase64CertType<'_>> {
         match self {
             Self::PkixBase64Cert(cert) => Some(cert.clone()),
             _ => None,
         }
     }
 
-    pub fn as_ref_pkix_cert(&self) -> Option<&PkixBase64CertType> {
+    pub fn as_ref_pkix_cert(&self) -> Option<&PkixBase64CertType<'_>> {
         match self {
             Self::PkixBase64Cert(cert) => Some(cert),
             _ => None,
         }
     }
 
-    pub fn as_pkix_cert_path(&self) -> Option<PkixBase64CertPathType> {
+    pub fn as_pkix_cert_path(&self) -> Option<PkixBase64CertPathType<'_>> {
         match self {
             Self::PkixBase64CertPath(cert_path) => Some(cert_path.clone()),
             _ => None,
         }
     }
 
-    pub fn as_ref_pkix_cert_path(&self) -> Option<&PkixBase64CertPathType> {
+    pub fn as_ref_pkix_cert_path(&self) -> Option<&PkixBase64CertPathType<'_>> {
         match self {
             Self::PkixBase64CertPath(cert_path) => Some(cert_path),
             _ => None,
@@ -1522,7 +1522,7 @@ impl CryptoKeyTypeChoice<'_> {
         }
     }
 
-    pub fn as_extension(&self) -> Option<&ExtensionValue> {
+    pub fn as_extension(&self) -> Option<&ExtensionValue<'_>> {
         match self {
             Self::Extension(ext) => Some(ext),
             _ => None,
@@ -1777,14 +1777,14 @@ impl GroupIdTypeChoice<'_> {
         }
     }
 
-    pub fn as_ref_extension(&self) -> Option<&ExtensionValue> {
+    pub fn as_ref_extension(&self) -> Option<&ExtensionValue<'_>> {
         match self {
             Self::Extension(ext) => Some(ext),
             _ => None,
         }
     }
 
-    pub fn as_extension(&self) -> Option<ExtensionValue> {
+    pub fn as_extension(&self) -> Option<ExtensionValue<'_>> {
         match self {
             Self::Extension(ext) => Some(ext.clone()),
             _ => None,
@@ -4019,7 +4019,7 @@ impl IntegrityRegisters<'_> {
     }
 
     /// Iterate over (Ulabel, Vec<Digest>) tuples contained in the IntegrityRegisters.
-    pub fn iter(&self) -> Iter<'_, Ulabel, Vec<Digest>> {
+    pub fn iter(&self) -> Iter<'_, Ulabel<'_>, Vec<Digest>> {
         self.0.iter()
     }
 
