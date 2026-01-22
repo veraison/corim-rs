@@ -288,6 +288,7 @@ impl<'a, 'b> ExtensionMap<'a> {
     }
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl<'a> ExtensionMap<'a> {
     pub fn new() -> Self {
         Self::default()
