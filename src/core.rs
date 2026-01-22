@@ -324,7 +324,7 @@ impl Empty for ExtensionMap<'_> {
 }
 
 /// ExtensionMap represents the possible types that can be used in extensions
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, TryFrom, Clone)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone)]
 pub enum ExtensionValue<'a> {
     /// No value
     Null,
@@ -1371,7 +1371,7 @@ impl From<CoseKey> for CoseKeyType {
 
 /// Represents a value that can be either text or bytes
 #[repr(C)]
-#[derive(Debug, Serialize, Deserialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, Deserialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(untagged)]
 pub enum TextOrBytes<'a> {
     /// UTF-8 string value
@@ -1418,7 +1418,7 @@ impl<'a> From<&'a str> for TextOrBytes<'a> {
 
 /// Represents a value that can be either text or fixed-size bytes
 #[repr(C)]
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum TextOrBytesSized<'a, const N: usize> {
     /// UTF-8 string value
     Text(Text<'a>),
@@ -1533,7 +1533,7 @@ pub type HashEntry = Digest;
 
 /// Represents a label that can be either text or integer
 #[repr(C)]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From, TryFrom)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From)]
 #[serde(untagged)]
 pub enum Label<'a> {
     /// Text label
@@ -1645,7 +1645,7 @@ impl Display for Label<'_> {
 
 /// Represents an unsigned label that can be either text or unsigned integer
 #[repr(C)]
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From, TryFrom)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, From)]
 pub enum Ulabel<'a> {
     /// Text label
     Text(Text<'a>),
@@ -1818,7 +1818,7 @@ impl<'de> Deserialize<'de> for Ulabel<'_> {
 }
 
 /// Represents one or more values that can be either text or integers
-#[derive(Debug, Clone, PartialEq, Serialize, Eq, PartialOrd, Ord, TryFrom)]
+#[derive(Debug, Clone, PartialEq, Serialize, Eq, PartialOrd, Ord)]
 #[serde(untagged)]
 #[repr(C)]
 pub enum OneOrMore<T> {
@@ -2059,7 +2059,7 @@ impl AttributeMap<'_> {
 
 /// Represents the value of a global attribute. Either one or more integers, or one or more text
 /// strings.
-#[derive(Debug, Clone, PartialEq, Serialize, Eq, PartialOrd, Ord, From, TryFrom)]
+#[derive(Debug, Clone, PartialEq, Serialize, Eq, PartialOrd, Ord, From)]
 #[serde(untagged)]
 #[repr(C)]
 pub enum AttributeValue<'a> {
@@ -2452,6 +2452,7 @@ impl Empty for GlobalAttributes<'_> {
 
 /// Registry of valid keys for CoRIM maps according to the specification
 #[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+#[try_from(repr)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum CorimMapRegistry {
@@ -2471,6 +2472,7 @@ pub enum CorimMapRegistry {
 
 /// Registry of valid keys for CoMID maps according to the specification
 #[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+#[try_from(repr)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum ComidMapRegistry {
@@ -2488,6 +2490,7 @@ pub enum ComidMapRegistry {
 
 /// Registry of valid keys for CoTL maps according to the specification
 #[derive(Debug, Serialize, Deserialize, From, TryFrom)]
+#[try_from(repr)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum CotlMapRegistry {
@@ -2612,7 +2615,7 @@ impl<'de> Deserialize<'de> for Digest {
 }
 /// Represents either a COSE key set or a single COSE key
 #[repr(C)]
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum CoseKeySetOrKey {
     /// A set of COSE keys
     KeySet(Vec<CoseKey>),
@@ -3641,7 +3644,7 @@ impl<'de> Deserialize<'de> for RawValueTypeChoice<'_> {
 
 /// Version scheme enumeration as defined in the specification
 #[repr(i64)]
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum VersionScheme<'a> {
     /// Multi-part numeric version (e.g., 1.2.3)
     Multipartnumeric = 1,
@@ -3875,6 +3878,7 @@ impl<'de> Deserialize<'de> for VersionScheme<'_> {
 /// ```
 #[repr(i8)]
 #[derive(Debug, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[try_from(repr)]
 pub enum HashAlgorithm {
     Sha256 = 1,
     Sha256_128 = 2,
@@ -4164,7 +4168,7 @@ impl<'de> Deserialize<'de> for HashAlgorithm {
 /// let alg = CoseAlgorithm::ES256;  // ECDSA with SHA-256
 /// let hash_alg = CoseAlgorithm::Sha256;  // SHA-256 hash function
 /// ```
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord )]
 #[repr(i64)]
 pub enum CoseAlgorithm {
     // Reserved for Private Use
@@ -4710,7 +4714,7 @@ impl<'de> Deserialize<'de> for CoseAlgorithm {
 /// let okp = CoseKty::Okp;  // Octet Key Pair
 /// let ec2 = CoseKty::Ec2;  // Elliptic Curve w/ x/y coordinates
 /// ```
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(i8)]
 pub enum CoseKty {
     // key type is invalid/has not been set
@@ -4833,7 +4837,7 @@ impl<'de> Deserialize<'de> for CoseKty {
 /// let sign = CoseKeyOperation::Sign;  // key used for signing
 /// let verify = CoseKeyOperation::Verify;  // key used for verification of signatures
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(i8)]
 pub enum CoseKeyOperation {
     /// The key is used to create signatures. Requires private key fields.
@@ -5045,7 +5049,7 @@ impl<'de> Deserialize<'de> for CoseKeyOperation {
 /// let curve1 = CoseEllipticCurve::P256; // NIST P-256 curve, EC2 keys
 /// let curve2 = CoseEllipticCurve::Ed25519; // Ed25519 EdDSA curve, OKP keys
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, TryFrom)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(i64)]
 pub enum CoseEllipticCurve {
     /// Private Use

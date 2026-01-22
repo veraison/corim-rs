@@ -78,7 +78,7 @@ use crate::{
     ExtensionValue, GlobalAttributes, HashEntry, Int, Integer, IntegerTime, Label, OneOrMore, Text,
     TextOrBytes, TextOrBytesSized, Uint, Uri, VersionScheme,
 };
-use derive_more::{Constructor, From, TryFrom};
+use derive_more::{Constructor, From};
 use serde::{
     de::{self, Visitor},
     ser::{self, SerializeMap},
@@ -1305,7 +1305,7 @@ impl<'a> SoftwareMetaEntryBuilder<'a> {
     }
 }
 
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(u8)]
 pub enum Role<'a> {
     TagCreator = 1,
@@ -2189,7 +2189,7 @@ impl<'a> LinkEntryBuilder<'a> {
 }
 
 /// Ownership status enumeration for linked resources
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(u8)]
 pub enum Ownership<'a> {
     /// Resource is no longer maintained
@@ -2332,7 +2332,7 @@ impl<'de> Deserialize<'de> for Ownership<'_> {
 }
 
 /// Relationship types between resources in CoSWID tags
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(u8)]
 pub enum Rel<'a> {
     /// Previous version of the software
@@ -4928,7 +4928,7 @@ impl<'a> EvidenceEntryBuilder<'a> {
 }
 
 /// Usage requirement levels for resources
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(u8)]
 pub enum Use<'a> {
     /// Resource is optional

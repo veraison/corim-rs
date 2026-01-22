@@ -190,7 +190,7 @@ use crate::{
 };
 
 use coset::{iana::EnumI64 as _, AsCborValue as _, CoseSign1};
-use derive_more::{Constructor, From, TryFrom};
+use derive_more::{Constructor, From};
 use serde::{
     de::{self, Visitor},
     ser::{self, SerializeMap},
@@ -203,7 +203,7 @@ pub type UnsignedCorimMap<'a> = CorimMap<'a>;
 
 /// A type choice representing either a signed or unsigned CoRIM manifest
 #[repr(C)]
-#[derive(Debug, From, TryFrom)]
+#[derive(Debug, From)]
 #[allow(clippy::large_enum_variant)]
 pub enum ConciseRimTypeChoice<'a> {
     /// An unprotected CoRIM with CBOR tag 501
@@ -784,7 +784,7 @@ impl<'a> CorimMapBuilder<'a> {
 
 /// Represents either a string or UUID identifier for a CoRIM
 #[repr(C)]
-#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(untagged)]
 pub enum CorimIdTypeChoice<'a> {
     /// Text string identifier
@@ -868,7 +868,7 @@ impl<'de> Deserialize<'de> for CorimIdTypeChoice<'_> {
 
 /// Types of tags that can be included in a CoRIM
 #[repr(C)]
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ConciseTagTypeChoice<'a> {
     /// A Concise Software Identity (CoSWID) tag
     Swid(TaggedConciseSwidTag<'a>),
@@ -1261,7 +1261,7 @@ impl<'de> Deserialize<'de> for CorimLocatorMap<'_> {
 
 /// Profile identifier that can be either a URI or OID
 #[repr(C)]
-#[derive(Debug, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ProfileTypeChoice<'a> {
     /// URI-based profile identifier
     Uri(Uri<'a>),
@@ -1775,7 +1775,7 @@ impl Default for CorimEntityMapBuilder<'_> {
 }
 
 /// Roles that entities can have in relation to a CoRIM manifest
-#[derive(Debug, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(i64)]
 pub enum CorimRoleTypeChoice {
     /// Entity that created the manifest content
@@ -2622,7 +2622,7 @@ impl<'de> Deserialize<'de> for CorimSignerMap<'_> {
 
 /// Type alias for entity names using text strings
 #[repr(C)]
-#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(untagged)]
 pub enum EntityNameTypeChoice<'a> {
     Text(Text<'a>),
