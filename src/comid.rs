@@ -94,7 +94,7 @@ use crate::{
     DomainMembershipTripleRecord, Empty as _, EndorsedTripleRecord, ExtensionMap, ExtensionValue,
     IdentityTripleRecord, Integer, ReferenceTripleRecord, Result, Text, Tstr, Uint, Uri, UuidType,
 };
-use derive_more::{Constructor, From, TryFrom};
+use derive_more::{Constructor, From};
 use serde::{
     de::{self, Visitor},
     ser::SerializeMap,
@@ -696,7 +696,7 @@ impl<'de> Deserialize<'de> for TagIdentityMap<'_> {
 /// This enum allows CoMID tags to be identified by either a text string
 /// or a UUID, following the schema definition in the CoRIM specification.
 /// Tag identifiers are used in the tag identity map and for linking between tags.
-#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum TagIdTypeChoice<'a> {
@@ -1091,7 +1091,7 @@ impl Default for ComidEntityMapBuilder<'_> {
 ///
 /// Each role type represents a specific responsibility that an entity
 /// may have in relation to a module or tag.
-#[derive(Debug, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(i64)]
 pub enum ComidRoleTypeChoice {
     /// Entity that created the tag (value: 0)
@@ -1319,7 +1319,7 @@ impl<'de> Deserialize<'de> for LinkedTagMap<'_> {
 ///
 /// This enum defines how tags can be related to each other,
 /// supporting versioning and supplemental information scenarios.
-#[derive(Debug, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 pub enum TagRelTypeChoice {
     /// This tag supplements the linked tag by providing additional information

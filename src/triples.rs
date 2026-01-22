@@ -108,7 +108,7 @@ use crate::{
     TaggedBytes, TaggedUeidType, TaggedUuidType, Text, ThumbprintType, TriplesError, Tstr,
     UeidType, Uint, Ulabel, UuidType, VersionScheme,
 };
-use derive_more::{Constructor, From, TryFrom};
+use derive_more::{Constructor, From};
 use serde::{
     de::{self, SeqAccess, Visitor},
     ser::{self, SerializeMap, SerializeSeq},
@@ -614,7 +614,7 @@ impl<'a> ClassMapBuilder<'a> {
 }
 
 /// Possible types for class identifiers
-#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum ClassIdTypeChoice<'a> {
@@ -873,7 +873,7 @@ impl<'de> Deserialize<'de> for ClassIdTypeChoice<'_> {
 }
 
 /// Possible types for instance identifiers
-#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum InstanceIdTypeChoice<'a> {
@@ -1308,7 +1308,7 @@ impl<'de> Deserialize<'de> for InstanceIdTypeChoice<'_> {
 ///
 /// Each variant provides appropriate constructors and implements common traits
 /// like `From`, `TryFrom`, `Serialize`, and `Deserialize`.
-#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum CryptoKeyTypeChoice<'a> {
@@ -1727,7 +1727,7 @@ impl<'de> Deserialize<'de> for CryptoKeyTypeChoice<'_> {
 }
 
 /// Types of group identifiers
-#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum GroupIdTypeChoice<'a> {
@@ -2044,7 +2044,7 @@ impl<'de> Deserialize<'de> for MeasurementMap<'_> {
 }
 
 /// Types of measured element identifiers
-#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum MeasuredElementTypeChoice<'a> {
@@ -3055,7 +3055,7 @@ impl<'de> Deserialize<'de> for VersionMap<'_> {
 }
 
 /// Security version number types
-#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[repr(C)]
 #[serde(untagged)]
 pub enum SvnTypeChoice {
@@ -4597,7 +4597,7 @@ impl<'de> Deserialize<'de> for DomainDependencyTripleRecord<'_> {
 }
 
 /// Types of domain identifiers
-#[derive(Debug, Serialize, From, TryFrom, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Serialize, From, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(untagged)]
 pub enum DomainTypeChoice<'a> {
     /// Unsigned integer identifier
