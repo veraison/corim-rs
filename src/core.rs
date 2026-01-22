@@ -2104,7 +2104,7 @@ impl<'a> AttributeValue<'a> {
         }
     }
 
-    pub fn as_text(&self) -> Option<&OneOrMore<Text>> {
+    pub fn as_text(&self) -> Option<&OneOrMore<Text<'_>>> {
         match self {
             Self::Text(val) => Some(val),
             _ => None,

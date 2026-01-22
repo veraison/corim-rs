@@ -761,14 +761,14 @@ impl TagIdTypeChoice<'_> {
         }
     }
 
-    pub fn as_ref_extension(&self) -> Option<&ExtensionValue> {
+    pub fn as_ref_extension(&self) -> Option<&ExtensionValue<'_>> {
         match self {
             Self::Extension(ext) => Some(ext),
             _ => None,
         }
     }
 
-    pub fn as_extension(&self) -> Option<ExtensionValue> {
+    pub fn as_extension(&self) -> Option<ExtensionValue<'_>> {
         match self {
             Self::Extension(ext) => Some(ext.clone()),
             _ => None,

@@ -1082,42 +1082,42 @@ impl<'de> Deserialize<'de> for ConciseTagTypeChoice<'_> {
 }
 
 impl ConciseTagTypeChoice<'_> {
-    pub fn as_coswid(&self) -> Option<ConciseSwidTag> {
+    pub fn as_coswid(&self) -> Option<ConciseSwidTag<'_>> {
         match self {
             Self::Swid(coswid) => Some(coswid.as_ref().clone()),
             _ => None,
         }
     }
 
-    pub fn as_comid(&self) -> Option<ConciseMidTag> {
+    pub fn as_comid(&self) -> Option<ConciseMidTag<'_>> {
         match self {
             Self::Mid(comid) => Some(comid.as_ref().clone()),
             _ => None,
         }
     }
 
-    pub fn as_cotl(&self) -> Option<ConciseTlTag> {
+    pub fn as_cotl(&self) -> Option<ConciseTlTag<'_>> {
         match self {
             Self::Tl(cotl) => Some(cotl.as_ref().clone()),
             _ => None,
         }
     }
 
-    pub fn as_ref_coswid(&self) -> Option<&ConciseSwidTag> {
+    pub fn as_ref_coswid(&self) -> Option<&ConciseSwidTag<'_>> {
         match self {
             Self::Swid(coswid) => Some(coswid.as_ref()),
             _ => None,
         }
     }
 
-    pub fn as_ref_comid(&self) -> Option<&ConciseMidTag> {
+    pub fn as_ref_comid(&self) -> Option<&ConciseMidTag<'_>> {
         match self {
             Self::Mid(comid) => Some(comid.as_ref()),
             _ => None,
         }
     }
 
-    pub fn as_ref_cotl(&self) -> Option<&ConciseTlTag> {
+    pub fn as_ref_cotl(&self) -> Option<&ConciseTlTag<'_>> {
         match self {
             Self::Tl(cotl) => Some(cotl.as_ref()),
             _ => None,
@@ -1295,14 +1295,14 @@ impl<'a> ProfileTypeChoice<'a> {
         matches!(self, Self::Extension(_))
     }
 
-    pub fn as_uri(&self) -> Option<Uri> {
+    pub fn as_uri(&self) -> Option<Uri<'_>> {
         match self {
             Self::Uri(uri) => Some(uri.clone()),
             _ => None,
         }
     }
 
-    pub fn as_ref_uri(&self) -> Option<&Uri> {
+    pub fn as_ref_uri(&self) -> Option<&Uri<'_>> {
         match self {
             Self::Uri(uri) => Some(uri),
             _ => None,
