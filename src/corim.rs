@@ -39,6 +39,7 @@
 //! └── SignedCorim (signed)
 //!     ├── alg
 //!     ├── kid
+//!     ├── x5chain
 //!     ├── corim_meta
 //!     └── corim_map (CorimMap, as above)
 //! ```
@@ -50,7 +51,7 @@
 //!     ConciseMidTagBuilder, Corim, CorimEntityMapBuilder, CorimError, CorimMapBuilder,
 //!     CorimMetaMapBuilder, CorimRoleTypeChoice, CoseAlgorithm, CoseKey, CoseKeyOwner, CoseSigner,
 //!     CoseVerifier, EndorsedTripleRecord, EnvironmentMapBuilder, MeasurementMap,
-//!     MeasurementValuesMapBuilder, SignedCorimBuilder, TagIdentityMap, TriplesMapBuilder,
+//!     MeasurementValuesMapBuilder, OneOrMore, SignedCorimBuilder, TagIdentityMap, TriplesMapBuilder,
 //! };
 //!
 //! let corim: Corim = CorimMapBuilder::new()
@@ -139,6 +140,7 @@
 //! let signed: Corim = SignedCorimBuilder::new()
 //!     .alg(CoseAlgorithm::ES256)
 //!     .kid(vec![0x01, 0x02, 0x03])
+//!     .x5chain(OneOrMore::One(vec![0x01, 0x02, 0x03].into()))
 //!     .meta(CorimMetaMapBuilder::new()
 //!         .signer_name("fake signer".into())
 //!         .build()
@@ -179,7 +181,9 @@ use std::{
 
 use crate::{
     comid::ConciseMidTag,
-    core::{CoseAlgorithm, CoseKey, CoseKeyOperation, IntegerTime, ObjectIdentifier, OneOrMore},
+    core::{
+        Bytes, CoseAlgorithm, CoseKey, CoseKeyOperation, IntegerTime, ObjectIdentifier, OneOrMore,
+    },
     coswid::ConciseSwidTag,
     cotl::ConciseTlTag,
     error::CorimError,
@@ -196,6 +200,7 @@ use serde::{
     ser::{self, SerializeMap},
     Deserialize, Deserializer, Serialize, Serializer,
 };
+
 /// Represents a Concise Reference Integrity Manifest (CoRIM)
 pub type Corim<'a> = ConciseRimTypeChoice<'a>;
 
@@ -1960,6 +1965,7 @@ pub struct CorimMapExtension(pub TaggedBytes);
 pub struct SignedCorim<'a> {
     pub alg: CoseAlgorithm,
     pub kid: Vec<u8>,
+    pub x5chain: Option<OneOrMore<Bytes>>,
     pub meta: CorimMetaMap<'a>,
     pub corim_map: CorimMap<'a>,
 
@@ -1999,6 +2005,8 @@ impl TryFrom<CoseSign1> for SignedCorim<'_> {
 
         let meta = sign1_extract_meta(&value).map_err(CorimError::custom)?;
 
+        let x5chain = sign1_extract_x5chain(&value).map_err(CorimError::custom)?;
+
         let unsigned: TaggedUnsignedCorim =
             ciborium::from_reader(value.payload.as_ref().unwrap().as_slice())
                 .map_err(CorimError::custom)?;
@@ -2006,6 +2014,7 @@ impl TryFrom<CoseSign1> for SignedCorim<'_> {
         Ok(SignedCorim {
             alg,
             kid,
+            x5chain,
             meta,
             corim_map: unsigned.unwrap(),
             sign1: value,
@@ -2101,15 +2110,18 @@ fn sign1_check_content_type(sign1: &CoseSign1) -> Result<(), CorimError> {
     }
 }
 
+const META: i64 = 8;
+const META_LABEL: coset::Label = coset::Label::Int(META);
+
 fn sign1_extract_meta<'a>(sign1: &CoseSign1) -> Result<CorimMetaMap<'a>, CorimError> {
     for (label, value) in sign1.protected.header.rest.iter() {
         match label {
-            coset::Label::Int(8) => match value {
+            &META_LABEL => match value {
                 ciborium::Value::Bytes(bytes) => {
                     return ciborium::from_reader::<CorimMetaMap, _>(bytes.as_slice()).map_err(
                         |e| {
                             CorimError::InvalidCoseHeader(
-                                8,
+                                META,
                                 "corim-meta".to_string(),
                                 format!("{:?}", e.to_string()),
                             )
@@ -2118,7 +2130,7 @@ fn sign1_extract_meta<'a>(sign1: &CoseSign1) -> Result<CorimMetaMap<'a>, CorimEr
                 }
                 value => {
                     return Err(CorimError::InvalidCoseHeader(
-                        8,
+                        META,
                         "corim-meta".to_string(),
                         format!("{:?}", value),
                     ))
@@ -2129,13 +2141,52 @@ fn sign1_extract_meta<'a>(sign1: &CoseSign1) -> Result<CorimMetaMap<'a>, CorimEr
         }
     }
 
-    Err(CorimError::CoseHeaderNotSet(8, "corim-meta".to_string()))
+    Err(CorimError::CoseHeaderNotSet(META, "corim-meta".to_string()))
+}
+
+const X5CHAIN: i64 = coset::iana::HeaderParameter::X5Chain as i64;
+const X5CHAIN_LABEL: coset::Label = coset::Label::Int(X5CHAIN);
+
+fn sign1_extract_x5chain(sign1: &CoseSign1) -> Result<Option<OneOrMore<Bytes>>, CorimError> {
+    for (label, value) in sign1.protected.header.rest.iter() {
+        match label {
+            &X5CHAIN_LABEL => match value {
+                ciborium::Value::Bytes(bytes) => {
+                    return Ok(Some(OneOrMore::One(bytes.as_slice().into())))
+                }
+                ciborium::Value::Array(ref vec)
+                    if vec.iter().all(|v| matches!(v, ciborium::Value::Bytes(_))) =>
+                {
+                    return Ok(Some(OneOrMore::More(
+                        vec.iter()
+                            .map(|v| match v {
+                                ciborium::Value::Bytes(v) => Bytes::from(v.clone()),
+                                _ => panic!("should not get here becase of matches! above"),
+                            })
+                            .collect(),
+                    )))
+                }
+                value => {
+                    return Err(CorimError::InvalidCoseHeader(
+                        X5CHAIN,
+                        "X5Chain".to_string(),
+                        format!("{:?}", value),
+                    ))
+                }
+            },
+            coset::Label::Int(_) => (),
+            coset::Label::Text(_) => (),
+        }
+    }
+
+    Ok(None)
 }
 
 #[derive(Debug, Default)]
 pub struct SignedCorimBuilder<'a> {
     alg: Option<CoseAlgorithm>,
     kid: Option<Vec<u8>>,
+    x5chain: Option<OneOrMore<Bytes>>,
     meta: Option<CorimMetaMap<'a>>,
     corim_map: Option<CorimMap<'a>>,
 }
@@ -2152,6 +2203,11 @@ impl<'a> SignedCorimBuilder<'a> {
 
     pub fn kid(mut self, kid: Vec<u8>) -> Self {
         self.kid = Some(kid);
+        self
+    }
+
+    pub fn x5chain(mut self, x5chain: OneOrMore<Bytes>) -> Self {
+        self.x5chain = Some(x5chain);
         self
     }
 
@@ -2214,16 +2270,19 @@ impl<'a> SignedCorimBuilder<'a> {
             }
         }
 
-        let header = coset::HeaderBuilder::new()
+        let mut header_builder = coset::HeaderBuilder::new()
             .algorithm(coset_alg.unwrap())
             .content_type("application/rim+cbor".to_string())
             .key_id(self.kid.clone().unwrap())
-            .value(8, ciborium::Value::Bytes(encoded_meta))
-            .build();
+            .value(META, ciborium::Value::Bytes(encoded_meta));
+
+        if let Some(ref x5chain) = self.x5chain {
+            header_builder = header_builder.value(X5CHAIN, x5chain.into());
+        }
 
         let aad: Vec<u8> = vec![];
         let sign1 = coset::CoseSign1Builder::new()
-            .protected(header)
+            .protected(header_builder.build())
             .payload(payload)
             .try_create_signature(aad.as_slice(), |pt| signer.sign(self.alg.unwrap(), pt))?
             .build();
@@ -2231,6 +2290,7 @@ impl<'a> SignedCorimBuilder<'a> {
         Ok(SignedCorim {
             alg: self.alg.unwrap(),
             kid: self.kid.unwrap(),
+            x5chain: self.x5chain,
             meta: self.meta.unwrap(),
             corim_map: self.corim_map.unwrap(),
             sign1,
@@ -3232,6 +3292,7 @@ mod tests {
         let signed: Corim = SignedCorimBuilder::default()
             .alg(CoseAlgorithm::ES256)
             .kid(vec![0x01, 0x02, 0x03])
+            .x5chain(OneOrMore::One(vec![0xde, 0xad, 0xbe, 0xef].into()))
             .meta(meta)
             .corim_map(corim_map)
             .build_and_sign(signer)
@@ -3243,8 +3304,8 @@ mod tests {
         let expected: Vec<u8> = vec![
             0xd2, // tag(18) [COSE_Sign1_message]
               0x84, // array(4) [COSE_Sign1]
-                0x58, 0x4c, // [0]bstr(76) [protected-header]
-                  0xa4, // map(4)
+                0x58, 0x53, // [0]bstr(83) [protected-header]
+                  0xa5, // map(5)
                     0x01, // key: 1 [alg]
                     0x26, // value: -7 [ES256]
                     0x03, // key: 3 [content-type]
@@ -3275,6 +3336,9 @@ mod tests {
                           0xc1, // value: tag(1) [time]
                             0x1b,  // int(8)
                               0x00, 0x00, 0x00, 0x17, 0x48, 0x76, 0xe7, 0xff, // 99999999999
+                    0x18, 0x21, // key: 33 [x5chain]
+                    0x44, // value: bstr(4)
+                      0xde, 0xad, 0xbe, 0xef,
                 0xa0, // [1]map(0) [unprotected-header]
                 0x58, 0x37, // [2]bstr(60) [payload]
                   0xd9, 0x01, 0xf5, // tag(501) [unsigned-corim]
@@ -3330,6 +3394,10 @@ mod tests {
 
         assert_eq!(signed_de.alg, crate::core::CoseAlgorithm::ES256);
         assert_eq!(signed_de.kid, vec![0x01, 0x02, 0x03]);
+        assert_eq!(
+            signed_de.x5chain,
+            Some(OneOrMore::One(Bytes::from(vec![0xde, 0xad, 0xbe, 0xef])))
+        );
         assert_eq!(signed_de.corim_map.id.as_str().unwrap(), "foo");
 
         signed_de.verify_signature(verifier).unwrap();

@@ -126,6 +126,18 @@ impl From<&Bytes> for Vec<u8> {
     }
 }
 
+impl From<Bytes> for ciborium::Value {
+    fn from(value: Bytes) -> Self {
+        ciborium::Value::Bytes(value.bytes)
+    }
+}
+
+impl From<&Bytes> for ciborium::Value {
+    fn from(value: &Bytes) -> Self {
+        ciborium::Value::Bytes(value.bytes.clone())
+    }
+}
+
 impl<const N: usize> From<&FixedBytes<N>> for Bytes {
     fn from(value: &FixedBytes<N>) -> Self {
         Self {
@@ -1847,6 +1859,28 @@ impl<T: Clone> std::ops::Add for OneOrMore<T> {
                 let mut new = lhs_vec.clone();
                 new.extend(rhs_vec.clone());
                 Self::More(new)
+            }
+        }
+    }
+}
+
+impl<T: Into<ciborium::Value>> From<OneOrMore<T>> for ciborium::Value {
+    fn from(value: OneOrMore<T>) -> Self {
+        match value {
+            OneOrMore::One(v) => v.into(),
+            OneOrMore::More(vs) => {
+                ciborium::Value::Array(vs.into_iter().map(|v| v.into()).collect())
+            }
+        }
+    }
+}
+
+impl<T: Clone + Into<ciborium::Value>> From<&OneOrMore<T>> for ciborium::Value {
+    fn from(value: &OneOrMore<T>) -> Self {
+        match value {
+            OneOrMore::One(v) => v.clone().into(),
+            OneOrMore::More(vs) => {
+                ciborium::Value::Array(vs.iter().map(|v| v.clone().into()).collect())
             }
         }
     }
@@ -4169,7 +4203,7 @@ impl<'de> Deserialize<'de> for HashAlgorithm {
 /// let alg = CoseAlgorithm::ES256;  // ECDSA with SHA-256
 /// let hash_alg = CoseAlgorithm::Sha256;  // SHA-256 hash function
 /// ```
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord )]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(i64)]
 pub enum CoseAlgorithm {
     // Reserved for Private Use
