@@ -1969,6 +1969,13 @@ impl<T> OneOrMore<T> {
             OneOrMore::More(items) => items.get(index),
         }
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        match self {
+            OneOrMore::One(ref val) => either::Either::Left(std::iter::once(val)),
+            OneOrMore::More(ref vec) => either::Either::Right(vec.iter()),
+        }
+    }
 }
 
 impl<T: Clone> IntoIterator for OneOrMore<T> {
