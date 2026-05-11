@@ -141,7 +141,23 @@ impl Serialize for ConciseSwidTag<'_> {
         S: ser::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            4 + // tag_id, tag_version, software_name, entity
+            self.extensions.as_ref().map_or(0, |e| e.len()) +
+            self.global_attributes.as_ref().map_or(0, |a| a.len()),
+            corpus,
+            patch,
+            supplemental,
+            software_version,
+            version_scheme,
+            media,
+            software_meta,
+            link,
+            payload,
+            evidence,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("tag-id", &self.tag_id)?;
@@ -192,7 +208,24 @@ impl Serialize for ConciseSwidTag<'_> {
             }
         } else {
             map.serialize_entry(&0, &self.tag_id)?;
-            map.serialize_entry(&12, &self.tag_version)?;
+            map.serialize_entry(&1, &self.software_name)?;
+            map.serialize_entry(&2, &self.entity)?;
+
+            if let Some(evidence) = &self.evidence {
+                map.serialize_entry(&3, evidence)?;
+            }
+
+            if let Some(link) = &self.link {
+                map.serialize_entry(&4, link)?;
+            }
+
+            if let Some(software_meta) = &self.software_meta {
+                map.serialize_entry(&5, software_meta)?;
+            }
+
+            if let Some(payload) = &self.payload {
+                map.serialize_entry(&6, payload)?;
+            }
 
             if let Some(corpus) = &self.corpus {
                 map.serialize_entry(&8, corpus)?;
@@ -202,11 +235,15 @@ impl Serialize for ConciseSwidTag<'_> {
                 map.serialize_entry(&9, patch)?;
             }
 
+            if let Some(media) = &self.media {
+                map.serialize_entry(&10, media)?;
+            }
+
             if let Some(supplemental) = &self.supplemental {
                 map.serialize_entry(&11, supplemental)?;
             }
 
-            map.serialize_entry(&1, &self.software_name)?;
+            map.serialize_entry(&12, &self.tag_version)?;
 
             if let Some(software_version) = &self.software_version {
                 map.serialize_entry(&13, software_version)?;
@@ -214,28 +251,6 @@ impl Serialize for ConciseSwidTag<'_> {
 
             if let Some(version_scheme) = &self.version_scheme {
                 map.serialize_entry(&14, version_scheme)?;
-            }
-
-            if let Some(media) = &self.media {
-                map.serialize_entry(&10, media)?;
-            }
-
-            if let Some(software_meta) = &self.software_meta {
-                map.serialize_entry(&5, software_meta)?;
-            }
-
-            map.serialize_entry(&2, &self.entity)?;
-
-            if let Some(link) = &self.link {
-                map.serialize_entry(&4, link)?;
-            }
-
-            if let Some(payload) = &self.payload {
-                map.serialize_entry(&6, payload)?;
-            }
-
-            if let Some(evidence) = &self.evidence {
-                map.serialize_entry(&3, evidence)?;
             }
         }
 
@@ -754,7 +769,27 @@ impl Serialize for SoftwareMetaEntry<'_> {
         S: ser::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            0 + self.extensions.as_ref().map_or(0, |e| e.len())
+                + self.global_attributes.as_ref().map_or(0, |a| a.len()),
+            activation_status,
+            channel_type,
+            coloquial_version,
+            description,
+            edition,
+            entitlement_data_required,
+            entitlement_key,
+            generator,
+            persistent_id,
+            product,
+            product_family,
+            revision,
+            summary,
+            unspsc_code,
+            unspsc_version,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             if let Some(activation_status) = &self.activation_status {
@@ -1485,7 +1520,15 @@ impl Serialize for EntityEntry<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            2 + // entity_name, role
+            self.extensions.as_ref().map_or(0, |e| e.len()) +
+            self.global_attributes.as_ref().map_or(0, |a| a.len()),
+            reg_id,
+            thumbprint,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("entity-name", &self.entity_name)?;
@@ -1825,7 +1868,18 @@ impl Serialize for LinkEntry<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            2 + // href, rel
+            self.extensions.as_ref().map_or(0, |e| e.len()) +
+            self.global_attributes.as_ref().map_or(0, |a| a.len()),
+            artifact,
+            media,
+            ownership,
+            media_type,
+            r#use,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             if let Some(artifact) = &self.artifact {
@@ -1852,15 +1906,15 @@ impl Serialize for LinkEntry<'_> {
                 map.serialize_entry("use", r#use)?;
             }
         } else {
+            if let Some(media) = &self.media {
+                map.serialize_entry(&10, media)?;
+            }
+
             if let Some(artifact) = &self.artifact {
                 map.serialize_entry(&37, artifact)?;
             }
 
             map.serialize_entry(&38, &self.href)?;
-
-            if let Some(media) = &self.media {
-                map.serialize_entry(&10, media)?;
-            }
 
             if let Some(ownership) = &self.ownership {
                 map.serialize_entry(&39, ownership)?;
@@ -2574,7 +2628,10 @@ impl Serialize for PayloadEntry<'_> {
         S: ser::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = self.resource_collection.len()
+            + self.extensions.as_ref().map_or(0, |e| e.len())
+            + self.global_attributes.as_ref().map_or(0, |e| e.len());
+        let mut map = serializer.serialize_map(Some(len))?;
 
         self.resource_collection
             .serialize_map(&mut map, is_human_readable)?;
@@ -2866,6 +2923,21 @@ pub struct ResourceCollection<'a> {
 }
 
 impl ResourceCollection<'_> {
+    pub fn len(&self) -> usize {
+        let mut ret =
+            self.path_elements_group.len() + self.extensions.as_ref().map_or(0, |e| e.len());
+
+        if self.process.is_some() {
+            ret += 1;
+        }
+
+        if self.resource.is_some() {
+            ret += 1;
+        }
+
+        ret
+    }
+
     pub fn serialize_map<M, O, E>(&self, map: &mut M, is_human_readable: bool) -> Result<(), E>
     where
         M: ser::SerializeMap<Ok = O, Error = E>,
@@ -3130,6 +3202,20 @@ pub struct PathElementsGroup<'a> {
 }
 
 impl PathElementsGroup<'_> {
+    pub fn len(&self) -> usize {
+        let mut ret = 0;
+
+        if self.directory.is_some() {
+            ret += 1;
+        }
+
+        if self.file.is_some() {
+            ret += 1;
+        }
+
+        ret
+    }
+
     pub fn serialize_map<M, O, E>(&self, map: &mut M, is_human_readable: bool) -> Result<(), E>
     where
         M: ser::SerializeMap<Ok = O, Error = E>,
@@ -3312,7 +3398,14 @@ impl Serialize for DirectoryEntry<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            self.filesystem_item.len()
+                + self.extensions.as_ref().map_or(0, |e| e.len())
+                + self.global_attributes.as_ref().map_or(0, |e| e.len()),
+            path_elements,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         self.filesystem_item
             .serialize_map(&mut map, is_human_readable)?;
@@ -3631,6 +3724,9 @@ pub struct FileSystemItem<'a> {
 }
 
 impl FileSystemItem<'_> {
+    pub fn len(&self) -> usize {
+        map_len!(self, 1, key, location, root)
+    }
     pub fn serialize_map<M, O, E>(&self, map: &mut M, is_human_readable: bool) -> Result<(), E>
     where
         M: ser::SerializeMap<Ok = O, Error = E>,
@@ -3693,12 +3789,22 @@ impl Serialize for FileEntry<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
-
-        self.filesystem_item
-            .serialize_map(&mut map, is_human_readable)?;
+        let len = map_len!(
+            self,
+            self.filesystem_item.len()
+                + self.extensions.as_ref().map_or(0, |e| e.len())
+                + self.global_attributes.as_ref().map_or(0, |e| e.len()),
+            size,
+            file_version,
+            hash,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
+            if let Some(hash) = &self.hash {
+                map.serialize_entry("hash", hash)?;
+            }
+
             if let Some(size) = &self.size {
                 map.serialize_entry("size", size)?;
             }
@@ -3706,11 +3812,11 @@ impl Serialize for FileEntry<'_> {
             if let Some(file_version) = &self.file_version {
                 map.serialize_entry("file-version", file_version)?;
             }
-
-            if let Some(hash) = &self.hash {
-                map.serialize_entry("hash", hash)?;
-            }
         } else {
+            if let Some(hash) = &self.hash {
+                map.serialize_entry(&7, hash)?;
+            }
+
             if let Some(size) = &self.size {
                 map.serialize_entry(&20, size)?;
             }
@@ -3718,11 +3824,10 @@ impl Serialize for FileEntry<'_> {
             if let Some(file_version) = &self.file_version {
                 map.serialize_entry(&21, file_version)?;
             }
-
-            if let Some(hash) = &self.hash {
-                map.serialize_entry(&7, hash)?;
-            }
         }
+
+        self.filesystem_item
+            .serialize_map(&mut map, is_human_readable)?;
 
         if let Some(extensions) = &self.extensions {
             extensions.serialize_map(&mut map, is_human_readable)?;
@@ -4058,7 +4163,14 @@ impl Serialize for ProcessEntry<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            1 + // process_name
+            self.extensions.as_ref().map_or(0, |e| e.len()) +
+            self.global_attributes.as_ref().map_or(0, |e| e.len()),
+            pid,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("process-name", &self.process_name)?;
@@ -4331,7 +4443,10 @@ impl Serialize for ResourceEntry<'_> {
         S: serde::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = 1
+            + self.extensions.as_ref().map_or(0, |e| e.len())
+            + self.global_attributes.as_ref().map_or(0, |a| a.len());
+        let mut map = serializer.serialize_map(Some(len))?;
 
         if is_human_readable {
             map.serialize_entry("type", &self.r#type)?;
@@ -4589,7 +4704,16 @@ impl Serialize for EvidenceEntry<'_> {
         S: ser::Serializer,
     {
         let is_human_readable = serializer.is_human_readable();
-        let mut map = serializer.serialize_map(None)?;
+        let len = map_len!(
+            self,
+            self.resource_collection.len()
+                + self.extensions.as_ref().map_or(0, |e| e.len())
+                + self.global_attributes.as_ref().map_or(0, |a| a.len()),
+            date,
+            device_id,
+            location,
+        );
+        let mut map = serializer.serialize_map(Some(len))?;
 
         self.resource_collection
             .serialize_map(&mut map, is_human_readable)?;
@@ -5191,7 +5315,10 @@ mod test {
                     .unwrap(),
                 expected_json: r#"{"artifact":"foo","href":{"type":"uri","value":"bar"},"media":"qux","ownership":"private","rel":"feature","media-type":"zot","use":"optional","-1":true,"fum":42}"#,
                 expected_cbor: vec![
-                    0xbf, // map(indef)
+                    0xa9, // map(9)
+                      0x0a, // key: 10 [media]
+                      0x63, // value: tstr(3)
+                        0x71, 0x75, 0x78, // "qux"
                       0x18, 0x25, // key: 37 [artificat]
                       0x63, // value: tstr(3)
                         0x66, 0x6f, 0x6f, // "foo"
@@ -5199,9 +5326,6 @@ mod test {
                       0xd8, 0x20, // value: tag(32) [uri]
                         0x63, // tstr(3)
                           0x62, 0x61, 0x72, // "bar"
-                      0x0a, // key: 10 [media]
-                      0x63, // value: tstr(3)
-                        0x71, 0x75, 0x78, // "qux"
                       0x18, 0x27, // key: 39 [ownership]
                       0x02, // value: 2 [private]
                       0x18, 0x28, // key: 40 [rel]
@@ -5216,7 +5340,6 @@ mod test {
                       0x63, // key: tstr(3) [global_arg("fum")]
                         0x66, 0x75, 0x6d, // "fum"
                       0x18, 0x2a, // value: 42
-                    0xff, // break
                 ],
             },
         ];
@@ -5244,7 +5367,7 @@ mod test {
                     .unwrap(),
                 expected_json: r#"{"entity-name":"foo","reg-id":{"type":"uri","value":"bar"},"role":"maintainer","thumbprint":"sha-256;AQID","-1":true,"fum":42}"#,
                 expected_cbor: vec![
-                    0xbf, // map(indef)
+                    0xa6, // map(6)
                       0x18, 0x1f, // key: 31 [entity-name]
                       0x63, // value: tstr(3)
                         0x66, 0x6f, 0x6f, // "foo"
@@ -5264,7 +5387,6 @@ mod test {
                       0x63, // key: tstr(3) [global_arg("fum")]
                         0x66, 0x75, 0x6d, // "fum"
                       0x18, 0x2a, // value: 42
-                    0xff, // break
                 ],
             },
         ];
@@ -5286,7 +5408,7 @@ mod test {
                     .unwrap(),
                 expected_json: r#"{"type":"foo","-1":true,"fum":42}"#,
                 expected_cbor: vec![
-                    0xbf, // map(indef)
+                    0xa3, // map(3)
                       0x18, 0x1d, // key: 29 [type]
                       0x63, // value: tstr(3)
                         0x66, 0x6f, 0x6f, // "foo"
@@ -5295,7 +5417,6 @@ mod test {
                       0x63, // key: tstr(3) [global_arg("fum")]
                         0x66, 0x75, 0x6d, // "fum"
                       0x18, 0x2a, // value: 42
-                    0xff, // break
                 ],
             },
         ];
@@ -5318,7 +5439,7 @@ mod test {
                     .unwrap(),
                 expected_json: r#"{"process-name":"foo","pid":1,"-1":true,"fum":42}"#,
                 expected_cbor: vec![
-                    0xbf, // map(indef)
+                    0xa4, // map(4)
                       0x18, 0x1b, // key: 27 [process-name]
                       0x63, // value: tstr(3)
                         0x66, 0x6f, 0x6f, // "foo"
@@ -5329,7 +5450,6 @@ mod test {
                       0x63, // key: tstr(3) [global_arg("fum")]
                         0x66, 0x75, 0x6d, // "fum"
                       0x18, 0x2a, // value: 42
-                    0xff, // break
                 ],
             },
         ];
@@ -5358,9 +5478,19 @@ mod test {
                     .add_global_attribute("fum".into(), 42i64.into())
                     .build()
                     .unwrap(),
-                expected_json: r#"{"key":true,"location":"foo","fs-name":"bar","root":"qux","size":1,"file-version":"zot","hash":"sha-256;AQID","-1":true,"fum":42}"#,
+                expected_json: r#"{"hash":"sha-256;AQID","size":1,"file-version":"zot","key":true,"location":"foo","fs-name":"bar","root":"qux","-1":true,"fum":42}"#,
                 expected_cbor: vec![
-                    0xbf, // map(indef)
+                    0xa9, // map(9)
+                      0x07, // key: 7 [hash]
+                      0x82, //  value: array(2) [hash-entry]
+                        0x01, // [0]1 [sha-256]
+                        0x43, // [1]bstr(3) [val]
+                          0x01, 0x02, 0x03,
+                      0x14, // key: 20 [size]
+                      0x01, // value: 1
+                      0x15, // key: 21 [file-version]
+                      0x63, // value: tstr(3)
+                        0x7a, 0x6f, 0x74, // "zot"
                       0x16, // key: 22 [key]
                       0xf5, // value: true
                       0x17, // key: 23 [location]
@@ -5372,22 +5502,11 @@ mod test {
                       0x18, 0x19, // key: 25 [root]
                       0x63, // value: tstr(3)
                         0x71, 0x75, 0x78, // "qux"
-                      0x14, // key: 20 [size]
-                      0x01, // value: 1
-                      0x15, // key: 21 [file-version]
-                      0x63, // value: tstr(3)
-                        0x7a, 0x6f, 0x74, // "zot"
-                      0x07, // key: 7 [hash]
-                      0x82, //  value: array(2) [hash-entry]
-                        0x01, // [0]1 [sha-256]
-                        0x43, // [1]bstr(3) [val]
-                          0x01, 0x02, 0x03,
                       0x20, // key: -1 [extension(-1)]
                       0xf5, // value: true
                       0x63, // key: tstr(3) [global_arg("fum")]
                         0x66, 0x75, 0x6d, // "fum"
                       0x18, 0x2a, // value: 42
-                    0xff, // break
                 ],
             },
         ];
@@ -5427,7 +5546,7 @@ mod test {
                     .unwrap(),
                 expected_json: r#"{"key":true,"location":"foo","fs-name":"bar","root":"qux","path-elements":{"directory":{"fs-name":"zot"},"file":{"fs-name":"baz"}},"-1":true,"fum":42}"#,
                 expected_cbor: vec![
-                    0xbf, // map(indef)
+                    0xa7, // map(5)
                       0x16, // key: 22 [key]
                       0xf5, // value: true
                       0x17, // key: 23 [location]
@@ -5440,26 +5559,23 @@ mod test {
                       0x63, // value: tstr(3)
                         0x71, 0x75, 0x78, // "qux"
                       0x18, 0x1a, // key: 26 [path-elements]
-                      0xbf, // value: map(indef) [path-elements-group]
+                      0xbf, // value: map(inf) [path-elements-group]
                         0x10, // key: 16 [directory]
-                        0xbf, // value: map(indef) [directory-entry]
+                        0xa1, // value: map(indef) [directory-entry]
                           0x18, 0x18, // key: 24 [fs-name]
                           0x63, // value: tstr(3)
                             0x7a, 0x6f, 0x74, // "zot"
-                        0xff, // break
                         0x11, // key: 17 [file]
-                        0xbf, // value: map(indef) [file-entry]
+                        0xa1, // value: map(1) [file-entry]
                           0x18, 0x18, // key: 24 [fs-name]
                           0x63, // value: tstr(3)
                             0x62, 0x61, 0x7a, // "baz"
-                        0xff, // break
                       0xff, // break
                       0x20, // key: -1 [extension(-1)]
                       0xf5, // value: true
                       0x63, // key: tstr(3) [global_arg("fum")]
                         0x66, 0x75, 0x6d, // "fum"
                       0x18, 0x2a, // value: 42
-                    0xff, // break
                 ],
             },
         ];
@@ -5506,31 +5622,27 @@ mod test {
                 expected_cbor: vec![
                     0xbf, // map(indef)
                       0x10, // key: 16 [directory]
-                      0xbf, // value: map(indef) [directory-entry]
+                      0xa1, // value: map(1) [directory-entry]
                         0x18, 0x18, // key: 24 [fs-name]
                         0x63, // value: tstr(3)
                           0x66, 0x6f, 0x6f, // "foo"
-                      0xff, // break
                       0x11, // key: 17 [file]
-                      0xbf, // value: map(indef) [file-entry]
+                      0xa1, // value: map(1) [file-entry]
                         0x18, 0x18, // key: 24 [fs-name]
                         0x63, // value: tstr(3)
                           0x62, 0x61, 0x72, // "bar"
-                      0xff, // break
                       0x12, // key: 18 [process]
-                      0xbf, // value: map(indef) [process-entry]
+                      0xa2, // value: map(2) [process-entry]
                         0x18, 0x1b, // key: 27 [process-name]
                         0x63, // value: tstr(3)
                           0x71, 0x75, 0x78, // "qux"
                         0x18, 0x1c, // key: 28 [pid]
                         0x01, // value: 1
-                      0xff, // break
                       0x13, // key: 19 [resource]
-                      0xbf, // value: map(indef) [resource-entry]
+                      0xa1, // value: map(1) [resource-entry]
                         0x18, 0x1d, // key: 29 [type]
                         0x63, // value: tstr(3)
                           0x7a, 0x6f, 0x74, // "zot"
-                      0xff, // break
                       0x20, // key: -1 [extension(-1)]
                       0xf5, // value: true
                     0xff, // break
@@ -5569,7 +5681,7 @@ mod test {
                     .unwrap(),
                 expected_json: r#"{"activation-status":"foo","channel-type":"bar","coloquial-version":"qux","description":"zot","edition":"baz","entitlement-data-required":false,"entitlement-key":"fum","generator":"foo","persistent-id":"bar","product":"qux","product-family":"zot","revision":"baz","summary":"fum","unspsc-code":"foo","unspsc-version":"bar","-1":true,"qux":42}"#,
                 expected_cbor: vec![
-                    0xbf, // map(indef)
+                    0xb1, // map(16)
                       0x18, 0x2b, // key: 43 [activation-status]
                       0x63, // value: tstr(3)
                         0x66, 0x6f, 0x6f, // "foo"
@@ -5619,7 +5731,6 @@ mod test {
                       0x63, // key: tstr(3) [global_arg("qux")]
                         0x71, 0x75, 0x78, // "qux"
                       0x18, 0x2a, // value: 42
-                    0xff, // break
                 ],
             },
         ];
@@ -5683,67 +5794,61 @@ mod test {
                     .unwrap(),
                 expected_json: r#"{"tag-id":"foo","tag-version":1,"corpus":true,"patch":false,"supplemental":true,"software-name":"bar","software-version":"1.2.3","version-scheme":"semver","media":"qux","software-meta":{"activation-status":"zot"},"entity":{"entity-name":"baz","role":"licensor"},"link":{"href":{"type":"uri","value":"fum"},"rel":"feature"},"payload":{"process":{"process-name":"foo"}},"-1":true,"bar":42}"#,
                 expected_cbor: vec![
-                    0xbf, // map(indef)
+                    0xaf, // map(15)
                       0x00, // key: 0 [tag-id]
                       0x63, // value: tstr(3)
                         0x66, 0x6f, 0x6f, // "foo"
-                      0x0c, // key: 12 [tag-version]
-                      0x01, // value: 1
-                      0x08, // key: 8 [corpus]
-                      0xf5, // value: true
-                      0x09, // key: 9 [patch]
-                      0xf4, // value: false
-                      0x0b, // key: 11 [supplemental]
-                      0xf5, // value: true
                       0x01, // key: 1 [software-name]
                       0x63, // value: tstr(3)
                         0x62, 0x61, 0x72, // "bar"
-                      0x0d, // key: 13 [software-version]
-                      0x65, // value: tstr(5)
-                        0x31, 0x2e, 0x32, 0x2e, 0x33, // "1.2.3"
-                      0x0e, // key: 14 [version-scheme]
-                      0x19, 0x40, 0x00, // value: 16384 [semver]
-                      0x0a, // key: 10 [media]
-                      0x63, // value: tstr(3)
-                        0x71, 0x75, 0x78, // "qux"
-                      0x05, // key: 5 [software-meta]
-                      0xbf, // value: map(indef) [software-meta-entry]
-                        0x18, 0x2b, // key: 43 [activation-status]
-                        0x63, // value: tstr(3)
-                          0x7a, 0x6f, 0x74, // value: "zot"
-                      0xff, // break
                       0x02, // key: 2 [entity]
-                      0xbf, // value: map(indef) [entity-entry]
+                      0xa2, // value: map(2) [entity-entry]
                         0x18, 0x1f,  // key: 31 [entity-name]
                         0x63, // value: tstr(3)
                           0x62, 0x61, 0x7a, // "baz"
                         0x18, 0x21, // key: 33 [role]
                         0x05, // value: 5 [licensor]
-                      0xff, // break
                       0x04, // key: 4 [link]
-                      0xbf, // value: map(indef) [link-entry]
+                      0xa2, // value: map(2) [link-entry]
                         0x18, 0x26, // key: 38 [href]
                         0xd8, 0x20, // value: tag(32) [uri]
                           0x63, // tstr(3)
                             0x66, 0x75, 0x6d, // "fum"
                         0x18, 0x28, // key: 40 [rel]
                         0x03, // value: 3 [feature]
-                      0xff, // break
+                      0x05, // key: 5 [software-meta]
+                      0xa1, // value: map(1) [software-meta-entry]
+                        0x18, 0x2b, // key: 43 [activation-status]
+                        0x63, // value: tstr(3)
+                          0x7a, 0x6f, 0x74, // value: "zot"
                       0x06, // key: 6 [payload]
-                      0xbf, // value: map(indef) [payload-entry]
+                      0xa1, // value: map(1) [payload-entry]
                         0x12, // key: 18 [process]
-                        0xbf, // map(indef) [process-entry]
+                        0xa1, // map(1) [process-entry]
                           0x18, 0x1b, // key: 27 [process-name]
                           0x63, // value: tstr(3)
                             0x66, 0x6f, 0x6f, // "foo"
-                        0xff, // break
-                      0xff, // break
+                      0x08, // key: 8 [corpus]
+                      0xf5, // value: true
+                      0x09, // key: 9 [patch]
+                      0xf4, // value: false
+                      0x0a, // key: 10 [media]
+                      0x63, // value: tstr(3)
+                        0x71, 0x75, 0x78, // "qux"
+                      0x0b, // key: 11 [supplemental]
+                      0xf5, // value: true
+                      0x0c, // key: 12 [tag-version]
+                      0x01, // value: 1
+                      0x0d, // key: 13 [software-version]
+                      0x65, // value: tstr(5)
+                        0x31, 0x2e, 0x32, 0x2e, 0x33, // "1.2.3"
+                      0x0e, // key: 14 [version-scheme]
+                      0x19, 0x40, 0x00, // value: 16384 [semver]
                       0x20, // key: -1 [extension(-1)]
                       0xf5, // value: true
                       0x63, // key: tstr(3) [glob_attr("bar")]
                         0x62, 0x61, 0x72, // "bar"
                       0x18, 0x2a, // value: 42
-                    0xff, // break
                 ],
             },
         ];

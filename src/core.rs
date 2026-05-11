@@ -2073,6 +2073,10 @@ impl<'de, T: Clone + DeserializeOwned> Deserialize<'de> for OneOrMore<T> {
 pub struct AttributeMap<'a>(pub BTreeMap<Label<'a>, AttributeValue<'a>>);
 
 impl<'a> AttributeMap<'a> {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
     pub fn insert(&mut self, key: Label<'a>, value: AttributeValue<'a>) {
         self.0.insert(key, value);
     }
@@ -2430,6 +2434,20 @@ pub struct GlobalAttributes<'a> {
 impl<'a> GlobalAttributes<'a> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        let mut ret = 0;
+
+        if self.lang.is_some() {
+            ret += 1;
+        }
+
+        if let Some(ref attributes) = self.attributes {
+            ret += attributes.len()
+        }
+
+        ret
     }
 
     pub fn is_empty(&self) -> bool {
