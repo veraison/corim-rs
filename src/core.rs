@@ -278,8 +278,7 @@ impl<'de> Deserialize<'de> for Bytes {
             // ostensibly human-readable formats.
             deserializer.deserialize_any(BytesVisitor)
         } else {
-            let bytes = Vec::<u8>::deserialize(deserializer)?;
-            Ok(Bytes { bytes })
+            deserializer.deserialize_bytes(BytesVisitor)
         }
     }
 }
@@ -5414,6 +5413,20 @@ mod tests {
             let actual: super::Bytes = serde_json::from_str(text).unwrap();
 
             assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn test_bytes_de() {
+            let arr: Vec<u8> = vec![0x81, 0x00];
+            let bstr: Vec<u8> = vec![0x41, 0x00];
+
+            let a = ciborium::from_reader::<super::Bytes, &[u8]>(arr.as_slice());
+            let b = ciborium::from_reader::<super::Bytes, &[u8]>(bstr.as_slice());
+
+            assert!(a.is_err(), "CBOR array should not deserialize as Bytes");
+            assert!(b.is_ok(), "CBOR bytes should deserialize as Bytes");
+
+            assert_eq!(b.unwrap(), super::Bytes { bytes: vec![0] });
         }
     }
 
