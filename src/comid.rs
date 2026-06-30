@@ -87,7 +87,6 @@
 
 use crate::{
     core::{RawValueType, TaggedBytes},
-    generate_tagged,
     triples::{EnvironmentMap, MeasuredElementTypeChoice, MeasurementMap, MeasurementValuesMap},
     AttestKeyTripleRecord, ComidError, ConditionalEndorsementSeriesTripleRecord,
     ConditionalEndorsementTripleRecord, CoswidTripleRecord, DomainDependencyTripleRecord,

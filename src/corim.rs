@@ -187,7 +187,6 @@ use crate::{
     coswid::ConciseSwidTag,
     cotl::ConciseTlTag,
     error::CorimError,
-    generate_tagged,
     numbers::Integer,
     Digest, Empty, ExtensionMap, ExtensionValue, OidType, TaggedBytes, TaggedConciseMidTag,
     TaggedConciseSwidTag, TaggedConciseTlTag, Text, Tstr, Uri, UuidType,

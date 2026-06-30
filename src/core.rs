@@ -53,7 +53,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use crate::{empty::Empty, error::CoreError, generate_tagged, FixedBytes, Integer};
+use crate::{empty::Empty, error::CoreError, FixedBytes, Integer};
 
 /// Text represents a UTF-8 string value
 pub type Text<'a> = Cow<'a, str>;
@@ -6413,7 +6413,7 @@ mod tests {
                     ExtensionValue::Uint(1.into()),
                     ExtensionValue::Uint(2.into()),
                     ExtensionValue::Uint(3.into()),
-                ].into()),
+                ]),
                 expected_json: "[1,2,3]",
                 expected_cbor: vec![
                     0x83, // array(3)

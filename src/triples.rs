@@ -6024,11 +6024,10 @@ mod test {
                 alg: HashAlgorithm::Sha256,
                 val: Bytes::from(vec![0x01, 0x02, 0x03]),
             }]),
-            flags: {
-                let mut fm = FlagsMap::default();
-                fm.is_configured = Some(true);
-                Some(fm)
-            },
+            flags: Some(FlagsMap {
+                is_configured: Some(true),
+                ..Default::default()
+            }),
             raw: Some(RawValueType {
                 raw_value: RawValueTypeChoice::TaggedBytes(TaggedBytes::from(Bytes::from(
                     vec![0x04,0x05,0x06],

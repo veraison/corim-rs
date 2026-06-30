@@ -10,7 +10,7 @@ use serde::{
 };
 
 use crate::{
-    generate_tagged, CotlError, IntegerTime, TagIdTypeChoice, TagIdentityMap, TagVersionType,
+    CotlError, IntegerTime, TagIdTypeChoice, TagIdentityMap, TagVersionType,
     ValidityMap,
 };
 

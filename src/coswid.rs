@@ -74,7 +74,7 @@
 use std::{fmt::Display, marker::PhantomData};
 
 use crate::{
-    error::CoswidError, generate_tagged, AnyUri, AttributeValue, Empty, ExtensionMap,
+    error::CoswidError, AnyUri, AttributeValue, Empty, ExtensionMap,
     ExtensionValue, GlobalAttributes, HashEntry, Int, Integer, IntegerTime, Label, OneOrMore, Text,
     TextOrBytes, TextOrBytesSized, Uint, Uri, VersionScheme,
 };
@@ -771,7 +771,7 @@ impl Serialize for SoftwareMetaEntry<'_> {
         let is_human_readable = serializer.is_human_readable();
         let len = map_len!(
             self,
-            0 + self.extensions.as_ref().map_or(0, |e| e.len())
+            self.extensions.as_ref().map_or(0, |e| e.len())
                 + self.global_attributes.as_ref().map_or(0, |a| a.len()),
             activation_status,
             channel_type,
@@ -2938,6 +2938,10 @@ impl ResourceCollection<'_> {
         ret
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn serialize_map<M, O, E>(&self, map: &mut M, is_human_readable: bool) -> Result<(), E>
     where
         M: ser::SerializeMap<Ok = O, Error = E>,
@@ -3214,6 +3218,10 @@ impl PathElementsGroup<'_> {
         }
 
         ret
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn serialize_map<M, O, E>(&self, map: &mut M, is_human_readable: bool) -> Result<(), E>
@@ -3727,6 +3735,11 @@ impl FileSystemItem<'_> {
     pub fn len(&self) -> usize {
         map_len!(self, 1, key, location, root)
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn serialize_map<M, O, E>(&self, map: &mut M, is_human_readable: bool) -> Result<(), E>
     where
         M: ser::SerializeMap<Ok = O, Error = E>,

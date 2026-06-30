@@ -121,18 +121,15 @@ impl CoseSigner for OpensslSigner {
             }
         };
 
-        let key_bytes;
-        let key_number;
-        let group;
-        match self.key.kty {
+        let (key_bytes, key_number, group) = match self.key.kty {
             CoseKty::Ec2 => {
-                if self.key.d.is_none() {
-                    return Err(CorimError::custom("key missing private component d"));
-                }
-
-                key_bytes = self.key.d.as_ref().unwrap();
-                key_number = BigNum::from_slice(key_bytes).map_err(CorimError::custom)?;
-                group = match self
+                let key_bytes = self
+                    .key
+                    .d
+                    .as_ref()
+                    .ok_or_else(|| CorimError::custom("key missing private component d"))?;
+                let key_number = BigNum::from_slice(key_bytes).map_err(CorimError::custom)?;
+                let group = match self
                     .key
                     .crv
                     .as_ref()
@@ -148,10 +145,11 @@ impl CoseSigner for OpensslSigner {
                             other.to_string(),
                         ));
                     }
-                }
+                };
+                (key_bytes, key_number, group)
             }
             other => return Err(CorimError::Custom(format!("unsupported key type {other}"))),
-        }
+        };
 
         let ec_key =
             EcKey::from_private_components(&group, &key_number, &EcPoint::new(&group).unwrap())?;
@@ -188,29 +186,28 @@ impl CoseVerifier for OpensslSigner {
             }
         };
 
-        let size;
-        let group;
-        let mut pub_key_bytes;
-        match self.key.kty {
+        let (size, group, pub_key_bytes) = match self.key.kty {
             CoseKty::Ec2 => {
                 if self.key.y.is_none() {
                     return Err(CorimError::custom("key missing public component x"));
                 }
 
                 let mut x = self.key.x.as_ref().unwrap().to_vec();
-                size = x.len();
+                let size = x.len();
 
-                if self.key.y.is_some() && self.key.y.as_ref().unwrap().len() > 0 {
+                let pub_key_bytes = if self.key.y.as_ref().is_some_and(|y| !y.is_empty()) {
                     let mut y = self.key.y.as_ref().unwrap().to_vec();
-                    pub_key_bytes = vec![4]; // SEC1 EC2 no point compression
+                    let mut pub_key_bytes = vec![4]; // SEC1 EC2 no point compression
                     pub_key_bytes.append(&mut x);
                     pub_key_bytes.append(&mut y);
+                    pub_key_bytes
                 } else {
-                    pub_key_bytes = vec![3]; // SEC1 EC2 w/ point compression
+                    let mut pub_key_bytes = vec![3]; // SEC1 EC2 w/ point compression
                     pub_key_bytes.append(&mut x);
-                }
+                    pub_key_bytes
+                };
 
-                group = match self
+                let group = match self
                     .key
                     .crv
                     .as_ref()
@@ -226,10 +223,11 @@ impl CoseVerifier for OpensslSigner {
                             other.to_string(),
                         ));
                     }
-                }
+                };
+                (size, group, pub_key_bytes)
             }
             other => return Err(CorimError::Custom(format!("unsupported key type {other}"))),
-        }
+        };
 
         let mut ctx = BigNumContext::new()?;
         let point = EcPoint::from_bytes(&group, &pub_key_bytes, &mut ctx)?;
@@ -237,7 +235,7 @@ impl CoseVerifier for OpensslSigner {
         let verif_key = PKey::from_ec_key(ec_key)?;
 
         let mut verifier = Verifier::new(message_digest, &verif_key)?;
-        verifier.update(&data)?;
+        verifier.update(data)?;
 
         let ecdsa_sig = EcdsaSig::from_private_components(
             BigNum::from_slice(&sig[..size])?,
