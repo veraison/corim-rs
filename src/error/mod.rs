@@ -7,6 +7,8 @@ mod coswid;
 mod cotl;
 mod numbers;
 mod triples;
+#[cfg(feature = "openssl")]
+mod x5chain;
 
 pub use comid::*;
 pub use core::*;
@@ -16,6 +18,8 @@ pub use cotl::*;
 use derive_more::From;
 pub use numbers::*;
 pub use triples::*;
+#[cfg(feature = "openssl")]
+pub use x5chain::*;
 
 #[derive(Debug, From)]
 pub enum Error {

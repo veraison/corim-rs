@@ -1,0 +1,91 @@
+{
+  "id": "test corim id",
+  "tags": [
+    {
+      "type": "comid",
+      "value": {
+        "language": "en-GB",
+        "tag-identity": {
+          "tag-id": "43bbe37f-2e61-4b33-aed3-53cff1428b16"
+        },
+        "entities": [
+          {
+            "entity-name": "ACME Ltd.",
+            "reg-id": {
+              "type": "uri",
+              "value": "https://acme.example"
+            },
+            "role": [
+              "tag-creator",
+              "creator",
+              "maintainer"
+            ]
+          }
+        ],
+        "triples": {
+          "reference-triples": [
+            [
+              {
+                "class": {
+                  "class-id": {
+                    "tag": 600,
+                    "value": "[base64]:YWNtZS1pbXBsZW1lbnRhdGlvbi1pZC0wMDAwMDAwMDE"
+                  },
+                  "vendor": "ACME",
+                  "model": "RoadRunner"
+                }
+              },
+              [
+                {
+                  "mkey": {
+                    "tag": 601,
+                    "value": {
+                      "1": "BL",
+                      "4": "2.1.0",
+                      "5": "[base64]:rLsRx-TaIXIFUjzkzhokWuGiOa48a_2eeHH35di66Gs"
+                    }
+                  },
+                  "mval": {
+                    "digests": [
+                      "sha-256;h0KPxSKAPTEGXnvOPPA_5HUJZjHl4Hu9eg_eYMTPJcc"
+                    ]
+                  }
+                },
+                {
+                  "mkey": {
+                    "tag": 601,
+                    "value": {
+                      "1": "PRoT",
+                      "4": "1.3.5",
+                      "5": "[base64]:rLsRx-TaIXIFUjzkzhokWuGiOa48a_2eeHH35di66Gs"
+                    }
+                  },
+                  "mval": {
+                    "digests": [
+                      "sha-256;AmOCmYm2_ZVPcrqvL8ZLwuLwHWktTecphuqAj26ZgT8"
+                    ]
+                  }
+                },
+                {
+                  "mkey": {
+                    "tag": 601,
+                    "value": {
+                      "1": "ARoT",
+                      "4": "0.1.4",
+                      "5": "[base64]:rLsRx-TaIXIFUjzkzhokWuGiOa48a_2eeHH35di66Gs"
+                    }
+                  },
+                  "mval": {
+                    "digests": [
+                      "sha-256;o6XnFfDMV0pzw_m-u2vCTzL_1bZ7OHJEwskJ2neaFHg"
+                    ]
+                  }
+                }
+              ]
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

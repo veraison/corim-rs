@@ -1,0 +1,5 @@
+[ v3_leaf ]
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyAgreement
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid,issuer
