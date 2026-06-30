@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
 
+#[cfg(feature = "openssl")]
+use super::X5chainError;
+
 #[derive(Debug)]
 pub enum CorimError {
     InvalidConciseTagTypeChoice,
@@ -11,6 +14,8 @@ pub enum CorimError {
     InvalidCoseKey(String),
     InvalidSignature,
     OutsideValidityPeriod,
+    #[cfg(feature = "openssl")]
+    X5chain(X5chainError),
     Custom(String),
     Unknown,
 }
@@ -22,6 +27,13 @@ impl CorimError {
 
     pub fn custom<D: std::fmt::Display>(message: D) -> Self {
         CorimError::Custom(message.to_string())
+    }
+}
+
+#[cfg(feature = "openssl")]
+impl From<X5chainError> for CorimError {
+    fn from(err: X5chainError) -> Self {
+        Self::X5chain(err)
     }
 }
 
@@ -58,6 +70,8 @@ impl std::fmt::Display for CorimError {
                 write!(f, "current time is outside manifest's validity period")
             }
             Self::InvalidSignature => f.write_str("invalid signature"),
+            #[cfg(feature = "openssl")]
+            Self::X5chain(err) => write!(f, "{err}"),
             Self::Custom(message) => f.write_str(message.as_str()),
             Self::Unknown => write!(f, "unknown CorimError encountered"),
         }

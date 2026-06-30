@@ -1975,7 +1975,17 @@ pub struct SignedCorim<'a> {
 impl SignedCorim<'_> {
     pub fn verify_signature<V: CoseVerifier>(&self, verifier: V) -> Result<(), CorimError> {
         verifier.verify_header_and_key(self)?;
+        self.verify_cose_signature_only(verifier)
+    }
 
+    /// Verify the COSE Sign1 bytes only (no `corim-meta.signature-validity` or key header checks).
+    ///
+    /// Used by the x5chain path, which verifies the COSE Sign1 bytes with the validated
+    /// leaf certificate public key and does not enforce `corim-meta.signature-validity`.
+    pub(crate) fn verify_cose_signature_only<V: CoseVerifier>(
+        &self,
+        verifier: V,
+    ) -> Result<(), CorimError> {
         let aad: Vec<u8> = vec![];
         self.sign1.verify_signature(aad.as_slice(), |sig, data| {
             verifier.verify_signature(self.alg, sig, data)

@@ -1,0 +1,19 @@
+{
+  "signer": {
+    "signer-name": "ACME Ltd signing key",
+    "signer-uri": {
+      "type": "uri",
+      "value": "https://acme.example"
+    }
+  },
+  "signature-validity": {
+    "not-before": {
+      "type": "time",
+      "value": 1640908800
+    },
+    "not-after": {
+      "type": "time",
+      "value": 4884796800
+    }
+  }
+}
