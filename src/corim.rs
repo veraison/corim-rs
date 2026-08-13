@@ -2978,7 +2978,7 @@ mod tests {
                         0x43,//  [1: val] bstr(3)
                           0x01, 0x02, 0x03,
                 ],
-                expected_json: r#"{"href":{"type":"uri","value":"foo"},"thumbprint":"sha-256;AQID"}"#,
+                expected_json: r#"{"href":{"type":"uri","value":"foo"},"thumbprint":["sha-256","AQID"]}"#,
             },
         ];
 

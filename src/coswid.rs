@@ -5365,7 +5365,7 @@ mod test {
                     .add_global_attribute("fum".into(), 42i64.into())
                     .build()
                     .unwrap(),
-                expected_json: r#"{"entity-name":"foo","reg-id":{"type":"uri","value":"bar"},"role":"maintainer","thumbprint":"sha-256;AQID","-1":true,"fum":42}"#,
+                expected_json: r#"{"entity-name":"foo","reg-id":{"type":"uri","value":"bar"},"role":"maintainer","thumbprint":["sha-256","AQID"],"-1":true,"fum":42}"#,
                 expected_cbor: vec![
                     0xa6, // map(6)
                       0x18, 0x1f, // key: 31 [entity-name]
@@ -5478,7 +5478,7 @@ mod test {
                     .add_global_attribute("fum".into(), 42i64.into())
                     .build()
                     .unwrap(),
-                expected_json: r#"{"hash":"sha-256;AQID","size":1,"file-version":"zot","key":true,"location":"foo","fs-name":"bar","root":"qux","-1":true,"fum":42}"#,
+                expected_json: r#"{"hash":["sha-256","AQID"],"size":1,"file-version":"zot","key":true,"location":"foo","fs-name":"bar","root":"qux","-1":true,"fum":42}"#,
                 expected_cbor: vec![
                     0xa9, // map(9)
                       0x07, // key: 7 [hash]

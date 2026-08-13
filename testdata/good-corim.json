@@ -47,7 +47,7 @@
                   },
                   "mval": {
                     "digests": [
-                      "sha-256;h0KPxSKAPTEGXnvOPPA_5HUJZjHl4Hu9eg_eYMTPJcc"
+                        ["sha-256","h0KPxSKAPTEGXnvOPPA_5HUJZjHl4Hu9eg_eYMTPJcc"]
                     ]
                   }
                 },
@@ -62,7 +62,7 @@
                   },
                   "mval": {
                     "digests": [
-                      "sha-256;AmOCmYm2_ZVPcrqvL8ZLwuLwHWktTecphuqAj26ZgT8"
+                        ["sha-256", "AmOCmYm2_ZVPcrqvL8ZLwuLwHWktTecphuqAj26ZgT8"]
                     ]
                   }
                 },
@@ -77,7 +77,7 @@
                   },
                   "mval": {
                     "digests": [
-                      "sha-256;o6XnFfDMV0pzw_m-u2vCTzL_1bZ7OHJEwskJ2neaFHg"
+                        ["sha-256", "o6XnFfDMV0pzw_m-u2vCTzL_1bZ7OHJEwskJ2neaFHg"]
                     ]
                   }
                 }

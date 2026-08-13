@@ -2561,7 +2561,8 @@ pub enum CotlMapRegistry {
     TlValidity,
 }
 
-/// Represents a digest value with its algorithm identifier
+/// Represents a digest value with its algorithm identifier as defined in
+/// RFC10013 section 4.2 (eatmc.digest)
 #[repr(C)]
 #[derive(Debug, From, Constructor, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Digest {
@@ -2608,17 +2609,18 @@ impl Serialize for Digest {
     where
         S: Serializer,
     {
-        if serializer.is_human_readable() {
-            serializer.serialize_str(&self.to_string())
+        let is_human_readable = serializer.is_human_readable();
+        let mut seq = serializer.serialize_seq(Some(2))?;
+        if is_human_readable {
+            seq.serialize_element(&self.alg.to_string())?
         } else {
-            let mut seq = serializer.serialize_seq(Some(2))?;
             match self.alg.to_u8() {
-                Some(u) => seq.serialize_element(&u)?,
                 None => seq.serialize_element(&self.alg.to_string())?,
+                Some(u) => seq.serialize_element(&u)?,
             }
-            seq.serialize_element(&self.val)?;
-            seq.end()
         }
+        seq.serialize_element(&self.val)?;
+        seq.end()
     }
 }
 
@@ -2656,17 +2658,10 @@ impl<'de> Deserialize<'de> for Digest {
 
                 Ok(Digest { alg, val })
             }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Digest::try_from(v).map_err(E::custom)
-            }
         }
 
         if deserializer.is_human_readable() {
-            deserializer.deserialize_str(DigestVisitor)
+            deserializer.deserialize_seq(DigestVisitor)
         } else {
             deserializer.deserialize_seq(DigestVisitor)
         }

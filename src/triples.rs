@@ -5412,14 +5412,14 @@ mod test {
     }
 
     #[test]
-    fn test_crypo_key_type_choice_serde() {
+    fn test_crypto_key_type_choice_serde() {
         let test_cases = vec![
             SerdeTestCase {
                 value: CryptoKeyTypeChoice::Thumbprint(ThumbprintType::from(Digest {
                     alg: HashAlgorithm::Sha384,
                     val: Bytes::from(vec![0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80]),
                 })),
-                expected_json: r#"{"type":"thumbprint","value":"sha-384;ECAwQFBgcIA"}"#,
+                expected_json: r#"{"type":"thumbprint","value":["sha-384","ECAwQFBgcIA"]}"#,
                 expected_cbor: vec![
                     0xd9, 0x02, 0x2d, // tag(557)
                       0x82, // array(2)
@@ -5512,7 +5512,7 @@ mod test {
 
         assert_eq!(env_map_de, env_map);
 
-        let expected = r#"{"class":{"class-id":{"type":"oid","value":"1.2.3.4"}},"instance":{"type":"thumbprint","value":"sha-384;ECAwQFBgcIA"},"group":{"type":"uuid","value":"550e8400-e29b-41d4-a716-446655440000"}}"#;
+        let expected = r#"{"class":{"class-id":{"type":"oid","value":"1.2.3.4"}},"instance":{"type":"thumbprint","value":["sha-384","ECAwQFBgcIA"]},"group":{"type":"uuid","value":"550e8400-e29b-41d4-a716-446655440000"}}"#;
 
         let json = serde_json::to_string(&env_map).unwrap();
 
@@ -5546,7 +5546,7 @@ mod test {
 
         assert_eq!(env_map_de, env_map);
 
-        let expected = r#"{"instance":{"type":"thumbprint","value":"sha-384;ECAwQFBgcIA"}}"#;
+        let expected = r#"{"instance":{"type":"thumbprint","value":["sha-384","ECAwQFBgcIA"]}}"#;
 
         let json = serde_json::to_string(&env_map).unwrap();
 
@@ -5678,8 +5678,7 @@ mod test {
             )
             .unwrap();
 
-            let expected =
-                r#"{"\"1\"":["sha-256;AQID"],"\"foo\"":["sha-256;BAUG"],"1":["sha-256;AQID"]}"#;
+            let expected = r#"{"\"1\"":[["sha-256","AQID"]],"\"foo\"":[["sha-256","BAUG"]],"1":[["sha-256","AQID"]]}"#;
 
             let json = serde_json::to_string(&regs).unwrap();
 
@@ -6147,7 +6146,7 @@ mod test {
 
         let actual = serde_json::to_string(&mvm).unwrap();
 
-        let expected = r#"{"version":{"version":"1.2","version-scheme":"decimal"},"svn":1,"digests":["sha-256;AQID"],"flags":{"is-configured":true},"raw-value":{"type":"bytes","value":"BAUG"},"mac-addr":"01-02-03-04-05-06","ip-addr":"127.0.0.1","serial-number":"foo","ueid":"AQIDBAUGBw","uuid":"01020304-0506-0708-090a-0b0c0d0e0f10","name":"bar","cryptokeys":[{"type":"thumbprint","value":"sha-384;BwgJ"}],"integrity-registers":{"1":["sha-256;AQID"]},"-1":"[base64]:CgsM"}"#;
+        let expected = r#"{"version":{"version":"1.2","version-scheme":"decimal"},"svn":1,"digests":[["sha-256","AQID"]],"flags":{"is-configured":true},"raw-value":{"type":"bytes","value":"BAUG"},"mac-addr":"01-02-03-04-05-06","ip-addr":"127.0.0.1","serial-number":"foo","ueid":"AQIDBAUGBw","uuid":"01020304-0506-0708-090a-0b0c0d0e0f10","name":"bar","cryptokeys":[{"type":"thumbprint","value":["sha-384","BwgJ"]}],"integrity-registers":{"1":[["sha-256","AQID"]]},"-1":"[base64]:CgsM"}"#;
 
         assert_eq!(actual, expected);
 
