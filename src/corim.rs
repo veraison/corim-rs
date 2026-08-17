@@ -218,7 +218,7 @@ pub enum ConciseRimTypeChoice<'a> {
 }
 
 impl<'a> ConciseRimTypeChoice<'a> {
-    pub fn is_signed(self) -> bool {
+    pub fn is_signed(&self) -> bool {
         match self {
             ConciseRimTypeChoice::Signed(_) => true,
             ConciseRimTypeChoice::Unsigned(_) => false,
@@ -1087,45 +1087,57 @@ impl<'de> Deserialize<'de> for ConciseTagTypeChoice<'_> {
     }
 }
 
-impl ConciseTagTypeChoice<'_> {
-    pub fn as_coswid(&self) -> Option<ConciseSwidTag<'_>> {
-        match self {
-            Self::Swid(coswid) => Some(coswid.as_ref().clone()),
-            _ => None,
-        }
+impl<'a> ConciseTagTypeChoice<'a> {
+    pub fn as_coswid(&self) -> Option<ConciseSwidTag<'a>> {
+        self.as_ref_coswid().cloned()
     }
 
-    pub fn as_comid(&self) -> Option<ConciseMidTag<'_>> {
-        match self {
-            Self::Mid(comid) => Some(comid.as_ref().clone()),
-            _ => None,
-        }
+    pub fn as_comid(&self) -> Option<ConciseMidTag<'a>> {
+        self.as_ref_comid().cloned()
     }
 
-    pub fn as_cotl(&self) -> Option<ConciseTlTag<'_>> {
-        match self {
-            Self::Tl(cotl) => Some(cotl.as_ref().clone()),
-            _ => None,
-        }
+    pub fn as_cotl(&self) -> Option<ConciseTlTag<'a>> {
+        self.as_ref_cotl().cloned()
     }
 
-    pub fn as_ref_coswid(&self) -> Option<&ConciseSwidTag<'_>> {
+    pub fn as_ref_coswid(&self) -> Option<&ConciseSwidTag<'a>> {
         match self {
             Self::Swid(coswid) => Some(coswid.as_ref()),
             _ => None,
         }
     }
 
-    pub fn as_ref_comid(&self) -> Option<&ConciseMidTag<'_>> {
+    pub fn as_ref_comid(&self) -> Option<&ConciseMidTag<'a>> {
         match self {
             Self::Mid(comid) => Some(comid.as_ref()),
             _ => None,
         }
     }
 
-    pub fn as_ref_cotl(&self) -> Option<&ConciseTlTag<'_>> {
+    pub fn as_ref_cotl(&self) -> Option<&ConciseTlTag<'a>> {
         match self {
             Self::Tl(cotl) => Some(cotl.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn into_coswid(self) -> Option<ConciseSwidTag<'a>> {
+        match self {
+            Self::Swid(coswid) => Some(coswid.into()),
+            _ => None,
+        }
+    }
+
+    pub fn into_comid(self) -> Option<ConciseMidTag<'a>> {
+        match self {
+            Self::Mid(comid) => Some(comid.into()),
+            _ => None,
+        }
+    }
+
+    pub fn into_cotl(self) -> Option<ConciseTlTag<'a>> {
+        match self {
+            Self::Tl(cotl) => Some(cotl.into()),
             _ => None,
         }
     }

@@ -130,6 +130,12 @@ macro_rules! generate_tagged {
                 }
             }
 
+            impl $(< $($lt),* >)? std::convert::From<$title $(< $($lt),* >)?> for $type {
+                fn from(value: $title $(< $($lt),* >)?) -> $type {
+                    value.0.0
+                }
+            }
+
             impl $(< $($lt),* >)? ::serde::ser::Serialize for $title $(< $($lt),* >)? {
                 fn serialize<S>(&self, serializer: S) -> ::core::result::Result<S::Ok, S::Error>
                 where
