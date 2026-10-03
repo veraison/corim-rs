@@ -87,7 +87,6 @@
 
 use crate::{
     core::{RawValueType, TaggedBytes},
-    generate_tagged,
     triples::{EnvironmentMap, MeasuredElementTypeChoice, MeasurementMap, MeasurementValuesMap},
     AttestKeyTripleRecord, ComidError, ConditionalEndorsementSeriesTripleRecord,
     ConditionalEndorsementTripleRecord, CoswidTripleRecord, DomainDependencyTripleRecord,
@@ -554,14 +553,14 @@ impl<'a> ConciseMidTagBuilder<'a> {
 
     pub fn build(self) -> Result<ConciseMidTag<'a>> {
         if self.tag_identity.is_none() {
-            return Err(ComidError::UnsetMandatoryField(
+            Err(ComidError::UnsetMandatoryField(
                 "ConciseMidTag".to_string(),
                 "tag_identity".to_string(),
             ))?;
         }
 
         if self.triples.is_none() {
-            return Err(ComidError::UnsetMandatoryField(
+            Err(ComidError::UnsetMandatoryField(
                 "ConciseMidTag".to_string(),
                 "triples".to_string(),
             ))?;
@@ -1066,7 +1065,7 @@ impl<'a> ComidEntityMapBuilder<'a> {
             || self.role.is_none()
             || self.role.as_ref().unwrap().is_empty()
         {
-            return Err(ComidError::UnsetMandatoryField(
+            Err(ComidError::UnsetMandatoryField(
                 "ComidEntityMap".to_string(),
                 "entity_name and role".to_string(),
             ))?;
@@ -1956,7 +1955,7 @@ impl<'a> TriplesMapBuilder<'a> {
             && self.conditional_endorsement_triples.is_none()
             && self.extensions.is_none()
         {
-            return Err(ComidError::EmptyTriplesMap)?;
+            Err(ComidError::EmptyTriplesMap)?;
         }
 
         Ok(TriplesMap {

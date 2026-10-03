@@ -378,7 +378,7 @@ impl<'a> EnvironmentMapBuilder<'a> {
 
     pub fn build(self) -> Result<EnvironmentMap<'a>> {
         if self.class.is_none() && self.instance.is_none() && self.group.is_none() {
-            return Err(TriplesError::EmptyEnvironmentMap)?;
+            Err(TriplesError::EmptyEnvironmentMap)?;
         }
         Ok(EnvironmentMap {
             class: self.class,
@@ -601,7 +601,7 @@ impl<'a> ClassMapBuilder<'a> {
             && self.layer.is_none()
             && self.index.is_none()
         {
-            return Err(TriplesError::EmptyClassMap)?;
+            Err(TriplesError::EmptyClassMap)?;
         }
         Ok(ClassMap {
             class_id: self.class_id,
@@ -2899,7 +2899,7 @@ impl<'a> MeasurementValuesMapBuilder<'a> {
             && self.integrity_registers.is_none()
             && self.extensions.is_none()
         {
-            return Err(TriplesError::EmptyMeasurementValuesMap)?;
+            Err(TriplesError::EmptyMeasurementValuesMap)?;
         }
         Ok(MeasurementValuesMap {
             version: self.version,
@@ -4442,7 +4442,7 @@ impl<'a> TriplesRecordConditionBuilder<'a> {
 
     pub fn build(self) -> Result<TriplesRecordCondition<'a>> {
         if self.mkey.is_none() && self.authorized_by.is_none() {
-            return Err(TriplesError::EmptyTripleRecordCondition)?;
+            Err(TriplesError::EmptyTripleRecordCondition)?;
         }
         Ok(TriplesRecordCondition {
             mkey: self.mkey,
@@ -6024,8 +6024,10 @@ mod test {
                 val: Bytes::from(vec![0x01, 0x02, 0x03]),
             }]),
             flags: {
-                let mut fm = FlagsMap::default();
-                fm.is_configured = Some(true);
+                let fm = FlagsMap {
+                    is_configured: Some(true),
+                    ..Default::default()
+                };
                 Some(fm)
             },
             raw: Some(RawValueType {

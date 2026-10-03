@@ -2054,7 +2054,6 @@ impl<'de> serde::Deserialize<'de> for Integer {
 
 #[cfg(test)]
 mod tests {
-    use std::u32;
 
     use super::*;
 
