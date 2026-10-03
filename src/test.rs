@@ -9,7 +9,7 @@ pub(crate) struct SerdeTestCase<T> {
     pub(crate) expected_cbor: Vec<u8>,
 }
 
-impl<'de, T> SerdeTestCase<T>
+impl<T> SerdeTestCase<T>
 where
     T: Debug + Serialize + DeserializeOwned + Eq,
 {

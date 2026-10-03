@@ -9,10 +9,7 @@ use serde::{
     Deserialize, Serialize,
 };
 
-use crate::{
-    generate_tagged, CotlError, IntegerTime, TagIdTypeChoice, TagIdentityMap, TagVersionType,
-    ValidityMap,
-};
+use crate::{CotlError, IntegerTime, TagIdTypeChoice, TagIdentityMap, TagVersionType, ValidityMap};
 
 generate_tagged!((
     508,
@@ -203,13 +200,15 @@ impl<'a> ConciseTlTagBuilder<'a> {
             return Err(CotlError::unset_mandatory_field("TagIdentityMap", "tag_id"));
         }
 
-        if self.tags_list.is_none() {
+        if let Some(tag_list) = &self.tags_list {
+            if tag_list.is_empty() {
+                return Err(CotlError::custom("empty tags_list"));
+            }
+        } else {
             return Err(CotlError::unset_mandatory_field(
                 "ConciseTlTag",
                 "tags_list",
             ));
-        } else if self.tags_list.as_ref().unwrap().is_empty() {
-            return Err(CotlError::custom("empty tags_list"));
         }
 
         if self.not_after.is_none() {
