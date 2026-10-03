@@ -187,7 +187,6 @@ use crate::{
     coswid::ConciseSwidTag,
     cotl::ConciseTlTag,
     error::CorimError,
-    generate_tagged,
     numbers::Integer,
     Digest, Empty, ExtensionMap, ExtensionValue, OidType, TaggedBytes, TaggedConciseMidTag,
     TaggedConciseSwidTag, TaggedConciseTlTag, Text, Tstr, Uri, UuidType,
@@ -740,27 +739,29 @@ impl<'a> CorimMapBuilder<'a> {
 
     pub fn build(self) -> crate::Result<CorimMap<'a>> {
         if self.id.is_none() {
-            return Err(CorimError::UnsetMandatoryField(
+            Err(CorimError::UnsetMandatoryField(
                 "CorimMap".to_string(),
                 "id".to_string(),
             ))?;
         }
 
-        if self.tags.is_none() {
-            return Err(CorimError::UnsetMandatoryField(
+        if let Some(tags) = &self.tags {
+            if tags.is_empty() {
+                Err(CorimError::InvalidFieldValue(
+                    "CorimMap".to_string(),
+                    "tags".to_string(),
+                    "must not be empty".to_string(),
+                ))?;
+            }
+        } else {
+            Err(CorimError::UnsetMandatoryField(
                 "CorimMap".to_string(),
                 "tags".to_string(),
-            ))?;
-        } else if self.tags.as_ref().unwrap().is_empty() {
-            return Err(CorimError::InvalidFieldValue(
-                "CorimMap".to_string(),
-                "tags".to_string(),
-                "must not be empty".to_string(),
             ))?;
         }
 
         if self.dependent_rims.is_some() && self.dependent_rims.as_ref().unwrap().is_empty() {
-            return Err(CorimError::InvalidFieldValue(
+            Err(CorimError::InvalidFieldValue(
                 "CorimMap".to_string(),
                 "dependent_rims".to_string(),
                 "must not be empty".to_string(),
@@ -768,7 +769,7 @@ impl<'a> CorimMapBuilder<'a> {
         }
 
         if self.entities.is_some() && self.entities.as_ref().unwrap().is_empty() {
-            return Err(CorimError::InvalidFieldValue(
+            Err(CorimError::InvalidFieldValue(
                 "CorimMap".to_string(),
                 "entities".to_string(),
                 "must not be empty".to_string(),
@@ -1771,7 +1772,7 @@ impl<'a> CorimEntityMapBuilder<'a> {
             || self.role.is_none()
             || self.role.as_ref().unwrap().is_empty()
         {
-            return Err(CorimError::UnsetMandatoryField(
+            Err(CorimError::UnsetMandatoryField(
                 "CorimEntityMap".to_string(),
                 "entity_name and role".to_string(),
             ))?;

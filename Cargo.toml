@@ -58,3 +58,12 @@ openssl = [
 rcgen = "0.13"
 serial_test = "3"
 time = "0.3"
+
+[lints.rust]
+unused_imports = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
+# Constructor trait from derive_more generates a redundant field names a lot
+redundant_field_names = "allow"

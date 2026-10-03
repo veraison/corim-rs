@@ -74,9 +74,9 @@
 use std::{fmt::Display, marker::PhantomData};
 
 use crate::{
-    error::CoswidError, generate_tagged, AnyUri, AttributeValue, Empty, ExtensionMap,
-    ExtensionValue, GlobalAttributes, HashEntry, Int, Integer, IntegerTime, Label, OneOrMore, Text,
-    TextOrBytes, TextOrBytesSized, Uint, Uri, VersionScheme,
+    error::CoswidError, AnyUri, AttributeValue, Empty, ExtensionMap, ExtensionValue,
+    GlobalAttributes, HashEntry, Int, Integer, IntegerTime, Label, OneOrMore, Text, TextOrBytes,
+    TextOrBytesSized, Uint, Uri, VersionScheme,
 };
 use derive_more::{Constructor, From};
 use serde::{
@@ -661,28 +661,28 @@ impl<'a> ConciseSwidTagBuilder<'a> {
         }
 
         if self.tag_id.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "ConciseSwidTag".to_string(),
                 "tag_id".to_string(),
             ))?;
         }
 
         if self.tag_version.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "ConciseSwidTag".to_string(),
                 "tag_version".to_string(),
             ))?;
         }
 
         if self.software_name.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "ConciseSwidTag".to_string(),
                 "software_name".to_string(),
             ))?;
         }
 
         if self.entity.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "ConciseSwidTag".to_string(),
                 "entity".to_string(),
             ))?;
@@ -771,7 +771,7 @@ impl Serialize for SoftwareMetaEntry<'_> {
         let is_human_readable = serializer.is_human_readable();
         let len = map_len!(
             self,
-            0 + self.extensions.as_ref().map_or(0, |e| e.len())
+            self.extensions.as_ref().map_or(0, |e| e.len())
                 + self.global_attributes.as_ref().map_or(0, |a| a.len()),
             activation_status,
             channel_type,
@@ -1814,14 +1814,14 @@ impl<'a> EntityEntryBuilder<'a> {
         }
 
         if self.entity_name.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "EntityEntry".to_string(),
                 "entity_name".to_string(),
             ))?;
         }
 
         if self.role.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "EntityEntry".to_string(),
                 "role".to_string(),
             ))?;
@@ -2215,14 +2215,14 @@ impl<'a> LinkEntryBuilder<'a> {
         }
 
         if self.href.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "LinkEntry".to_string(),
                 "herf".to_string(),
             ))?;
         }
 
         if self.rel.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "LinkEntry".to_string(),
                 "rel".to_string(),
             ))?;
@@ -2890,7 +2890,7 @@ impl<'a> PayloadEntryBuilder<'a> {
         }
 
         if self.resource_collection.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "PayloadEntry".to_string(),
                 "resource_collection".to_string(),
             ))?;
@@ -2936,6 +2936,13 @@ impl ResourceCollection<'_> {
         }
 
         ret
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.path_elements_group.is_empty()
+            && self.process.is_none()
+            && self.resource.is_none()
+            && self.extensions.is_none()
     }
 
     pub fn serialize_map<M, O, E>(&self, map: &mut M, is_human_readable: bool) -> Result<(), E>
@@ -3214,6 +3221,10 @@ impl PathElementsGroup<'_> {
         }
 
         ret
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.directory.is_none() && self.file.is_none()
     }
 
     pub fn serialize_map<M, O, E>(&self, map: &mut M, is_human_readable: bool) -> Result<(), E>
@@ -3689,7 +3700,7 @@ impl<'a> DirectoryEntryBuilder<'a> {
         }
 
         if self.fs_name.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "DirectoryEntry.FileSystemItem".to_string(),
                 "fs_name".to_string(),
             ))?;
@@ -3727,6 +3738,12 @@ impl FileSystemItem<'_> {
     pub fn len(&self) -> usize {
         map_len!(self, 1, key, location, root)
     }
+
+    pub fn is_empty(&self) -> bool {
+        // FileSystemItem at least always contains a fs_name
+        false
+    }
+
     pub fn serialize_map<M, O, E>(&self, map: &mut M, is_human_readable: bool) -> Result<(), E>
     where
         M: ser::SerializeMap<Ok = O, Error = E>,
@@ -4121,7 +4138,7 @@ impl<'a> FileEntryBuilder<'a> {
         }
 
         if self.fs_name.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "FileEntry.FileSystemItem".to_string(),
                 "fs_name".to_string(),
             ))?;
@@ -4410,7 +4427,7 @@ impl<'a> ProcessEntryBuilder<'a> {
         }
 
         if self.process_name.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "ProcessEntry".to_string(),
                 "process_name".to_string(),
             ))?;
@@ -4666,7 +4683,7 @@ impl<'a> ResourceEntryBuilder<'a> {
         }
 
         if self.r#type.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "ResourceEntry".to_string(),
                 "type".to_string(),
             ))?;
@@ -5034,7 +5051,7 @@ impl<'a> EvidenceEntryBuilder<'a> {
         }
 
         if self.resource_collection.is_none() {
-            return Err(CoswidError::UnsetMandatoryField(
+            Err(CoswidError::UnsetMandatoryField(
                 "EvidenceEntry".to_string(),
                 "resource_collection".to_string(),
             ))?;
