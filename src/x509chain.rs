@@ -1408,16 +1408,13 @@ mod tests {
         use crate::openssl::crl_from_der;
         use openssl::x509::{X509Crl, X509};
         use rcgen::{
-            BasicConstraints, Certificate, CertificateParams, CertificateRevocationListParams,
-            DnType, IsCa, KeyIdMethod, KeyPair, KeyUsagePurpose, RevokedCertParams, SerialNumber,
+            BasicConstraints, CertificateParams, CertificateRevocationListParams, DnType, IsCa,
+            Issuer, KeyIdMethod, KeyPair, KeyUsagePurpose, RevokedCertParams, SerialNumber,
         };
         use time::{Duration, OffsetDateTime};
 
         /// Signing material for dynamically generated test CAs.
-        pub(super) struct CaSigningKey {
-            pub cert: Certificate,
-            pub key_pair: KeyPair,
-        }
+        pub(super) type CaSigningKey = Issuer<'static, KeyPair>;
 
         pub(super) struct TestPki {
             pub root: X509,
@@ -1465,7 +1462,7 @@ mod tests {
             params.not_after = now + Duration::hours(1);
             let cert = params.self_signed(&key_pair).unwrap();
             let x509 = X509::from_der(cert.der()).unwrap();
-            (x509, CaSigningKey { cert, key_pair })
+            (x509, Issuer::new(params, key_pair))
         }
 
         pub(super) fn make_intermediate_pki() -> TestPki {
@@ -1483,13 +1480,10 @@ mod tests {
             intermediate_params.not_before = now - Duration::hours(1);
             intermediate_params.not_after = now + Duration::hours(1);
             let intermediate_cert = intermediate_params
-                .signed_by(&intermediate_key_pair, &root_key.cert, &root_key.key_pair)
+                .signed_by(&intermediate_key_pair, &root_key)
                 .unwrap();
             let intermediate = X509::from_der(intermediate_cert.der()).unwrap();
-            let intermediate_key = CaSigningKey {
-                cert: intermediate_cert,
-                key_pair: intermediate_key_pair,
-            };
+            let intermediate_key = Issuer::new(intermediate_params, intermediate_key_pair);
 
             let leaf_key = KeyPair::generate().unwrap();
             let mut leaf_params = CertificateParams::default();
@@ -1500,13 +1494,7 @@ mod tests {
             leaf_params.not_before = now - Duration::hours(1);
             leaf_params.not_after = now + Duration::hours(1);
             leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-            let leaf_cert = leaf_params
-                .signed_by(
-                    &leaf_key,
-                    &intermediate_key.cert,
-                    &intermediate_key.key_pair,
-                )
-                .unwrap();
+            let leaf_cert = leaf_params.signed_by(&leaf_key, &intermediate_key).unwrap();
             let leaf = X509::from_der(leaf_cert.der()).unwrap();
 
             TestPki {
@@ -1530,9 +1518,7 @@ mod tests {
             params.not_before = now - Duration::hours(1);
             params.not_after = now + Duration::hours(1);
             params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-            let cert = params
-                .signed_by(&leaf_key, &ca_key.cert, &ca_key.key_pair)
-                .unwrap();
+            let cert = params.signed_by(&leaf_key, ca_key).unwrap();
             (X509::from_der(cert.der()).unwrap(), leaf_key)
         }
 
@@ -1562,7 +1548,7 @@ mod tests {
                     invalidity_date: None,
                 }],
             );
-            let crl = params.signed_by(&ca_key.cert, &ca_key.key_pair).unwrap();
+            let crl = params.signed_by(ca_key).unwrap();
             crl_from_der(crl.der()).unwrap()
         }
 
@@ -1582,23 +1568,21 @@ mod tests {
                     invalidity_date: None,
                 }],
             );
-            let crl = params
-                .signed_by(&root_key.cert, &root_key.key_pair)
-                .unwrap();
+            let crl = params.signed_by(root_key).unwrap();
             crl_from_der(crl.der()).unwrap()
         }
 
         pub(super) fn make_expired_crl(_ca: &X509, ca_key: &CaSigningKey) -> X509Crl {
             let now = now();
             let params = crl_params(now - Duration::hours(2), now - Duration::hours(1), vec![]);
-            let crl = params.signed_by(&ca_key.cert, &ca_key.key_pair).unwrap();
+            let crl = params.signed_by(ca_key).unwrap();
             crl_from_der(crl.der()).unwrap()
         }
 
         pub(super) fn make_valid_crl(_ca: &X509, ca_key: &CaSigningKey) -> X509Crl {
             let now = now();
             let params = crl_params(now - Duration::minutes(1), now + Duration::hours(1), vec![]);
-            let crl = params.signed_by(&ca_key.cert, &ca_key.key_pair).unwrap();
+            let crl = params.signed_by(ca_key).unwrap();
             crl_from_der(crl.der()).unwrap()
         }
 
@@ -1614,7 +1598,7 @@ mod tests {
         pub(super) fn make_not_yet_valid_crl(_ca: &X509, ca_key: &CaSigningKey) -> X509Crl {
             let now = now();
             let params = crl_params(now + Duration::hours(1), now + Duration::hours(2), vec![]);
-            let crl = params.signed_by(&ca_key.cert, &ca_key.key_pair).unwrap();
+            let crl = params.signed_by(ca_key).unwrap();
             crl_from_der(crl.der()).unwrap()
         }
 
@@ -1638,7 +1622,7 @@ mod tests {
                 let last_update_ok =
                     ffi::X509_CRL_set1_lastUpdate(crl_ptr, last_update.as_ptr() as *const _);
                 assert_eq!(last_update_ok, 1);
-                let pem = ca_key.key_pair.serialize_pem();
+                let pem = ca_key.key().serialize_pem();
                 let pkey = PKey::private_key_from_pem(pem.as_bytes()).unwrap();
                 let sign_ok =
                     ffi::X509_CRL_sign(crl_ptr, pkey.as_ptr(), MessageDigest::sha256().as_ptr());
@@ -1666,9 +1650,7 @@ mod tests {
             let now = now();
             params.not_before = now - Duration::hours(1);
             params.not_after = now + Duration::hours(1);
-            let cert = params
-                .signed_by(&leaf_key, &ca_key.cert, &ca_key.key_pair)
-                .unwrap();
+            let cert = params.signed_by(&leaf_key, ca_key).unwrap();
             X509::from_der(cert.der()).unwrap()
         }
     }
@@ -1990,9 +1972,7 @@ mod tests {
             revoked_certs: vec![],
             key_identifier_method: KeyIdMethod::Sha256,
         };
-        let crl2 = params
-            .signed_by(&pki.intermediate_key.cert, &pki.intermediate_key.key_pair)
-            .unwrap();
+        let crl2 = params.signed_by(&pki.intermediate_key).unwrap();
         let expired2 = crl_from_der(crl2.der()).unwrap();
 
         let chain = vec![
