@@ -16,3 +16,5 @@ concurrency:
 jobs:
   rust:
     uses: veraison/ci/.github/workflows/rust.yml@main
+    with:
+      features: '["", "--features=openssl"]'
